@@ -86,4 +86,24 @@ function Canvas:drawSprite(x, y, sprite)
   end
 end
 
+function Canvas:render()
+  local tgt = self.target
+  for cy = 1, self.rows do
+    local py = (cy - 1) * 3            -- top subpixel row of this cell
+    local text, fg, bg = {}, {}, {}
+    for cx = 1, self.cols do
+      local px = (cx - 1) * 2
+      local cell = {
+        self.buf[py + 1][px + 1], self.buf[py + 1][px + 2],
+        self.buf[py + 2][px + 1], self.buf[py + 2][px + 2],
+        self.buf[py + 3][px + 1], self.buf[py + 3][px + 2],
+      }
+      local ch, f, b = M.encodeCell(cell)
+      text[cx], fg[cx], bg[cx] = ch, f, b
+    end
+    tgt.setCursorPos(1, cy)
+    tgt.blit(table.concat(text), table.concat(fg), table.concat(bg))
+  end
+end
+
 return M

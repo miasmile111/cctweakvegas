@@ -57,4 +57,27 @@ do
   t.eq(cv:getPixel(2, 1), 2, "sprite opaque pixel drawn")
 end
 
+-- render emits one blit per cell-row; a black canvas -> all char 128, bg 'f'
+do
+  local stub = require("stub_target").new(2, 1)   -- 2 cols x 1 row -> one blit
+  local cv = sub.new(stub)                          -- cleared to black (32768)
+  cv:render()
+  t.eq(#stub.calls, 1, "render: one blit per cell row")
+  local call = stub.calls[1]
+  t.eq(#call.text, 2, "blit text length == cols")
+  t.eq(call.text, string.char(128) .. string.char(128), "black canvas -> char 128 cells")
+  t.eq(call.bg, "ff", "black canvas -> bg 'f' per cell")
+end
+
+-- a single subpixel lights the correct cell
+do
+  local stub = require("stub_target").new(2, 1)
+  local cv = sub.new(stub)                          -- black
+  cv:setPixel(1, 1, 1)                              -- top-left of cell 1 -> white
+  cv:render()
+  local call = stub.calls[1]
+  t.eq(call.text:byte(1), 129, "lit top-left -> char 129 in cell 1")
+  t.eq(call.text:byte(2), 128, "cell 2 untouched -> char 128")
+end
+
 t.done()
