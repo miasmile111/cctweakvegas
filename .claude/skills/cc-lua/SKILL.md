@@ -54,6 +54,17 @@ Authoritative docs: **https://tweaked.cc/**. When unsure about a function, signa
 
 Fetch the page for the module you're using before relying on memory for a signature. See `[[cc-api-docs]]` memory.
 
+## Local references (read before building monitor graphics)
+
+- `references/subpixel-drawing.md` — the reusable 2×3 teletext subpixel canvas (`src/lib/subpixel.lua`):
+  chars 128–159, `term.blit`, how to draw pixel art at 6× the cell resolution.
+- `references/monitor-ui-gotchas.md` — **hard-won pitfalls**: the "too long without yielding"
+  watchdog (no hot per-cell loops), fractional-coordinate crashes (floor in `setPixel`), animated
+  gradients via `setPaletteColour` (and dark colours reading as black), no native clipping, the
+  window+`setVisible` flicker-free pattern, multi-file re-import / version-mismatch traps, and
+  redstone analog-lever input. Read this before any monitor UI work — it is a list of mistakes
+  already made, so you don't repeat them.
+
 ## Deploy / test loop (getting code onto the server to test)
 
 You cannot push to the server; the user hosts the file and pulls it in-game. Standard loop:
