@@ -38,4 +38,52 @@ function M.encodeCell(c)
   return string.char(char), toBlit(F), toBlit(B)
 end
 
+local Canvas = {}
+Canvas.__index = Canvas
+
+function M.new(target)
+  local cols, rows = target.getSize()
+  local self = setmetatable({}, Canvas)
+  self.target = target
+  self.cols, self.rows = cols, rows
+  self.w, self.h = cols * 2, rows * 3
+  self.buf = {}
+  self:clear(32768)   -- black
+  return self
+end
+
+function Canvas:clear(color)
+  for y = 1, self.h do
+    local row = {}
+    for x = 1, self.w do row[x] = color end
+    self.buf[y] = row
+  end
+end
+
+function Canvas:getPixel(x, y)
+  local row = self.buf[y]
+  return row and row[x] or nil
+end
+
+function Canvas:setPixel(x, y, color)
+  if x < 1 or y < 1 or x > self.w or y > self.h then return end
+  self.buf[y][x] = color
+end
+
+function Canvas:fillRect(x, y, w, h, color)
+  for dy = 0, h - 1 do
+    for dx = 0, w - 1 do self:setPixel(x + dx, y + dy, color) end
+  end
+end
+
+-- sprite = { w=, h=, px = { row-major color numbers, 0 = transparent } }
+function Canvas:drawSprite(x, y, sprite)
+  for dy = 0, sprite.h - 1 do
+    for dx = 0, sprite.w - 1 do
+      local col = sprite.px[dy * sprite.w + dx + 1]
+      if col and col ~= 0 then self:setPixel(x + dx, y + dy, col) end
+    end
+  end
+end
+
 return M

@@ -28,4 +28,33 @@ do
   t.eq(bg, "f", "inverted bg = black 'f'")
 end
 
+-- buffer geometry + setPixel/getPixel
+do
+  local stub = require("stub_target").new(3, 2)   -- 3 cols x 2 rows
+  local cv = sub.new(stub)
+  t.eq(cv.w, 6, "canvas width = cols*2")
+  t.eq(cv.h, 6, "canvas height = rows*3")
+  cv:clear(1)                    -- white
+  t.eq(cv:getPixel(1, 1), 1, "clear sets pixels")
+  cv:setPixel(2, 3, 32768)       -- black
+  t.eq(cv:getPixel(2, 3), 32768, "setPixel sets one pixel")
+  cv:setPixel(999, 999, 1)       -- off-canvas no-op (must not error)
+  t.ok(true, "off-canvas setPixel is a no-op")
+end
+
+-- fillRect + drawSprite (transparent 0 skipped)
+do
+  local stub = require("stub_target").new(2, 1)
+  local cv = sub.new(stub)
+  cv:clear(1)
+  cv:fillRect(1, 1, 2, 2, 32768)
+  t.eq(cv:getPixel(1, 1), 32768, "fillRect top-left")
+  t.eq(cv:getPixel(2, 2), 32768, "fillRect bottom-right")
+  t.eq(cv:getPixel(3, 1), 1, "fillRect respects width")
+  local sprite = { w = 2, h = 1, px = { 0, 2 } }   -- 0 transparent, 2 orange
+  cv:drawSprite(1, 1, sprite)
+  t.eq(cv:getPixel(1, 1), 32768, "sprite transparent pixel unchanged")
+  t.eq(cv:getPixel(2, 1), 2, "sprite opaque pixel drawn")
+end
+
 t.done()
