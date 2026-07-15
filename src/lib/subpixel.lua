@@ -73,6 +73,7 @@ function Canvas:getPixel(x, y)
 end
 
 function Canvas:setPixel(x, y, color)
+  x, y = math.floor(x), math.floor(y)   -- tolerate fractional coords (e.g. eased scroll positions)
   if x < 1 or y < 1 or x > self.w or y > self.h then return end
   self.buf[y][x] = color
 end
