@@ -6,10 +6,16 @@
 local M = {}
 
 local BLIT = "0123456789abcdef"
-local function toBlit(color)   -- color is a power of two; hex digit = log2
-  local n = 0
-  while color > 1 do color = color / 2; n = n + 1 end
-  return BLIT:sub(n + 1, n + 1)
+-- Precomputed reverse map: colour number (power of two, 2^0..2^15) -> blit hex digit.
+-- O(1) lookup with no loop, so this never trips CC's "too long without yielding" watchdog
+-- the way the old per-cell while-loop did when render() called it hundreds of times a frame.
+local COLOR_HEX = {}
+do
+  local p = 1
+  for i = 0, 15 do COLOR_HEX[p] = BLIT:sub(i + 1, i + 1); p = p * 2 end
+end
+local function toBlit(color)
+  return COLOR_HEX[color] or "0"   -- fallback keeps table.concat safe on an unexpected value
 end
 M._toBlit = toBlit
 
@@ -53,10 +59,11 @@ function M.new(target)
 end
 
 function Canvas:clear(color)
+  -- reuse existing row tables instead of allocating fresh ones every frame (less GC churn)
   for y = 1, self.h do
-    local row = {}
+    local row = self.buf[y]
+    if not row then row = {}; self.buf[y] = row end
     for x = 1, self.w do row[x] = color end
-    self.buf[y] = row
   end
 end
 
