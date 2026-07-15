@@ -79,6 +79,37 @@ local function drawTop(cv, reels, phase, bulbTick, result)
   cv:render()
 end
 
+local ORANGE = 2
+
+local function drawBorder(cv, tick)
+  -- march a lit cell around the perimeter; every 3rd perimeter slot is "on"
+  local lit = YELLOW
+  local dim = ORANGE
+  local i = 0
+  local function seg(x, y) local on = ((i + tick) % 3 == 0); cv:fillRect(x, y, 2, 2, on and lit or dim); i = i + 1 end
+  for x = 1, cv.w - 1, 2 do seg(x, 1) end
+  for y = 3, cv.h - 1, 2 do seg(cv.w - 1, y) end
+  for x = cv.w - 1, 1, -2 do seg(x, cv.h - 1) end
+  for y = cv.h - 1, 3, -2 do seg(1, y) end
+end
+
+local function drawButton(cv, state, borderTick)
+  cv:clear(BLACK)
+  local m = 4                                   -- border margin
+  local x, y, w, h = m, m, cv.w - 2 * m, cv.h - 2 * m
+  local pressed = (state ~= "idle")
+  local hi, lo = WHITE, GREY
+  if pressed then hi, lo = GREY, WHITE end
+  cv:fillRect(x, y, w, h, RED)
+  -- bevel: top + left highlight, bottom + right shadow (swapped when pressed)
+  cv:fillRect(x, y, w, 1, hi); cv:fillRect(x, y, 1, h, hi)
+  cv:fillRect(x, y + h - 1, w, 1, lo); cv:fillRect(x + w - 1, y, 1, h, lo)
+  drawBorder(cv, borderTick)
+  cv:render()
+  -- label via monitor text overlay (crisp) — draw after render using the raw monitor:
+  return state == "locked" and "WAIT" or "SPIN"
+end
+
 local function testMode()
   print("Attached monitors:")
   for _, name in ipairs(peripheral.getNames()) do
@@ -116,3 +147,12 @@ local demoReels = {
 for _, r in ipairs(demoReels) do r.stopped = true end
 drawTop(topCv, demoReels, "idle", 0, "win")
 print("Rendered a demo frame to the top monitor. Ctrl+T to exit.")
+
+local frontMon = findMon(FRONT_NAME)
+frontMon.setTextScale(FRONT_SCALE)
+local frontCv = subpixel.new(frontMon)
+local label = drawButton(frontCv, "idle", 0)
+local fw, fh = frontMon.getSize()
+frontMon.setTextColor(WHITE)
+frontMon.setCursorPos(math.floor((fw - #label) / 2) + 1, math.floor(fh / 2) + 1)
+frontMon.write(label)
