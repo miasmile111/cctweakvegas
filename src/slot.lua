@@ -21,7 +21,7 @@ local subpixel = require("subpixel")
 local SYMBOLS  = require("slot_symbols")
 local logic    = require("slot_logic")
 
-local RED, YELLOW, GREEN, WHITE, BLACK, GREY = 16384, 16, 8192, 1, 32768, 128
+local RED, YELLOW, GREEN, WHITE, BLACK, GREY, LIGHTGRAY = 16384, 16, 8192, 1, 32768, 128, 256
 local SYM_W, SYM_H = 8, 9
 local SYMBOL_PX = SYM_H + 2   -- one symbol slot's pixel height (sprite + gap between symbols)
 
@@ -39,68 +39,91 @@ local function findMon(name)
   return m
 end
 
--- layout computed from the canvas size: reels live in the middle ~80%, leaving a 10% lane on
--- each side for the animated bulb columns so they never overlap the play area.
+-- Layout: gradient fills the WHOLE canvas. A framed reel VIEWPORT sits in the lower-middle;
+-- symbols are clipped to it (they roll in/out behind the top & bottom frame bars). Bulbs frame
+-- all four sides. A banner row at the very bottom stays clear of bulbs for WIN/LOSE text.
 local function topLayout(cv)
-  local playTop = math.floor(cv.h * 0.45)              -- upper ~45% reserved (future scoreboard)
-  local marginX = math.max(2, math.floor(cv.w * 0.10)) -- 10% bulb lane each side
+  local marginX = math.max(2, math.floor(cv.w * 0.10))  -- 10% side bulb lanes
   local zoneW   = cv.w - 2 * marginX
-  local gap     = math.floor((zoneW - 3 * SYM_W) / 2)  -- leftover space split into 2 reel gaps
+  local gap     = math.floor((zoneW - 3 * SYM_W) / 2)
   if gap < 0 then gap = 0 end
   local startX  = marginX + math.floor((zoneW - (3 * SYM_W + 2 * gap)) / 2) + 1
   local xs = {}
   for i = 1, 3 do xs[i] = startX + (i - 1) * (SYM_W + gap) end
-  local bannerTop = cv.h - 5
-  local paylineY  = playTop + math.floor((bannerTop - playTop - SYM_H) / 2)  -- center reels
-  return { playTop = playTop, marginX = marginX, xs = xs, paylineY = paylineY, bannerTop = bannerTop }
+
+  local barH      = math.max(3, math.floor(SYMBOL_PX * 0.7))  -- top/bottom frame bar thickness
+  local bannerH   = 5
+  local bannerTop = cv.h - bannerH + 1
+  local viewTop   = math.floor(cv.h * 0.34) + barH            -- gradient/reserved space above
+  local viewBot   = bannerTop - 1 - barH                      -- leave room for the bottom bar
+  local paylineY  = math.floor((viewTop + viewBot) / 2 - SYM_H / 2)
+  return {
+    marginX = marginX, xs = xs, barH = barH,
+    viewTop = viewTop, viewBot = viewBot, paylineY = paylineY, bannerTop = bannerTop,
+    topBarY = viewTop - barH, botBarY = viewBot + 1,
+  }
 end
 
-local function drawReel(cv, x, centerY, reel)
-  if reel.stopped then
-    -- landed: final symbol on the payline, static neighbours above/below
-    cv:drawSprite(x, centerY, SYMBOLS[reel.final])
-    cv:drawSprite(x, centerY - SYMBOL_PX, SYMBOLS[(reel.final % logic.NUM_SYMBOLS) + 1])
-    cv:drawSprite(x, centerY + SYMBOL_PX, SYMBOLS[((reel.final - 2) % logic.NUM_SYMBOLS) + 1])
-  else
-    -- spinning: a strip of symbols rolls DOWNWARD. Symbol i sits at centerY + pos - i*SYMBOL_PX,
-    -- so as pos grows every symbol slides down; i==0 lands on reel.final for a seamless stop.
-    local n = logic.NUM_SYMBOLS
-    local base = math.floor(reel.pos / SYMBOL_PX)
-    for i = base - 1, base + 2 do
-      local idx = ((reel.final - 1 + i) % n + n) % n + 1
-      cv:drawSprite(x, centerY + reel.pos - i * SYMBOL_PX, SYMBOLS[idx])
+-- draw a sprite but only the rows that fall inside [yMin, yMax] — this clips reel symbols to the
+-- viewport so they roll in/out behind the frame bars (the subpixel lib has no native clipping).
+local function drawSpriteClipped(cv, x, y, sprite, yMin, yMax)
+  y = math.floor(y)
+  for dy = 0, sprite.h - 1 do
+    local py = y + dy
+    if py >= yMin and py <= yMax then
+      for dx = 0, sprite.w - 1 do
+        local col = sprite.px[dy * sprite.w + dx + 1]
+        if col and col ~= 0 then cv:setPixel(x + dx, py, col) end
+      end
     end
   end
 end
 
+-- one strip of symbols, rolling DOWNWARD, clipped to the viewport; pos==0 lands final on payline
+local function drawReel(cv, x, reel, L)
+  local n = logic.NUM_SYMBOLS
+  local base = math.floor(reel.pos / SYMBOL_PX)
+  for i = base - 1, base + 2 do
+    local idx = ((reel.final - 1 + i) % n + n) % n + 1
+    drawSpriteClipped(cv, x, L.paylineY + reel.pos - i * SYMBOL_PX, SYMBOLS[idx], L.viewTop, L.viewBot)
+  end
+end
+
+-- a bulb: on = bright yellow; off = dim (grey normally, red during a win for a chase-of-red look)
+local function bulb(cv, x, y, seed, bulbTick, result)
+  local on
+  if result == "win" then on = (bulbTick % 2 == 0)
+  else on = ((seed + bulbTick) % 2 == 0) end
+  cv:fillRect(x, y, 2, 2, on and YELLOW or (result == "win" and RED or GREY))
+end
+
 local function drawTop(cv, reels, bulbTick, result)
-  cv:clear(BLACK)                         -- reserved area (above playTop) stays black
   local L = topLayout(cv)
-  -- animated gradient background across the play region (colours are palette-driven; the RGB
-  -- of the GRAD slots drifts over time in updateGradient, recolouring these bands for free)
-  local bandH = math.ceil((L.bannerTop - L.playTop) / #GRAD)
+  -- gradient background across the ENTIRE canvas (palette-driven; recoloured for free each tick)
+  local bandH = math.ceil(cv.h / #GRAD)
   for b = 1, #GRAD do
-    cv:fillRect(1, L.playTop + (b - 1) * bandH, cv.w, bandH, GRAD[b])
+    cv:fillRect(1, 1 + (b - 1) * bandH, cv.w, bandH, GRAD[b])
   end
-  -- marquee bar (flashes gold on a win)
-  local marq = (result == "win" and bulbTick % 2 == 0) and YELLOW or RED
-  cv:fillRect(1, L.playTop, cv.w, 3, marq)
-  -- payline highlight band
-  cv:fillRect(1, L.paylineY - 1, cv.w, SYM_H + 2, GREY)
-  -- reels (middle 80%)
-  for i = 1, 3 do
-    drawReel(cv, L.xs[i], L.paylineY, reels[i])
+  -- payline highlight (brighter, behind the symbols)
+  cv:fillRect(1, L.paylineY - 1, cv.w, SYM_H + 2, LIGHTGRAY)
+  -- reels, clipped to the viewport
+  for i = 1, 3 do drawReel(cv, L.xs[i], reels[i], L) end
+  -- top & bottom frame bars over the reel edges (flash gold on a win)
+  local barCol = (result == "win" and bulbTick % 2 == 0) and YELLOW or RED
+  cv:fillRect(1, L.topBarY, cv.w, L.barH, barCol)
+  cv:fillRect(1, L.botBarY, cv.w, L.barH, barCol)
+  -- bulbs around all four sides, on top of the bars
+  local topRow = L.topBarY + math.floor(L.barH / 2) - 1
+  local botRow = L.botBarY + math.floor(L.barH / 2) - 1
+  for x = L.marginX, cv.w - L.marginX, 4 do
+    bulb(cv, x, topRow, math.floor(x / 4), bulbTick, result)
+    bulb(cv, x, botRow, math.floor(x / 4), bulbTick, result)
   end
-  -- bulb lanes in the outer 10% (chase normally; all flash together on a win)
-  for y = L.playTop, L.bannerTop - 2, 4 do
-    local on
-    if result == "win" then on = (bulbTick % 2 == 0)
-    else on = ((math.floor(y / 4) + bulbTick) % 2 == 0) end
-    local c = on and YELLOW or (result == "win" and RED or GREY)
-    cv:fillRect(1, y, 2, 2, c)
-    cv:fillRect(cv.w - 1, y, 2, 2, c)
+  for y = L.viewTop, L.viewBot, 4 do
+    bulb(cv, 1, y, math.floor(y / 4), bulbTick, result)
+    bulb(cv, cv.w - 1, y, math.floor(y / 4), bulbTick, result)
   end
-  -- result banner (text overlay is written by drawTopFrame, on top of this fill)
+  -- result banner at the very bottom (below all bulbs; text overlay written by drawTopFrame)
   if result == "win" then
     cv:fillRect(1, L.bannerTop, cv.w, 5, GREEN)
   elseif result == "lose" then
