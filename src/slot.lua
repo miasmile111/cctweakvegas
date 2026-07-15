@@ -28,8 +28,8 @@ local SYMBOL_PX = SYM_H + 2   -- one symbol slot's pixel height (sprite + gap be
 -- Animated background: these unused colour slots get redefined at runtime to a drifting
 -- deep-blue <-> teal gradient (see updateGradient). None collide with the symbol/UI colours.
 local GRAD = { 2048, 512, 8, 1024, 64 }   -- blue, cyan, lightBlue, purple, pink palette slots
-local GRAD_DEEP = { 0.04, 0.06, 0.34 }    -- deep blue  (r,g,b 0..1)
-local GRAD_TEAL = { 0.00, 0.45, 0.50 }    -- teal
+local GRAD_DEEP = { 0.00, 0.10, 0.65 }    -- vivid blue (r,g,b 0..1) — bright on purpose to verify
+local GRAD_TEAL = { 0.00, 0.75, 0.65 }    -- vivid teal
 
 local function findMon(name)
   local m = peripheral.wrap(name)
