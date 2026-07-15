@@ -12,7 +12,7 @@
 local TOP_NAME   = "top"     -- the 1x2 portrait monitor (side name if touching, else monitor_N)
 local TOP_SCALE  = 0.5
 local SPIN_SIDE  = "back"    -- computer side the lever's redstone feeds
-local SPIN_LEVEL = 15        -- spin when analog signal on SPIN_SIDE reaches this (lever ramps 0->15)
+local SPIN_LEVEL = 13        -- spin when analog signal on SPIN_SIDE reaches this (lever ramps up to 15)
 -- ----------------------------------------------------------------------------
 
 local args = { ... }
@@ -62,12 +62,13 @@ local function drawReel(cv, x, centerY, reel)
     cv:drawSprite(x, centerY - SYMBOL_PX, SYMBOLS[(reel.final % logic.NUM_SYMBOLS) + 1])
     cv:drawSprite(x, centerY + SYMBOL_PX, SYMBOLS[((reel.final - 2) % logic.NUM_SYMBOLS) + 1])
   else
-    -- spinning: a strip of symbols rolls upward continuously, wrapping every SYMBOL_PX
-    local shift = reel.pos % SYMBOL_PX
-    local top   = math.floor(reel.pos / SYMBOL_PX)
-    for k = -1, 2 do
-      local idx = ((reel.final + top + k) % logic.NUM_SYMBOLS) + 1
-      cv:drawSprite(x, centerY - shift + (k - 1) * SYMBOL_PX, SYMBOLS[idx])
+    -- spinning: a strip of symbols rolls DOWNWARD. Symbol i sits at centerY + pos - i*SYMBOL_PX,
+    -- so as pos grows every symbol slides down; i==0 lands on reel.final for a seamless stop.
+    local n = logic.NUM_SYMBOLS
+    local base = math.floor(reel.pos / SYMBOL_PX)
+    for i = base - 1, base + 2 do
+      local idx = ((reel.final - 1 + i) % n + n) % n + 1
+      cv:drawSprite(x, centerY + reel.pos - i * SYMBOL_PX, SYMBOLS[idx])
     end
   end
 end
