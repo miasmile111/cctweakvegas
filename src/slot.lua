@@ -23,6 +23,13 @@ local logic    = require("slot_logic")
 
 local RED, YELLOW, GREEN, WHITE, BLACK, GREY = 16384, 16, 8192, 1, 32768, 128
 local SYM_W, SYM_H = 8, 9
+local SYMBOL_PX = SYM_H + 2   -- one symbol slot's pixel height (sprite + gap between symbols)
+
+-- Animated background: these unused colour slots get redefined at runtime to a drifting
+-- deep-blue <-> teal gradient (see updateGradient). None collide with the symbol/UI colours.
+local GRAD = { 2048, 512, 8, 1024, 64 }   -- blue, cyan, lightBlue, purple, pink palette slots
+local GRAD_DEEP = { 0.04, 0.06, 0.34 }    -- deep blue  (r,g,b 0..1)
+local GRAD_TEAL = { 0.00, 0.45, 0.50 }    -- teal
 
 local function findMon(name)
   local m = peripheral.wrap(name)
@@ -48,25 +55,32 @@ local function topLayout(cv)
   return { playTop = playTop, marginX = marginX, xs = xs, paylineY = paylineY, bannerTop = bannerTop }
 end
 
-local function drawReel(cv, x, centerY, reel, tick, i)
-  -- center symbol: while spinning, cycle through symbols; once stopped, show the final result
-  local center
+local function drawReel(cv, x, centerY, reel)
   if reel.stopped then
-    center = SYMBOLS[reel.final]
+    -- landed: final symbol on the payline, static neighbours above/below
+    cv:drawSprite(x, centerY, SYMBOLS[reel.final])
+    cv:drawSprite(x, centerY - SYMBOL_PX, SYMBOLS[(reel.final % logic.NUM_SYMBOLS) + 1])
+    cv:drawSprite(x, centerY + SYMBOL_PX, SYMBOLS[((reel.final - 2) % logic.NUM_SYMBOLS) + 1])
   else
-    center = SYMBOLS[((reel.final + tick * 2 + i) % logic.NUM_SYMBOLS) + 1]
+    -- spinning: a strip of symbols rolls upward continuously, wrapping every SYMBOL_PX
+    local shift = reel.pos % SYMBOL_PX
+    local top   = math.floor(reel.pos / SYMBOL_PX)
+    for k = -1, 2 do
+      local idx = ((reel.final + top + k) % logic.NUM_SYMBOLS) + 1
+      cv:drawSprite(x, centerY - shift + (k - 1) * SYMBOL_PX, SYMBOLS[idx])
+    end
   end
-  cv:drawSprite(x, centerY, center)
-  -- neighbor symbols above/below, scrolled by offset (vertical motion; CC has no alpha to dim)
-  local above = SYMBOLS[(reel.final % logic.NUM_SYMBOLS) + 1]
-  local below = SYMBOLS[((reel.final - 2) % logic.NUM_SYMBOLS) + 1]
-  cv:drawSprite(x, centerY - SYM_H - 1 + (reel.offset or 0), above)
-  cv:drawSprite(x, centerY + SYM_H + 1 + (reel.offset or 0), below)
 end
 
 local function drawTop(cv, reels, bulbTick, result)
-  cv:clear(BLACK)
+  cv:clear(BLACK)                         -- reserved area (above playTop) stays black
   local L = topLayout(cv)
+  -- animated gradient background across the play region (colours are palette-driven; the RGB
+  -- of the GRAD slots drifts over time in updateGradient, recolouring these bands for free)
+  local bandH = math.ceil((L.bannerTop - L.playTop) / #GRAD)
+  for b = 1, #GRAD do
+    cv:fillRect(1, L.playTop + (b - 1) * bandH, cv.w, bandH, GRAD[b])
+  end
   -- marquee bar (flashes gold on a win)
   local marq = (result == "win" and bulbTick % 2 == 0) and YELLOW or RED
   cv:fillRect(1, L.playTop, cv.w, 3, marq)
@@ -74,7 +88,7 @@ local function drawTop(cv, reels, bulbTick, result)
   cv:fillRect(1, L.paylineY - 1, cv.w, SYM_H + 2, GREY)
   -- reels (middle 80%)
   for i = 1, 3 do
-    drawReel(cv, L.xs[i], L.paylineY, reels[i], bulbTick, i)
+    drawReel(cv, L.xs[i], L.paylineY, reels[i])
   end
   -- bulb lanes in the outer 10% (chase normally; all flash together on a win)
   for y = L.playTop, L.bannerTop - 2, 4 do
@@ -143,7 +157,23 @@ local topWin = window.create(topMon, 1, 1, tw, th, true)   -- offscreen buffer -
 local topCv  = subpixel.new(topWin)
 
 local TICK = 0.05
-local SYMBOL_PX = SYM_H + 2
+
+-- capture the gradient slots' original palette so we can restore it on exit
+local gradOrig = {}
+for i = 1, #GRAD do gradOrig[i] = { topMon.getPaletteColour(GRAD[i]) } end
+
+-- drift the GRAD palette slots along a deep-blue <-> teal wave; changing the palette recolours
+-- the already-drawn background bands with no redraw, so this costs ~5 calls/tick (basically free)
+local function updateGradient(phase)
+  for i = 1, #GRAD do
+    local a = 0.5 + 0.5 * math.sin(phase + i * 0.9)
+    local r = GRAD_DEEP[1] + (GRAD_TEAL[1] - GRAD_DEEP[1]) * a
+    local g = GRAD_DEEP[2] + (GRAD_TEAL[2] - GRAD_DEEP[2]) * a
+    local b = GRAD_DEEP[3] + (GRAD_TEAL[3] - GRAD_DEEP[3]) * a
+    topMon.setPaletteColour(GRAD[i], r, g, b)
+    topWin.setPaletteColour(GRAD[i], r, g, b)
+  end
+end
 
 -- draw one full top-monitor frame (subpixel graphics + banner text overlay), flushed at once
 local function drawTopFrame(reels, bulbTick, result)
@@ -174,6 +204,7 @@ for _, r in ipairs(reels) do r.stopped = true end
 local tick, spinTick, resultAt, result = 0, 0, nil, nil
 local armed = true          -- rising-edge guard: only spin when the lever crosses UP to SPIN_LEVEL
 
+updateGradient(0)
 drawTopFrame(reels, 0, nil)
 local timer = os.startTimer(TICK)
 
@@ -181,6 +212,7 @@ while true do
   local ev = { os.pullEvent() }
   if ev[1] == "timer" and ev[2] == timer then
     tick = tick + 1
+    updateGradient(tick * 0.05)   -- slow blue<->teal drift, every state
 
     -- read the physical lever (poll every tick — a held signal fires no event)
     local lvl = redstone.getAnalogInput(SPIN_SIDE)
@@ -219,6 +251,10 @@ while true do
   end
 end
 
--- cleanup
+-- cleanup: restore the gradient slots to their original palette, then clear
+for i = 1, #GRAD do
+  local o = gradOrig[i]
+  topMon.setPaletteColour(GRAD[i], o[1], o[2], o[3])
+end
 topMon.setBackgroundColor(colors.black); topMon.clear(); topMon.setCursorPos(1, 1); topMon.setTextScale(1)
 print("Thanks for playing Slots!")

@@ -6,15 +6,20 @@ local L = require("slot_logic")
 t.ok(L.isWin(3, 3, 3), "three equal -> win")
 t.ok(not L.isWin(3, 3, 2), "one different -> lose")
 
--- reel stops exactly at stopTick and snaps offset to 0
+-- reel scrolls, then decelerates past stopTick to a full stop with pos snapped to 0
 do
-  local reel = L.newReel(2, 5)   -- final symbol 2, stops at tick 5
-  local stopped = L.stepReel(reel, 3, 8)
+  local reel = L.newReel(2, 5)   -- final symbol 2, begins decelerating at tick 5
+  t.eq(reel.pos, 0, "new reel: pos 0")
+  t.ok(not reel.stopped, "new reel: spinning")
+  local stopped = L.stepReel(reel, 3, 11)   -- before stopTick
   t.ok(not stopped, "before stopTick: still spinning")
-  t.ok(reel.offset > 0, "before stopTick: offset advanced (blur)")
-  L.stepReel(reel, 5, 8)
-  t.ok(reel.stopped, "at stopTick: stopped")
-  t.eq(reel.offset, 0, "on stop: offset snapped to 0")
+  t.ok(reel.pos > 0, "before stopTick: pos advanced")
+  -- keep stepping past stopTick until it eases to a stop (guard against a runaway loop)
+  local guard = 0
+  while not reel.stopped and guard < 100 do L.stepReel(reel, 10, 11); guard = guard + 1 end
+  t.ok(reel.stopped, "decelerates to a stop after stopTick")
+  t.ok(guard > 0 and guard < 100, "stop takes a few easing ticks, not instant or infinite")
+  t.eq(reel.pos, 0, "on stop: pos snapped to 0")
 end
 
 -- pickFinals maps rng [0,1) into 1..NUM_SYMBOLS
