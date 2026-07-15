@@ -40,9 +40,16 @@ local function topLayout(cv)
   return { playTop = playTop, reelsX = reelsX, paylineY = paylineY }
 end
 
-local function drawReel(cv, x, centerY, reel, dimAbove)
-  -- center symbol
-  cv:drawSprite(x, centerY, SYMBOLS[reel.final])
+local function drawReel(cv, x, centerY, reel, tick, i)
+  -- center symbol: while spinning, cycle through symbols; once stopped, show the final result
+  local center
+  if reel.stopped then
+    center = SYMBOLS[reel.final]
+  else
+    local ci = ((reel.final + tick * 2 + i) % logic.NUM_SYMBOLS) + 1
+    center = SYMBOLS[ci]
+  end
+  cv:drawSprite(x, centerY, center)
   -- dim spin-past neighbors above/below (drawn darker by overlaying a translucent-ish band:
   -- simplest: draw neighbor sprites shifted by offset; CC has no alpha, so we just draw them)
   local above = SYMBOLS[(reel.final % logic.NUM_SYMBOLS) + 1]
@@ -61,7 +68,7 @@ local function drawTop(cv, reels, phase, bulbTick, result)
   -- reels
   for i = 1, 3 do
     local x = L.reelsX + (i - 1) * (SYM_W + REEL_GAP)
-    drawReel(cv, x, L.paylineY, reels[i], true)
+    drawReel(cv, x, L.paylineY, reels[i], bulbTick, i)
   end
   -- chasing bulb columns (both sides)
   for y = L.playTop, cv.h - 3, 4 do
@@ -143,18 +150,21 @@ local rng = function() return math.random() end
 
 local topMon = findMon(TOP_NAME);   topMon.setTextScale(TOP_SCALE)
 local frontMon = findMon(FRONT_NAME); frontMon.setTextScale(FRONT_SCALE)
-local topCv = subpixel.new(topMon)
-local frontCv = subpixel.new(frontMon)
+local tw, th = topMon.getSize()
+local topWin = window.create(topMon, 1, 1, tw, th, true)     -- offscreen buffer -> no flicker
 local fw, fh = frontMon.getSize()
+local frontWin = window.create(frontMon, 1, 1, fw, fh, true) -- offscreen buffer -> no flicker
+local topCv = subpixel.new(topWin)
+local frontCv = subpixel.new(frontWin)
 
 local TICK = 0.05
 local SYMBOL_PX = SYM_H + 2
 
 local function drawFront(state, borderTick)
   local label = drawButton(frontCv, state, borderTick)
-  frontMon.setTextColor(WHITE)
-  frontMon.setCursorPos(math.floor((fw - #label) / 2) + 1, math.floor(fh / 2) + 1)
-  frontMon.write(label)
+  frontWin.setTextColor(WHITE)
+  frontWin.setCursorPos(math.floor((fw - #label) / 2) + 1, math.floor(fh / 2) + 1)
+  frontWin.write(label)
 end
 
 local function newSpin()
@@ -171,8 +181,8 @@ local reels = newSpin()
 for _, r in ipairs(reels) do r.stopped = true end
 local tick, spinTick, resultAt, result = 0, 0, nil, nil
 
-drawTop(topCv, reels, "idle", 0, nil)
-drawFront("idle", 0)
+topWin.setVisible(false); drawTop(topCv, reels, "idle", 0, nil); topWin.setVisible(true)
+frontWin.setVisible(false); drawFront("idle", 0); frontWin.setVisible(true)
 local timer = os.startTimer(TICK)
 
 while true do
@@ -185,29 +195,29 @@ while true do
       for _, r in ipairs(reels) do
         if not logic.stepReel(r, spinTick, SYMBOL_PX) then allStopped = false end
       end
-      drawTop(topCv, reels, "spin", tick, nil)
-      drawFront("locked", tick)
+      topWin.setVisible(false); drawTop(topCv, reels, "spin", tick, nil); topWin.setVisible(true)
+      frontWin.setVisible(false); drawFront("locked", tick); frontWin.setVisible(true)
       if allStopped then
         result = logic.isWin(reels[1].final, reels[2].final, reels[3].final) and "win" or "lose"
-        drawTop(topCv, reels, "result", tick, result)
+        topWin.setVisible(false); drawTop(topCv, reels, "result", tick, result); topWin.setVisible(true)
         state, resultAt = "result", tick
       end
     elseif state == "result" then
-      drawFront("idle", tick)
+      frontWin.setVisible(false); drawFront("idle", tick); frontWin.setVisible(true)
       if tick - resultAt > 40 then          -- ~2s banner
         result = nil
-        drawTop(topCv, reels, "idle", tick, nil)
+        topWin.setVisible(false); drawTop(topCv, reels, "idle", tick, nil); topWin.setVisible(true)
         state = "idle"
       end
     else -- idle: keep the attract border + bulbs alive
-      drawTop(topCv, reels, "idle", tick, nil)
-      drawFront("idle", tick)
+      topWin.setVisible(false); drawTop(topCv, reels, "idle", tick, nil); topWin.setVisible(true)
+      frontWin.setVisible(false); drawFront("idle", tick); frontWin.setVisible(true)
     end
     timer = os.startTimer(TICK)
   elseif ev[1] == "monitor_touch" and ev[2] == FRONT_NAME and state == "idle" then
     reels = newSpin()
     state, spinTick = "spinning", 0
-    drawFront("pressed", tick)
+    frontWin.setVisible(false); drawFront("pressed", tick); frontWin.setVisible(true)
   elseif ev[1] == "key" and ev[2] == keys.q then
     break
   end
