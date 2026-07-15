@@ -37,19 +37,20 @@ whether the `http` API is available (it must be, for imports to work).
 - HTTP is enabled on the pack; `localhost`/LAN is blocked, public URLs are allowed.
 - The `cc-lua` skill in `.claude/skills/` guides Claude Code when writing programs here.
 
-## slot — two-monitor slot machine
+## slot — lever-triggered slot machine
 
 Files: `src/lib/subpixel.lua` + `src/slot.lua` (+ `src/slot_logic.lua`, `src/slot_symbols.lua`).
 
-Wiring: one computer; two ADVANCED monitors on a wired modem + networking cable. Top monitor
-1×2 (portrait) = reels; front monitor 1×1 = touchscreen SPIN button.
+Wiring: one computer; one ADVANCED monitor 1×2 (portrait) = the reels. A redstone **lever**
+feeds a side of the computer; the reels spin when that side's analog signal reaches `SPIN_LEVEL`
+(15). No touchscreen — the physical lever is the input.
 
-Import (each file, over HTTP):
+Import (each file, over HTTP — filenames must match exactly, no extra `s`):
 ```
 pastebin get <code> subpixel     # or wget <raw-url> subpixel
 pastebin get <code> slot_logic
 pastebin get <code> slot_symbols
 pastebin get <code> slot
 ```
-Then `slot test` to find monitor names → edit `TOP_NAME`/`FRONT_NAME` in `slot` → run `slot`.
-Tap the front monitor to spin.
+Then `slot test` → note the monitor name + which **side** your lever drives (its level hits 15)
+→ set `TOP_NAME` and `SPIN_SIDE` in `slot` → run `slot`. Pull the lever to spin.
