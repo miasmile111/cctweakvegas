@@ -28,4 +28,14 @@ do
   t.ok(c >= 1 and c <= L.NUM_SYMBOLS, "rng mid -> in range")
 end
 
+-- symbols are well-formed sprites, one per logic symbol
+do
+  local S = require("slot_symbols")
+  t.eq(#S, L.NUM_SYMBOLS, "one sprite per symbol")
+  for i = 1, #S do
+    t.ok(S[i].w > 0 and S[i].h > 0, "sprite " .. i .. " has size")
+    t.eq(#S[i].px, S[i].w * S[i].h, "sprite " .. i .. " px count == w*h")
+  end
+end
+
 t.done()
