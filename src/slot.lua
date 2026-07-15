@@ -137,22 +137,84 @@ if args[1] == "test" then
   return
 end
 
--- (play mode wired up in later tasks)
-local topMon = findMon(TOP_NAME)
-topMon.setTextScale(TOP_SCALE)
-local topCv = subpixel.new(topMon)
-local demoReels = {
-  logic.newReel(1, 0), logic.newReel(1, 0), logic.newReel(1, 0),
-}
-for _, r in ipairs(demoReels) do r.stopped = true end
-drawTop(topCv, demoReels, "idle", 0, "win")
-print("Rendered a demo frame to the top monitor. Ctrl+T to exit.")
+-- ===== PLAY =================================================================
+math.randomseed(os.epoch("utc"))
+local rng = function() return math.random() end
 
-local frontMon = findMon(FRONT_NAME)
-frontMon.setTextScale(FRONT_SCALE)
+local topMon = findMon(TOP_NAME);   topMon.setTextScale(TOP_SCALE)
+local frontMon = findMon(FRONT_NAME); frontMon.setTextScale(FRONT_SCALE)
+local topCv = subpixel.new(topMon)
 local frontCv = subpixel.new(frontMon)
-local label = drawButton(frontCv, "idle", 0)
 local fw, fh = frontMon.getSize()
-frontMon.setTextColor(WHITE)
-frontMon.setCursorPos(math.floor((fw - #label) / 2) + 1, math.floor(fh / 2) + 1)
-frontMon.write(label)
+
+local TICK = 0.05
+local SYMBOL_PX = SYM_H + 2
+
+local function drawFront(state, borderTick)
+  local label = drawButton(frontCv, state, borderTick)
+  frontMon.setTextColor(WHITE)
+  frontMon.setCursorPos(math.floor((fw - #label) / 2) + 1, math.floor(fh / 2) + 1)
+  frontMon.write(label)
+end
+
+local function newSpin()
+  local a, b, c = logic.pickFinals(rng)
+  return {
+    logic.newReel(a, 12),   -- staggered stop ticks
+    logic.newReel(b, 20),
+    logic.newReel(c, 28),
+  }
+end
+
+local state = "idle"        -- idle | spinning | result
+local reels = newSpin()
+for _, r in ipairs(reels) do r.stopped = true end
+local tick, spinTick, resultAt, result = 0, 0, nil, nil
+
+drawTop(topCv, reels, "idle", 0, nil)
+drawFront("idle", 0)
+local timer = os.startTimer(TICK)
+
+while true do
+  local ev = { os.pullEvent() }
+  if ev[1] == "timer" and ev[2] == timer then
+    tick = tick + 1
+    if state == "spinning" then
+      spinTick = spinTick + 1
+      local allStopped = true
+      for _, r in ipairs(reels) do
+        if not logic.stepReel(r, spinTick, SYMBOL_PX) then allStopped = false end
+      end
+      drawTop(topCv, reels, "spin", tick, nil)
+      drawFront("locked", tick)
+      if allStopped then
+        result = logic.isWin(reels[1].final, reels[2].final, reels[3].final) and "win" or "lose"
+        drawTop(topCv, reels, "result", tick, result)
+        state, resultAt = "result", tick
+      end
+    elseif state == "result" then
+      drawFront("idle", tick)
+      if tick - resultAt > 40 then          -- ~2s banner
+        result = nil
+        drawTop(topCv, reels, "idle", tick, nil)
+        state = "idle"
+      end
+    else -- idle: keep the attract border + bulbs alive
+      drawTop(topCv, reels, "idle", tick, nil)
+      drawFront("idle", tick)
+    end
+    timer = os.startTimer(TICK)
+  elseif ev[1] == "monitor_touch" and ev[2] == FRONT_NAME and state == "idle" then
+    reels = newSpin()
+    state, spinTick = "spinning", 0
+    drawFront("pressed", tick)
+  elseif ev[1] == "key" and ev[2] == keys.q then
+    break
+  end
+end
+
+-- cleanup
+for _, m in ipairs({ topMon, frontMon }) do
+  m.setBackgroundColor(colors.black); m.clear(); m.setCursorPos(1, 1); m.setTextScale(1)
+end
+print("Thanks for playing Slots!")
