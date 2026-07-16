@@ -68,7 +68,7 @@ local function topLayout()
     paylineY  = Rl(14),                       -- middle symbol top
     botBarY   = Rl(21), botBarH = 6,          -- bottom red bar (rows 21-22)
     stakeY    = Rl(23),                       -- stake buttons (rows 23-24)
-    sideTop   = Rl(9),  sideBot = Rl(21) + 2, -- side bulb lanes (cols 1 & 15, rows 9-21)
+    sideTop   = Rl(10), sideBot = Rl(20) + 2, -- side bulb lanes (cols 1 & 15) — below top bar, above bottom bar
   }
 end
 
