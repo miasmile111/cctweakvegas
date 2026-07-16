@@ -158,22 +158,22 @@
     <div class="card">
       <label class="lbl">Monitor</label>
       <div class="row">
-        <label class="field">cols <input type="number" id="cfg-cols" value="15" min="1" max="200"></label>
-        <label class="field">rows <input type="number" id="cfg-rows" value="21" min="1" max="200"></label>
+        <label class="field">cols <input type="number" id="cfg-cols" value="15" min="1" max="400"></label>
+        <label class="field">rows <input type="number" id="cfg-rows" value="24" min="1" max="400"></label>
         <button class="btn" id="cfg-apply">resize</button>
       </div>
       <div class="row" style="margin-top:8px">
         <label class="field">blocks W <input type="number" id="cfg-bw" value="1" min="1" max="20"></label>
         <label class="field">H <input type="number" id="cfg-bh" value="2" min="1" max="20"></label>
+        <button class="btn primary" id="cfg-maxres" title="max cells for this block layout (scale 0.5)">⤢ max res</button>
       </div>
       <div class="row" style="margin-top:8px">
-        <button class="btn" data-preset="15,21,1,2">slot ≈15×21</button>
-        <button class="btn" data-preset="18,12,2,1">wide ≈18×12</button>
-        <button class="btn" data-preset="26,20,2,2">big ≈26×20</button>
+        <button class="btn" data-blocks="1,2">1×2 (slot)</button>
+        <button class="btn" data-blocks="2,1">2×1</button>
+        <button class="btn" data-blocks="2,2">2×2</button>
+        <button class="btn" data-blocks="3,2">3×2</button>
       </div>
-      <p class="note" style="margin:10px 0 0">cols×rows = <code>getSize()</code> in-world. Canvas =
-        cols·2 × rows·3 subpixels. Presets are estimates — read the real size with a station's
-        <code>test</code> mode and type it here.</p>
+      <p class="note" id="cfg-note" style="margin:10px 0 0"></p>
     </div>
 
     <div class="card">
@@ -237,7 +237,7 @@
 
   // ---- state ---------------------------------------------------------------
   var state = {
-    cols:15, rows:21, subW:30, subH:63,
+    cols:15, rows:24, subW:30, subH:72,
     buf:null,                    // Int8Array(subW*subH), -1 transparent
     palette:CC_DEFAULT.map(function(p){return {name:p[0],hex:p[1]};}),
     textRegions:[], nextTrId:1,
@@ -256,7 +256,7 @@
     }
     state.buf=b;
   }
-  alloc(15,21,false);
+  alloc(15,24,false);
 
   function idx(sx,sy){ return (sy-1)*state.subW+(sx-1); }         // 1-based coords
   function getPx(sx,sy){ if(sx<1||sy<1||sx>state.subW||sy>state.subH) return TRANSP; return state.buf[idx(sx,sy)]; }
@@ -527,7 +527,7 @@
     if (o.version!==1) throw new Error("unsupported version "+o.version);
     if (!o.monitor||!o.pixels||!Array.isArray(o.pixels)) throw new Error("missing monitor/pixels");
     var cols=o.monitor.cols|0, rows=o.monitor.rows|0;
-    if (cols<1||rows<1||cols>200||rows>200) throw new Error("bad dimensions");
+    if (cols<1||rows<1||cols>400||rows>400) throw new Error("bad dimensions");
     if (o.pixels.length!==cols*2*rows*3) throw new Error("pixel count mismatch");
     // commit
     alloc(cols,rows,false);
@@ -596,19 +596,44 @@
     document.getElementById("ov-"+k).addEventListener("change",function(e){ state.overlays[k]=e.target.checked; repaint(); });
   });
   document.getElementById("cfg-apply").addEventListener("click",function(){
-    var cols=clamp(+document.getElementById("cfg-cols").value,1,200), rows=clamp(+document.getElementById("cfg-rows").value,1,200);
+    var cols=clamp(+document.getElementById("cfg-cols").value,1,400), rows=clamp(+document.getElementById("cfg-rows").value,1,400);
     var lose=(cols*2<state.subW)||(rows*3<state.subH);
     if (lose && !window.confirm("Shrinking will discard out-of-range pixels. Continue?")) return;
-    alloc(cols,rows,true); state.history=[]; state.hist=-1; pushHistory(); repaint();
+    alloc(cols,rows,true); state.history=[]; state.hist=-1; pushHistory(); updateCfgNote(); repaint();
   });
   function bumpSeam(){ if(!state.overlays.seam){ state.overlays.seam=true; document.getElementById("ov-seam").checked=true; } }
-  document.getElementById("cfg-bw").addEventListener("input",function(e){ state.blocks.w=clamp(+e.target.value,1,20); bumpSeam(); repaint(); });
-  document.getElementById("cfg-bh").addEventListener("input",function(e){ state.blocks.h=clamp(+e.target.value,1,20); bumpSeam(); repaint(); });
-  document.querySelectorAll("[data-preset]").forEach(function(b){ b.addEventListener("click",function(){
-    var a=b.dataset.preset.split(",").map(Number);
-    document.getElementById("cfg-cols").value=a[0]; document.getElementById("cfg-rows").value=a[1];
-    document.getElementById("cfg-bw").value=a[2]; document.getElementById("cfg-bh").value=a[3];
-    state.blocks={w:a[2],h:a[3]}; alloc(a[0],a[1],true); state.history=[]; state.hist=-1; pushHistory(); repaint();
+  document.getElementById("cfg-bw").addEventListener("input",function(e){ state.blocks.w=clamp(+e.target.value,1,20); bumpSeam(); updateCfgNote(); repaint(); });
+  document.getElementById("cfg-bh").addEventListener("input",function(e){ state.blocks.h=clamp(+e.target.value,1,20); bumpSeam(); updateCfgNote(); repaint(); });
+
+  // Exact terminal size for a block layout at a text scale, per CC:Tweaked ServerMonitor.rebuild():
+  //   cells = max(1, round( (blocks - 0.3125) / (scale * font/64) )),  font = 6 (w) / 9 (h)
+  //   0.3125 = 2*(RENDER_BORDER 2/16 + RENDER_MARGIN 0.5/16);  scale 0.5 = max resolution.
+  function cellsFor(bw,bh,scale){
+    var sub=2*(2/16 + 0.5/16);
+    return { cols:Math.max(1,Math.round((bw-sub)/(scale*6/64))),
+             rows:Math.max(1,Math.round((bh-sub)/(scale*9/64))) };
+  }
+  function applyMaxRes(){
+    var bw=clamp(+document.getElementById("cfg-bw").value,1,20), bh=clamp(+document.getElementById("cfg-bh").value,1,20);
+    var c=cellsFor(bw,bh,0.5);
+    document.getElementById("cfg-cols").value=c.cols; document.getElementById("cfg-rows").value=c.rows;
+    document.getElementById("cfg-bw").value=bw; document.getElementById("cfg-bh").value=bh;
+    state.blocks={w:bw,h:bh}; bumpSeam();
+    alloc(c.cols,c.rows,true); state.history=[]; state.hist=-1; pushHistory(); updateCfgNote(); repaint();
+  }
+  function updateCfgNote(){
+    var mx=cellsFor(state.blocks.w,state.blocks.h,0.5);
+    document.getElementById("cfg-note").innerHTML =
+      "cols×rows = <code>getSize()</code> in-world. <b>Max res</b> ("+state.blocks.w+"×"+state.blocks.h+
+      " blocks @ scale 0.5) → <b>"+mx.cols+"×"+mx.rows+"</b> cells = "+(mx.cols*2)+"×"+(mx.rows*3)+
+      " subpixels = "+(mx.cols*6)+"×"+(mx.rows*9)+" real px. <em>Exact</em> (CC formula); bigger scale = fewer cells. "+
+      "Block-seam positions drawn as even divisions — approximate, verify in-world.";
+  }
+  document.getElementById("cfg-maxres").addEventListener("click",applyMaxRes);
+  document.querySelectorAll("[data-blocks]").forEach(function(b){ b.addEventListener("click",function(){
+    var a=b.dataset.blocks.split(",").map(Number);
+    document.getElementById("cfg-bw").value=a[0]; document.getElementById("cfg-bh").value=a[1];
+    applyMaxRes();
   }); });
   function clamp(v,lo,hi){ v=v||lo; return v<lo?lo:v>hi?hi:v; }
 
@@ -650,6 +675,6 @@
   window.addEventListener("resize",function(){ clearTimeout(window.__rt); window.__rt=setTimeout(repaint,120); });
 
   // init
-  buildPalette(); syncSlotEditor(); syncTextList(); pushHistory(); repaint(); selftest(); syncHistBtns();
+  buildPalette(); syncSlotEditor(); syncTextList(); updateCfgNote(); pushHistory(); repaint(); selftest(); syncHistBtns();
 })();
 </script>
