@@ -16,7 +16,9 @@ stray `MB` anywhere, it's `$`.)
 
 ```
 GAME      slot.lua (round loop + visuals)  +  slot_pay.lua (stake + payout eval)   ← tiny, per-game
+          cage.lua (kiosk loop + UI)                                               ← tiny, per-game
 GATEWAY   sp_econ.lua  (single-player: one card, house paytable)                    ← built
+          cage_econ.lua (card session + hub debit/credit, sibling of sp_econ)       ← built
           mp_econ.lua  (multi-card pot / wagers)                                    ← future
 CORE      card.lua · wallet.lua (+outbox) · ledger.lua (hub)                        ← SP/MP-agnostic
 ```
@@ -28,21 +30,35 @@ CORE      card.lua · wallet.lua (+outbox) · ledger.lua (hub)                  
 - **`lib/sp_econ.lua`** — the single-player gateway; composes card+wallet into a bet-gate/settle API
   a game drives from its `play()` loop (passed in like `pres`): `tryBet()`, `settle(result)`,
   `onEvent(ev)`, `status()`.
+- **`lib/cage_econ.lua`** — the cage's gateway (sibling of `sp_econ`, not built on it — the cage is
+  debit/credit-shaped, not bet/settle-shaped): `tryDebit(amount)`, `deposit(amount)`,
+  `refund(amount)`, `onEvent(ev)`, `status()`.
 - **`slot/slot_pay.lua`** — the slot's tiny payout script: `STAKE` + `eval(result)`.
-- **`hub/hub.lua`** — owns `ledger.tbl` + the `bet/credit/query/mint` handlers (sole writer).
+- **`hub/hub.lua`** — owns `ledger.tbl` + the `bet/credit/query/mint/debit` handlers (sole writer).
 - **`issue.lua`** — admin `issue <name> [balance]`: mints a ledger id + writes the floppy.
+- **The cage (`cage/`) is the `$` exit** — a kiosk where a card's `$` becomes real metal (droppers)
+  and metal becomes `$`, bidirectional and flat-rate. See `todo.md`'s Cage section + the spec/plan
+  under `docs/superpowers/`.
 
 ## Protocol (`ccvegas`, request/reply)
 
 ```
 station → hub   bet    {id, stake}   → bet_ok {id, balance} | bet_deny {id, balance, reason}
-station → hub   credit {id, delta}   → balance {id, balance}
+station → hub   debit  {id, amount}  → debit_ok {id, balance} | debit_deny {id, balance, reason}
+station → hub   credit {id, delta}   → balance {id, balance} | credit_deny {id, reason="unknown"}
 station → hub   query  {id}          → balance {id, balance}
 issue   → hub   mint   {name, bal}   → minted {id} | mint_deny {reason}
 ```
 
 - **Bet is hub-gated, fails closed** — no `bet_ok` (deny, or hub offline/timeout) ⇒ no spin.
-- **Credit is guaranteed** — hub down ⇒ queued to the station outbox, flushed on next contact.
+- **Debit is hub-gated, fails closed** — the honest, game-agnostic withdrawal primitive (`bet`
+  stays the slot's wager-round special case). No `debit_ok` (deny, or hub offline/timeout) ⇒ no
+  items move. `reason` is `"unknown"` | `"insufficient"` | `"timeout"`. Built for the cage; it is
+  also the multiplayer primitive (`mp_econ` pots + the trading station both reduce to debit/credit
+  pairs).
+- **Credit is guaranteed** — hub down ⇒ queued to the station outbox, flushed on next contact. An
+  explicit `credit_deny` (id unknown to the ledger) is a terminal deny, never queued — retrying an
+  unknown id can never succeed. This closed **F2** (below).
 - The hub **persists `ledger.tbl` on every write** (bet debit, winning credit, mint). `query` never
   writes. So a staked spin = 1 disk write (debit), or 2 on a win (debit + payout). Anonymous = none.
 
@@ -75,6 +91,13 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
    file — harmless; that disk is now both a tools disk and a card. Cards aren't special disks.
 5. **`score` on the card is a mirror.** If card and hub disagree, the hub's `ledger.tbl` wins; the
    card corrects on the next insert/`query`.
+6. **Ordering invariant for any item-for-`$` exchange: stock check → debit → move → refund-if-short.
+   Never violate this order.** Debiting before confirming stock (or crediting before the metal
+   actually lands) is a duplication exploit, not just a UX bug: credit-first plus a partially-failed
+   sweep would pay a player for metal still sitting in their own chest, which they could re-tap
+   unboundedly. Debit-first with a stock check ahead of it risks only a bounded one-time loss (needs
+   the hub UP *and* the id gone from the ledger) — refund the shortfall after the fact if a move
+   comes up short. The cage's `cage.lua`/`cage_hw.lua` are the reference implementation.
 
 ## Open follow-up
 
@@ -87,18 +110,19 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
   round-trip. **Next-session repro:** rapid insert/eject during attract vs during a spin's result
   window; log every event the play loop sees around a swap; check whether `wallet.request`/`rednet`
   round-trips can still be entered from `onEvent`. Fix so a swap never blocks the tick timer.
-- **F2 (latent):** a `credit` to an *unknown* id is treated as acked (hub replies `balance=nil`) →
-  win silently dropped. Unreachable in normal single-hub flow (the ledger never deletes a just-debited
-  id). Cheap fix if ever needed: a `credit_deny` reply kind, mirroring `bet_deny`.
+- ~~**F2 (latent):** a `credit` to an *unknown* id is treated as acked (hub replies `balance=nil`) →
+  win silently dropped.~~ **FIXED (cage task).** The hub now replies `credit_deny{id, reason="unknown"}`;
+  `wallet.credit`/`wallet.flush` classify it via `wallet._creditResult` as a terminal `"deny"` —
+  applied immediately, never queued to the outbox (retrying an unknown id can never succeed). Made
+  reachable (and worth fixing) by the cage: a deposit against a card whose ledger id is gone.
 
 ## Future economy work (parked — each its own spec, after the vertical slice)
 
 - **Trading station** — a station where players **transfer `$` between member cards**. Players may
   hold **multiple cards**; trading moves balance from one `id` to another. Hub-mediated (two id-scoped
   ledger writes: debit sender, credit receiver) so it's authoritative and atomic-ish. Diegetic input
-  (buttons/levers to pick amount + confirm). Reuses the core (`ledger`/`card`/`wallet`); likely a new
-  small gateway. Add once the basic vertical-slice pieces (scoreboards, sink) are in.
+  (buttons/levers to pick amount + confirm). Reuses the core (`ledger`/`card`/`wallet`); `wallet.debit`
+  (built for the cage) is already its debit primitive. Add once the basic vertical-slice pieces
+  (scoreboards) are in.
 - **Scoreboards** — display-only rednet subscribers rendering standings around the floor.
-- **Diegetic sink** — what `$` is *for* (redstone payout: dispense item via AP Inventory Manager,
-  open a door, light a lamp). See `[[advanced-peripherals]]`.
 - **Multiplayer economy** (`mp_econ`) — multi-card pot / interactive wagers; core is already SP/MP-agnostic.

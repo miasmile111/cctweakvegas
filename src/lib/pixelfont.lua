@@ -1,6 +1,7 @@
--- pixelfont.lua — tiny subpixel bitmap fonts for the slot machine: the "WIN:" label and the big
--- "slashed" number font for the win amount. Pure (no CC globals, so it unit-tests under luajit);
--- draws into any canvas exposing setPixel(x, y, color) — e.g. src/lib/subpixel. 1-indexed coords.
+-- pixelfont.lua — tiny subpixel bitmap fonts, shared across stations: the slot's "WIN:" label and
+-- big "slashed" number font, plus the cage's SIGN_SM/SIGN_LG "$" glyphs. Pure (no CC globals, so it
+-- unit-tests under luajit); draws into any canvas exposing setPixel(x, y, color) — e.g.
+-- src/lib/subpixel. 1-indexed coords.
 -- Glyphs are rows of strings; "#" = on (drawn in `color`), anything else = off (skipped).
 local M = {}
 

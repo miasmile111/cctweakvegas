@@ -2,6 +2,8 @@
 -- this is the ONE file to edit to reprice the floor or add a metal (the slot_pay idiom).
 -- Rates are FLAT and symmetric: a deposit and a withdrawal of the same item move the same $.
 -- Pure (no CC globals) so it unit-tests under luajit.
+-- CEILING: cage_advert.lua's idle rate table places row i at `13 + i` and the bottom red bar
+-- starts at row 20 — so a 7th DENOMS entry (row 20) would collide with the bar. #DENOMS <= 6.
 local M = {}
 
 -- ordered cheapest -> dearest; the UI renders them left to right in this order.

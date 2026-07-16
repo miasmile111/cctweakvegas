@@ -120,6 +120,7 @@ contraption**, or **hybrid**.
 | **Hub server**         | v1 ✓    | Registrar + score ledger (`bet/credit/query/mint`, persisted, sole writer). |
 | **Idle / lag model**   | ✓       | 3-tier idle; shared `lib/idle_runner` every station reuses. See `docs/`. |
 | **Membership cards / economy** | core ✓ (in-world pending) | `lib/ledger·card·wallet·sp_econ` + `issue`; bet-and-pay slot. Layered SP/MP-agnostic. Spec in `docs/`. |
+| **Cage / diegetic sink** | v1 ✓    | `$` ↔ metal kiosk (`src/cage/`); `wallet.debit`+`credit_deny` core additions. In-world verification pending. |
 | **Scoreboards**        | planned | Rednet display subscribers around the floor (own spec).           |
 | **Multiplayer economy**| planned | `lib/mp_econ`: multi-card pot / wagers; core already supports it (own spec). |
 | **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |

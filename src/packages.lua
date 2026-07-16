@@ -23,6 +23,25 @@ return {
     },
   },
 
+  cage = {
+    station = true,
+    files = {
+      { name = "subpixel",     path = "lib/subpixel.lua" },
+      { name = "pixelfont",    path = "lib/pixelfont.lua" },
+      { name = "idle_logic",   path = "lib/idle_logic.lua" },
+      { name = "idle_runner",  path = "lib/idle_runner.lua" },
+      { name = "card",         path = "lib/card.lua" },
+      { name = "wallet",       path = "lib/wallet.lua" },
+      { name = "cage_econ",    path = "lib/cage_econ.lua" },
+      { name = "cage_rates",   path = "cage/cage_rates.lua" },
+      { name = "cage_vault",   path = "cage/cage_vault.lua" },
+      { name = "cage_hw",      path = "cage/cage_hw.lua" },
+      { name = "cage_symbols", path = "cage/cage_symbols.lua" },
+      { name = "cage_advert",  path = "cage/cage_advert.lua" },
+      { name = "cage",         path = "cage/cage.lua" },
+    },
+  },
+
   pong = {
     station = true,
     files = {

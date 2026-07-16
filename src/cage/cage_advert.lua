@@ -32,6 +32,8 @@ function M.draw(mon)
 
   -- the rate table: one row per denomination, left col 12, "%-9s%5s" is what keeps the "$" column
   -- aligned regardless of label/value width (see cage_rates.DENOMS for the source of truth).
+  -- Row = 13 + i assumes <= 6 denominations (row 20 collides with the bar below) — see the CEILING
+  -- note in cage_rates.lua, the one file to edit to add a metal.
   for i = 1, #rates.DENOMS do
     local d = rates.DENOMS[i]
     mon.setTextColor(colors.lightGray)

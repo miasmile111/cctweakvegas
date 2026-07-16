@@ -34,7 +34,7 @@ tap a material     IMMEDIATE, no confirm:
                      → big $ number counts DOWN
 tap tap tap        each tap is its own debit and adds to the shower queue; bursts overlap
 fill deposit chest
-  + tap DEPOSIT    value known denoms → wallet.credit → items to vault → number counts UP
+  + tap DEPOSIT    value known denoms → items to vault → wallet.credit → number counts UP
 eject card         back to anonymous INSERT CARD
 ```
 
@@ -185,7 +185,7 @@ golden-standard loop in `kb/monitor-ui-workflow.md`. Layout got right when it wa
 
 | Case | Behavior |
 | --- | --- |
-| No card | Material/qty/deposit buttons inert; big number `$0` dim; header `INSERT CARD`. Never a gate. |
+| No card | No controls drawn (never a gate) and no big `$` at all — `$0` would read as "you're broke", not "no card". Screen shows the rate table instead (see Screen section). |
 | Hub offline — withdraw | Debit fails closed ⇒ no items move. `HUB OFFLINE`. |
 | Hub offline — deposit | Credit outboxed, items still move to vault, number counts up. Deposits are guaranteed (existing `wallet.credit` contract). |
 | Insufficient `$` | Deny **before** debit. `NEED $2000`. |

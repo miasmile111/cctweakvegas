@@ -113,14 +113,32 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       canvas-edge cells → `encodeCell` squashed it — see `kb/monitor-ui.md`); selected stake = **yellow**.
     - Parked slot polish: celebration art beyond the bar flash; text colours; **advert screen** (see NEXT).
 
-## → IN FLIGHT: the Cage (diegetic sink) — spec + plan DONE, UI approved, NOT YET BUILT
+## Cage (diegetic sink) — v1 shipped (2026-07-16), in-world verification PENDING
 
 The `$` exit. A kiosk where a member card's `$` becomes real metal (droppers spitting ingots on the
 floor) and metal becomes `$`. Bidirectional, flat rate, hub-authoritative.
 Spec: `docs/superpowers/specs/2026-07-16-diegetic-sink-cage-design.md`;
-plan: `docs/superpowers/plans/2026-07-16-diegetic-sink-cage.md` (**10 tasks, self-contained for a
-fresh session — start there**). Owner-approved layout: `tools/cage-preview.html` (clickable; it IS
-the source of truth for Tasks 7-9).
+plan: `docs/superpowers/plans/2026-07-16-diegetic-sink-cage.md` (all 10 tasks done, per-task +
+whole-branch review clean). Owner-approved layout: `tools/cage-preview.html` (clickable; it IS
+the source of truth for the built UI).
+
+**What shipped:** `src/cage/` station (`cage.lua` play loop + UI, `cage_rates`/`cage_vault` pure
+logic, `cage_hw` peripheral I/O, `cage_symbols` ingot sprites, `cage_advert` idle face) on the
+existing `idle_runner` framework, plus `lib/cage_econ.lua` (card-session gateway, sibling of
+`sp_econ`). Deploy: `cage` package added to `src/packages.lua` (manifest verified against the tree).
+All 10 plan tasks landed; per-task + whole-branch review clean.
+
+**Tuning knobs:** `cage_rates.DENOMS` (denomination table — item, `$` value, label; **≤6 entries**,
+see the CEILING note in the file — a 7th collides with the idle advert's rate-table rows vs. the
+bottom bar); `cage_rates.QTYS = {1, 5, 20}` (the withdraw multiplier ladder, resets to 1x on wake);
+dropper count (`cage.cfg`, 2–3, all on one shared redstone line — more droppers = faster shower
+drain per tick); tick rate (the shower is tick-driven via `cage_vault.pulseLoads`, one pulse per
+tick, never a blocking `sleep()` loop — see `[[event-pump-reentrancy]]`).
+
+**In-world verification: PENDING.** Post-merge+push checklist (per the plan's post-plan section):
+walk-up wake → card insert → mixed deposit incl. junk → withdraw each denom at 1x/5x/20x →
+spam-tap overlap → vault-empty deny → insufficient deny → hub-offline both directions (fail-closed
+withdraw, outboxed deposit) → eject mid-shower.
 
 - **Rates (flat, symmetric):** copper $25 · iron $100 · gold $250 · diamond $1000. `cage/cage_rates.lua`.
 - **Hardware:** computer + advanced monitor **2×2 @0.5 = 36×24 cells** + disk drive + wired modem +
@@ -157,7 +175,7 @@ the source of truth for Tasks 7-9).
 
 ## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
 
-0. **Build the cage** (above) — spec + plan + approved UI all done; execution is the next action.
+0. ~~**Build the cage**~~ — **DONE, see the Cage section above.** In-world verification still pending.
 1. **General multiplayer capabilities** — the core is already SP/MP-agnostic (`lib/ledger·card·wallet`).
    Build `lib/mp_econ` (multi-card pot / interactive wagers) + a first 2–4-player game or MP mode. Own spec.
 2. **Economy bug — floppy-swap freeze (open).** Station *sometimes* freezes (no crash; reboot to clear)
@@ -176,15 +194,15 @@ Parked (each its own spec later):
   confirm controls. Reuses the core; `wallet.debit` (built for the cage) is already its primitive.
   See `kb/economy.md`.
 - **Scoreboards** — display-only rednet subscribers rendering standings around the floor.
-- ~~**Diegetic sink**~~ — **in flight, see the Cage above.**
 - **Multiplayer economy** (`lib/mp_econ`) — multi-card pot / interactive wagers; core already SP/MP-agnostic.
 
 Non-blocking follow-ups from the final review (see the SDD ledger F1/F2):
 - ~~**F1** `wallet.request` blocking event pump~~ **FIXED (1a7d9d7)** — it swallowed slot.lua's tick
   timer on a mid-session card hot-swap → frozen monitor. Now stashes + re-queues foreign events and
   caches the hub id (keeps `rednet.lookup` out of the hot path). The under-rated review finding, made real in-world.
-- **F2** credit to an *unknown* id would be treated as acked (win silently lost). Unreachable in normal
-  single-hub flow (ledger never deletes a just-debited id). Cheap fix: hub `credit_deny` reply.
+- ~~**F2** credit to an *unknown* id would be treated as acked (win silently lost)~~ **FIXED** (the
+  cage task) — hub now replies `credit_deny{id, reason="unknown"}`; `wallet.credit`/`flush` treat it
+  as a terminal deny, never re-outboxed. See `kb/economy.md`.
 
 ## slot.lua tuning knobs (if revisited)
 

@@ -1136,10 +1136,13 @@ This file is deliberately slot.lua's sibling: same `Rl(row)` band helper, same `
    cv:fillRect((QTY_COL[i] - 1) * 2 + 1, L.qtyY, QTY_WC * 2, L.qtyH, (i == qtyIdx) and YELLOW or GRAY)
    -- DEPOSIT: steel bevel across the full width
    drawBevel(cv, 1, L.depY, cv.w, L.depH, LIGHT_GRAY, WHITE, GRAY, tick < depUntil)
-   -- bars + bulbs (slot.lua's exact loops)
+   -- bars + bulbs. NOTE: this is NOT slot.lua's loop verbatim — slot.lua starts at x=6 (even),
+   -- which cell-straddles every bulb it draws (a real, latent, cosmetic-only issue at
+   -- slot.lua:126 — do NOT change slot.lua, just note it). Cage starts at x=7 (odd) so each 2x2
+   -- bulb lands inside one cell column, per kb/monitor-ui.md's cell-alignment rule.
    cv:fillRect(1, L.topBarY, cv.w, L.topBarH, barCol)   -- barCol = flashing and YELLOW or RED
    cv:fillRect(1, L.botBarY, cv.w, L.botBarH, barCol)
-   for x = 6, cv.w - 2, 4 do
+   for x = 7, cv.w - 2, 4 do
      bulb(cv, x, L.topBarY + 2, math.floor(x / 4), tick)
      bulb(cv, x, L.botBarY + 2, math.floor(x / 4), tick)
    end
@@ -1256,7 +1259,8 @@ This file is deliberately slot.lua's sibling: same `Rl(row)` band helper, same `
     cv:fillRect(3, Rl(12), cv.w - 4, 1, WHITE)          -- top
     cv:fillRect(3, Rl(16) + 2, cv.w - 4, 1, WHITE)      -- bottom
     cv:fillRect(3, Rl(12), 1, 15, WHITE)                -- left
-    cv:fillRect(cv.w - 3, Rl(12), 1, 15, WHITE)         -- right
+    cv:fillRect(cv.w - 2, Rl(12), 1, 15, WHITE)         -- right (x=70: panel spans 3..70, this
+                                                         -- is its last column; cv.w-3=69 leaves a seam)
     ```
     Native text on it, bg `BLACK`: `PLACE YOUR DEPOSIT` centred row 13, `IN THE DEPOSIT BOX` centred row 15.
 13. **Press feedback** — `FLASH_TICKS = 8` (~0.4s). A tapped metal flashes **`GREEN`** (the money-moved signal) with its labels flipped to dark ink; DEPOSIT's bevel goes **pushed-in**. `monitor_touch` has **no release event**, so both are timed flashes, not mouse-ups. A *denied* withdraw does **not** flash — green means money moved.
