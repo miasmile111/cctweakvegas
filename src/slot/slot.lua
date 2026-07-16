@@ -215,7 +215,7 @@ local function drawTopFrame(reels, bulbTick, result, attract, status)
     if status.denied then
       topWin.write("INSUFFICIENT")
     elseif status.player then
-      topWin.write(("%s $%d"):format(status.player, status.balance or 0))
+      topWin.write(("%s  %d MB"):format(status.player, status.balance or 0))
       topWin.setCursorPos(1, 2); topWin.write(("stake %d  win %d"):format(status.stake, status.lastWin))
     else
       topWin.setCursorPos(1, 1); topWin.write("FREE PLAY")
