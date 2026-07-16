@@ -78,16 +78,20 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
   - **DONE — resolution formula exact.** Block→cell pulled from CC `ServerMonitor.rebuild`; slot
     1×2 @0.5 = **15×24** (not 15×21). See `kb/monitor-resolution.md`. MB `$`→`MB` swap shipped (a05efce).
   - **DONE — slot v3 built** (spec `docs/superpowers/specs/2026-07-16-slot-v3-design.md`, plan
-    `docs/superpowers/plans/2026-07-16-slot-v3.md`). Rebuilt `slot.lua` to the mockup's fixed 15×24
-    bands (card header, `WIN:`+amount, celebration zone, reel viewport, orange/red bars, side bulbs);
-    reuses the GRAD gradient + `bulb()` verbatim; all text white; text-cell bg bound to the animated
-    gradient slot so labels ride the gradient. **3 selectable stakes** ($10/$25/$100) via a diegetic
-    **stake-cycle button** (`STAKE_SIDE`/`STAKE_LEVEL`, rising-edge; persists across spins, resets to
-    $10 on wake). Economy made stake-variable: `slot_pay.eval(result,stake)`+`STAKES`, `sp_econ.tryBet(stake)`
-    captures `stakedStake`, `settle` pays against it. Unit tests 15/15; whole-file review clean.
-    **NEXT — in-world verify** after push: run `slot test` to find `STAKE_SIDE` (the cycle button's
-    side), wire the button, `update slot`, confirm cycle/persist/reset + variable payout. Polish later:
-    big-digit win font, celebration art, text colours (all white first pass by design).
+    `docs/superpowers/plans/2026-07-16-slot-v3.md`). Rebuilt `slot.lua` to fixed 15×24 bands: card
+    header, `WIN:`+amount, red top/bottom frame bars, **solid-black reel window showing 3 symbols per
+    reel**, side + bar bulbs, stake row with purple/gray bg art. Reuses GRAD gradient + `bulb()`; all
+    text white; header/WIN text bg bound to the animated gradient slot. **3 selectable stakes**
+    ($10/$25/$100) via **monitor_touch** — tap the on-screen stake labels; persists across spins,
+    resets to $10 on wake. Economy stake-variable: `slot_pay.eval(result,stake)`+`STAKES`,
+    `sp_econ.tryBet(stake)` captures `stakedStake`, `settle` pays against it. Tests 15/15; reviewed.
+    - **Iteration after first in-world screenshot** (owner feedback): reel window was 1-symbol + showed
+      the gradient (should be **black, 3 symbols**); stakes were an **unwired redstone cycle button**
+      (switched to **touch** — owner drew them as buttons). Fixed both; layout translated more faithfully.
+      Verified offline by rendering the subpixel layer to PNG (sim reuses real `subpixel.lua`+symbols).
+    - **NEXT — in-world re-verify:** `update slot`, then **tap $10/$25/$100** to select (highlights,
+      persists, resets to $10 after idle); confirm 3-symbol black window + variable payout. Polish later:
+      big-digit win font, celebration art, text colours.
 - **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
   economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
   balance/stake/win header layout; any deny/row-2 visual nits.
