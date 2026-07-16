@@ -12,6 +12,10 @@
 
 local PROTO = "ccvegas"
 local STORE = "registry.tbl"
+local DET_RANGE = 8      -- blocks: how near a player must be for the hub to wake stations (v1: one range)
+local POLL      = 0.3    -- seconds between detector polls (the hub's one forever-loop)
+local idle      = require("idle_logic")
+local args      = { ... }
 
 local function findModem()
   -- prefer a wired modem (floor network); accept wireless for testing.
@@ -30,6 +34,30 @@ end
 
 rednet.open(peripheral.getName(modem))
 rednet.host(PROTO, "hub")
+
+if args[1] == "test" then
+  local det = peripheral.find("player_detector")
+  if not det then
+    print("No 'player_detector' found. Check the block is on the wired network.")
+    print("Attached peripherals:")
+    for _, n in ipairs(peripheral.getNames()) do print(("  %s (%s)"):format(n, peripheral.getType(n))) end
+    return
+  end
+  print(("Player detector OK. Live isPlayersInRange(%d) — walk in/out; Q quits:"):format(DET_RANGE))
+  local timer = os.startTimer(0.25)
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1] == "timer" and ev[2] == timer then
+      local _, row = term.getCursorPos()
+      term.setCursorPos(1, row); term.clearLine()
+      io.write("in range: " .. tostring(det.isPlayersInRange(DET_RANGE)))
+      term.setCursorPos(1, row)
+      timer = os.startTimer(0.25)
+    elseif ev[1] == "key" and ev[2] == keys.q then
+      print(""); return
+    end
+  end
+end
 
 -- load or initialise the registry
 local reg = { assignments = {}, counters = {} }
@@ -60,12 +88,39 @@ print("Hub v0 registrar online.")
 print(("  protocol '%s', hostname 'hub', computer ID %d"):format(PROTO, os.getComputerID()))
 print("Listening for station registrations (Ctrl+T to stop)...")
 
-while true do
-  local sender, msg = rednet.receive(PROTO)
-  if type(msg) == "table" and msg.kind == "register"
-     and type(msg.computerID) == "number" and type(msg.package) == "string" then
-    local n = assign(msg.computerID, msg.package)
-    rednet.send(sender, { kind = "assigned", package = msg.package, instance = n }, PROTO)
-    print(("  #%d  %s -> %s%d"):format(msg.computerID, msg.package, msg.package, n))
+local function registrar()
+  while true do
+    local sender, msg = rednet.receive(PROTO)
+    if type(msg) == "table" and msg.kind == "register"
+       and type(msg.computerID) == "number" and type(msg.package) == "string" then
+      local n = assign(msg.computerID, msg.package)
+      rednet.send(sender, { kind = "assigned", package = msg.package, instance = n }, PROTO)
+      print(("  #%d  %s -> %s%d"):format(msg.computerID, msg.package, msg.package, n))
+    end
   end
 end
+
+local function presenceLoop()
+  local det = peripheral.find("player_detector")
+  if not det then
+    print("No player detector attached — presence disabled (registrar only).")
+    return
+  end
+  print(("Presence loop online: isPlayersInRange(%d) every %.2fs."):format(DET_RANGE, POLL))
+  local last = false
+  local timer = os.startTimer(POLL)
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1] == "timer" and ev[2] == timer then
+      local occ = det.isPlayersInRange(DET_RANGE) and true or false
+      if idle.occupancyChanged(last, occ) then
+        rednet.broadcast({ kind = "presence", zone = "all", present = occ }, PROTO)
+        print(occ and "[presence] occupied -> WAKE" or "[presence] empty -> SLEEP")
+        last = occ
+      end
+      timer = os.startTimer(POLL)
+    end
+  end
+end
+
+parallel.waitForAll(registrar, presenceLoop)

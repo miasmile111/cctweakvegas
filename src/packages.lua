@@ -26,6 +26,7 @@ return {
   hub = {
     station = false,
     files = {
+      { name = "idle_logic" },
       { name = "hub" },
     },
   },
