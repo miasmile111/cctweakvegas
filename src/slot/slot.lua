@@ -177,24 +177,6 @@ end
 math.randomseed(os.epoch("utc"))
 local rng = function() return math.random() end
 
-local PROTO = "ccvegas"
-local idle = require("idle_logic")
-
--- open rednet so the hub can wake/sleep us (the wired modem also carries the monitor)
-local function findModem()
-  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
-  return wired or peripheral.find("modem")
-end
-local hasRednet = false
-do local m = findModem(); if m then rednet.open(peripheral.getName(m)); hasRednet = true end end
-
--- Ask the hub for current presence. Its reply is an ordinary presence message, handled by the
--- deep-sleep / active event loops below. Syncs a freshly-woken station to reality: wakes one that
--- booted while a player was already in range, and lets a lever-wake from outside the detector range
--- sleep again after the round. Hub down -> no reply -> the station keeps its current assumption.
-local function queryPresence()
-  if hasRednet then rednet.broadcast({ kind = "presence?", zone = ZONE }, PROTO) end
-end
 
 local topMon = findMon(TOP_NAME); topMon.setTextScale(TOP_SCALE)
 local tw, th = topMon.getSize()
@@ -253,65 +235,17 @@ local function restorePalette()
   end
 end
 
-local function clearMonitor()
-  restorePalette()
-  topMon.setBackgroundColor(colors.black); topMon.clear()
-end
-
--- IDLE screen: a STATIC "COME PLAY / GET MONEY" advertisement shown while the zone is empty.
--- Drawn ONCE, then deepSleep blocks on os.pullEvent — no timer, zero idle cost (it advertises
--- instead of going black, but costs the same as sleeping).
-local function drawIdleSign()
-  topWin.setVisible(false)
-  updateGradient(0)                       -- freeze the gradient at one phase (static, no drift)
-  local bandH = math.ceil(topCv.h / #GRAD)
-  for b = 1, #GRAD do
-    topCv:fillRect(1, 1 + (b - 1) * bandH, topCv.w, bandH, GRAD[b])
-  end
-  topCv:render()
-  topWin.setTextColor(YELLOW); topWin.setBackgroundColor(BLACK)
-  local l1, l2 = "COME PLAY", "GET MONEY"
-  topWin.setCursorPos(math.floor((tw - #l1) / 2) + 1, math.floor(th / 2))
-  topWin.write(l1)
-  topWin.setCursorPos(math.floor((tw - #l2) / 2) + 1, math.floor(th / 2) + 1)
-  topWin.write(l2)
-  topWin.setVisible(true)
-end
-
--- DEEP SLEEP: no timer. Block until a player is present (hub) or the lever is pulled cold.
--- Returns true to wake into ACTIVE, or false if the operator quit (Q).
-local function deepSleep()
-  drawIdleSign()                        -- static COME PLAY advert while empty (no timer, zero cost)
-  queryPresence()                       -- if a player is already in range, the hub's reply wakes us
-  local prevLvl = redstone.getAnalogInput(SPIN_SIDE)
-  while true do
-    local ev = { os.pullEvent() }
-    if ev[1] == "rednet_message" then
-      local p = idle.presenceFor(ev[3], ZONE)   -- ev = { "rednet_message", sender, message, protocol }
-      if p == true then return true end
-      -- p == false or nil: still empty, keep sleeping
-    elseif ev[1] == "redstone" then
-      local lvl = redstone.getAnalogInput(SPIN_SIDE)
-      if idle.leverRose(prevLvl, lvl, SPIN_LEVEL) then return true end
-      prevLvl = lvl
-    elseif ev[1] == "key" and ev[2] == keys.q then
-      return false
-    end
-  end
-end
-
--- ACTIVE: the 0.05s timer loop (attract -> spinning -> result). Returns true when the zone
--- empties and we should sleep, or false if the operator quit (Q).
-local function runActive()
+-- ACTIVE session: the 0.05s timer loop (attract -> spinning -> result), run by idle_runner while a
+-- player is present. Returns "sleep" when the zone empties in attract (a spin always finishes first),
+-- or "quit" on the operator's Q.
+local function play(mon, pres)
   local state = "attract"
   local reels = newSpin(); for _, r in ipairs(reels) do r.stopped = true end
   local tick, spinTick, resultAt, result = 0, 0, nil, nil
   local armed = true       -- rising-edge guard so a held lever doesn't auto-respin
-  local present = true     -- we entered ACTIVE because someone is here
 
   updateGradient(0)
   drawTopFrame(reels, 0, nil, true)
-  queryPresence()                       -- confirm real presence; if nobody's actually here we'll sleep
   local timer = os.startTimer(TICK)
 
   while true do
@@ -348,26 +282,20 @@ local function runActive()
         end
       else -- attract
         drawTopFrame(reels, tick, nil, true)
-        if idle.shouldSleep(present, state) then return true end   -- zone emptied while idle
+        if pres.gone() then return "sleep" end  -- zone emptied while idle
       end
 
       timer = os.startTimer(TICK)
     elseif ev[1] == "rednet_message" then
-      local p = idle.presenceFor(ev[3], ZONE)
-      if p ~= nil then present = p end          -- update presence; sleep decision happens in attract
+      pres.fromEvent(ev)                        -- update presence; sleep decision happens in attract
     elseif ev[1] == "key" and ev[2] == keys.q then
-      return false
+      restorePalette()
+      return "quit"
     end
   end
 end
 
--- Top-level: sleep <-> active until the operator quits.
-while true do
-  local woke = deepSleep()
-  if not woke then break end
-  local alive = runActive()
-  if not alive then break end
-end
-
-clearMonitor(); topMon.setCursorPos(1, 1); topMon.setTextScale(1)
-print("Thanks for playing Slots!")
+require("idle_runner").run{
+  name = "slot", monitor = topMon, zone = ZONE,
+  wake = { side = SPIN_SIDE, level = SPIN_LEVEL }, play = play,
+}

@@ -10,8 +10,10 @@ return {
     files = {
       { name = "subpixel",     path = "lib/subpixel.lua" },
       { name = "idle_logic",   path = "lib/idle_logic.lua" },
+      { name = "idle_runner",  path = "lib/idle_runner.lua" },
       { name = "slot_logic",   path = "slot/slot_logic.lua" },
       { name = "slot_symbols", path = "slot/slot_symbols.lua" },
+      { name = "slot_advert",  path = "slot/slot_advert.lua" },
       { name = "slot",         path = "slot/slot.lua" },
     },
   },
