@@ -25,18 +25,30 @@ nothing lands until `update` runs. Exact `install.list` format + first-time setu
 ## Layout
 
 ```
-src/            Lua programs (one game per file); import these in-game
+src/            Lua programs; import these in-game (deploy flattens every file by name)
+  lib/          cross-station shared modules
+    idle_logic.lua   pure presence/idle decision helpers (unit-tested)
+    idle_runner.lua  shared idle lifecycle: deep-sleep/wake/presence; draws <name>_advert
+    subpixel.lua     sub-pixel canvas
+  hub/  hub.lua      the registrar + player-detector presence loop (always-on infra)
+  slot/ slot.lua slot_logic.lua slot_symbols.lua slot_advert.lua   slot machine
+  pong/ pong.lua pong_advert.lua   2-player Pong (4 pressure plates → 4 sides)
   hello.lua     smoke test — CraftOS version + HTTP status
-  pong.lua      reference minigame: 2-player Pong, 4 pressure plates → 4 sides
-  slot*.lua     slot machine v1 (+ src/lib/subpixel.lua canvas)
+  update.lua mkinstaller.lua packages.lua   deploy tooling + package manifest
 .claude/skills/cc-lua/   the project skill (read before writing Lua)
 README.md       meta design doc (read first)
 todo.md         per-component status / next steps
 ```
 
+A **station** = its own `src/<basename>/` folder with a play file + a `<basename>_advert.lua`
+(the static idle advert). The shared `lib/idle_runner.lua` owns the deep-sleep/wake loop; a station
+supplies only `play(mon, pres)` and the advert. Cross-station code lives in `lib/`.
+
 ## Conventions
 
-- One program per file in `src/`, `.lua` extension, filename = the in-game program name.
+- One program per file, `.lua` extension, filename = the in-game program name. Each station lives
+  in its own `src/<basename>/` folder (play file + `<basename>_advert.lua`); shared code in `src/lib/`.
+  Deploy flattens files by name, so `require("<name>")` never encodes the folder.
 - Header comment on every program: what it does, how to run it, wiring notes.
 - Prefer an in-game `.cfg` file for per-build settings (redstone side mappings, monitor
   names) so the user can reconfigure without re-importing.
