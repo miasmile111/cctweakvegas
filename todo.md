@@ -89,9 +89,18 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       the gradient (should be **black, 3 symbols**); stakes were an **unwired redstone cycle button**
       (switched to **touch** — owner drew them as buttons). Fixed both; layout translated more faithfully.
       Verified offline by rendering the subpixel layer to PNG (sim reuses real `subpixel.lua`+symbols).
-    - **NEXT — in-world re-verify:** `update slot`, then **tap $10/$25/$100** to select (highlights,
-      persists, resets to $10 after idle); confirm 3-symbol black window + variable payout. Polish later:
-      big-digit win font, celebration art, text colours.
+    - **Operational v3 build DONE** (from `tools/slot-preview.html`, the approved on-screen design;
+      built from `docs/mockups/slot-v3.json` → mockup(2)). New `src/lib/pixelfont.lua` (pure, unit-tested):
+      the **WIN:** label bitmap + **slashed big-number font** (owner-drawn "0", 1-9 extrapolated).
+      `slot.lua` rewritten: header (native CC text) row 2, WIN: + **count-up** amount (0→payout over
+      ~1s), top red bar, **3×3 reel** rows 11-19 (only middle row black, top/bottom on gradient),
+      bottom red bar, **stake buttons** rows 23-24 (native "$10/$25/$100" cell-text in the top cell,
+      full-magenta selected / gray). **Celebration:** bars-only yellow flash on win. **Outcome overlay:**
+      green(WIN)/red(Loss) over the stakes. **Stakes = monitor_touch** (tap the button; persists,
+      resets to $10 on wake). `pixelfont` added to `packages.lua`. Tests 24/24; whole-file review clean.
+    - **NEXT — in-world verify:** `update slot` (mind CDN lag), then: tap $10/$25/$100 to pick stake,
+      pull lever to spin, confirm 3-symbol black-middle window, count-up on win, bars flash, outcome
+      overlay, header shows id/balance. Parked polish: celebration art beyond the flash, text colours.
 - **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
   economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
   balance/stake/win header layout; any deny/row-2 visual nits.
