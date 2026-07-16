@@ -12,7 +12,8 @@
 --   wget https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/update.lua update
 --   update slot
 --
--- Requires (fails loudly if absent): a DISK DRIVE (member cards) + a WIRED MODEM (rednet).
+-- Preflight (fails loudly): a WIRED MODEM is always required (rednet). A player station
+-- (slot, pong, ...) also requires a DISK DRIVE (member cards). Infra like `hub` needs no drive.
 -- Hub offline -> installs anyway but leaves the station UNREGISTERED (no name) until re-run.
 
 local REPO      = "https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/"
@@ -46,18 +47,6 @@ if not http then
   error("http API disabled — the pack must allow HTTP. Cannot update.", 0)
 end
 
--- ------------------------------------------ preflight: required hardware -----
-local drive = peripheral.find("drive")
-local modem = findWiredModem()
-if not drive or not modem then
-  loudBanner("I need a disk drive and wired modem!")
-  print("Missing on this station:")
-  if not drive then print("  - a DISK DRIVE  (for member cards)") end
-  if not modem then print("  - a WIRED MODEM (for the rednet network)") end
-  print("Attach them (modem on a network cable), then re-run `update`.")
-  return                                   -- hard stop: not a valid station yet
-end
-
 -- --------------------------------------- work out which packages to install --
 local requested = { ... }
 if #requested == 0 and fs.exists(INSTALLED) then
@@ -79,6 +68,26 @@ save("packages", manBody)
 local ok, PACKAGES = pcall(dofile, "packages")
 if not ok or type(PACKAGES) ~= "table" then
   error("Package manifest is invalid: " .. tostring(PACKAGES), 0)
+end
+
+-- does anything we're installing make this a player station (needs a disk drive)?
+local needsDrive = false
+for _, pkg in ipairs(requested) do
+  local def = PACKAGES[pkg]
+  if def and def.station then needsDrive = true end
+end
+
+-- ------------------------------------------ preflight: required hardware -----
+local modem = findWiredModem()
+local drive = peripheral.find("drive")
+if not modem or (needsDrive and not drive) then
+  if needsDrive then loudBanner("I need a disk drive and wired modem!")
+  else               loudBanner("I need a wired modem!") end
+  print("Missing on this station:")
+  if not modem then print("  - a WIRED MODEM (for the rednet network)") end
+  if needsDrive and not drive then print("  - a DISK DRIVE  (for member cards)") end
+  print("Attach them (modem on a network cable), then re-run `update`.")
+  return                                   -- hard stop: not a valid station yet
 end
 
 -- -------------------------------------------------------- install the files --
@@ -136,11 +145,11 @@ if #stations > 0 then
       local t0 = os.epoch("utc")
       while os.epoch("utc") - t0 < 3000 do
         local sender, msg = rednet.receive(PROTO, 3)
+        if not sender then break end                       -- timed out
         if sender == hub and type(msg) == "table"
            and msg.kind == "assigned" and msg.package == pkg then
           instance = msg.instance; break
         end
-        if not sender then break end
       end
       if instance then
         labelParts[#labelParts + 1] = pkg .. instance
