@@ -37,4 +37,14 @@ return {
       { name = "hub",        path = "hub/hub.lua" },
     },
   },
+
+  -- Admin tool, not a player station.
+  issue = {
+    station = false,
+    files = {
+      { name = "card",   path = "lib/card.lua" },
+      { name = "wallet", path = "lib/wallet.lua" },
+      { name = "issue",  path = "issue.lua" },
+    },
+  },
 }
