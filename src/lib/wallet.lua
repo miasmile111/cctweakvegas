@@ -38,25 +38,42 @@ local function saveOutbox(list)
 end
 
 -- ---- hub round-trip (I/O) --------------------------------------------------
--- send msg to the hub, wait TIMEOUT for a reply whose .kind is in `kinds`. Returns the reply
--- table or nil. NOTE: this is a BLOCKING event pump — it runs its own os.pullEvent loop and
--- DISCARDS every non-matching event (presence, disk, key) pulled during the wait. Cheap while the
--- hub is up (<50ms round-trip); on a hub-down bet it blocks ~TIMEOUT and drops those events for that
--- window (presence/card state resync on the next event; a swallowed Q is briefly unresponsive).
+local unpack = table.unpack or unpack   -- Lua 5.1 (CraftOS) safety
+
+-- rednet.lookup is ITSELF a blocking event pump, so cache the hub id and only look it up when we
+-- don't have one (or after a timeout, in case the hub restarted with a new id). Keeps the hot path
+-- (a mid-round balance refresh) from pumping — and eating — the caller's own events during lookup.
+local hubId
+local function getHub()
+  if hubId == nil then hubId = rednet.lookup(PROTO, "hub") end
+  return hubId
+end
+
+-- send msg to the hub, wait TIMEOUT for a reply whose .kind is in `kinds`. Returns the reply table
+-- or nil (timeout). This runs its own os.pullEvent loop, so it necessarily consumes events meant for
+-- the CALLER's loop — a `request` fired from inside slot.lua's tick loop (on a card insert) would
+-- otherwise swallow the game's pending tick timer and FREEZE the machine. So every non-matching event
+-- is STASHED and RE-QUEUED before returning: the caller's loop still receives its timer/presence/disk/key.
 local function request(msg, kinds)
-  local hub = rednet.lookup(PROTO, "hub")
+  local hub = getHub()
   if not hub then return nil end
   rednet.send(hub, msg, PROTO)
   local timer = os.startTimer(TIMEOUT)
+  local stash, result = {}, nil
   while true do
     local ev = { os.pullEvent() }
     if ev[1] == "rednet_message" and ev[2] == hub and ev[4] == PROTO
        and type(ev[3]) == "table" and kinds[ev[3].kind] then
-      return ev[3]
+      result = ev[3]; break
     elseif ev[1] == "timer" and ev[2] == timer then
-      return nil
+      result = nil; break                 -- our own timeout fired: treat as hub-unreachable
+    else
+      stash[#stash + 1] = ev              -- foreign event: hand it back to the caller's loop
     end
   end
+  if result == nil then hubId = nil end   -- timed out: re-lookup next time (hub may have moved id)
+  for _, e in ipairs(stash) do os.queueEvent(unpack(e)) end
+  return result
 end
 
 function M.query(id)
