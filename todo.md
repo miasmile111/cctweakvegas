@@ -67,6 +67,16 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
 - **Lua UI deepdive + workflow** — a patterns/toolkit pass on monitor UIs (the `lib/subpixel` canvas,
   layout, text, headers, advert screens) + a smoother build/iterate loop. Start from the cc-lua
   **`kb/monitor-ui.md`**. New behavior → brainstorm first.
+  - **DONE — resolution lesson** (`docs/monitor-resolution-lesson.html`): interactive datasheet of the
+    cell (6×9) / subpixel (2×3, 2-colour) / real-px model, taught through `slot.lua`. Verified: glyph
+    6×9 (CraftOS-PC gfxmode + CC font), teletext behaviour (`src/lib/subpixel.lua`).
+  - **DONE — mockup tool** (`tools/monitor-mockup.html`): browser subpixel pixel-art editor. Paint a
+    whole-monitor screen freeform; a live `encodeCell` preview shows the 2-colour-per-cell truth;
+    RGB-editable palette; tagged cell-grid text regions; JSON+PNG export (JSON = Claude's source of
+    truth → regenerate Lua). Spec + plan in `docs/superpowers/`. **Iterate loop:** user draws → exports
+    JSON → Claude reads it → generates `subpixel.lua` draw code. NOT in the `src/` deploy loop.
+  - **NEXT here:** use the tool for real (user draws a slot screen), then formalise the read-back
+    (Claude → Lua) and apply to slot finishing. Confirm the slot's real `getSize()` in-world.
 - **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
   economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
   balance/stake/win header layout; any deny/row-2 visual nits.

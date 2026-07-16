@@ -44,7 +44,10 @@ main and pushing — granted 2026-07-16):
 2. **→ `superpowers:writing-plans`** right after the spec self-check.
 3. **→ `superpowers:subagent-driven-development`** right after the plan (fresh implementer + reviewer
    per task; fix Critical/Important findings; whole-branch review at the end). **No pause for the
-   execution-choice prompt.**
+   execution-choice prompt.** *Prefer SDD — don't force it:* when the deliverable is a single
+   cohesive file with shared state (e.g. one self-contained HTML tool whose JS closures all touch the
+   same canvas), fresh-subagent-per-task adds integration risk instead of removing it. There, build
+   **inline** and still do a real whole-file code-review pass. Pick the engine that fits; always review.
 4. **All green?** unit tests + `luajit -bl` syntax pass; per-task and whole-branch reviews clean.
 5. **→ merge to main** (`superpowers:finishing-a-development-branch`, option 1) and **push** — the
    deploy loop pulls from the repo, so in-world verification happens *after* the merge+push.
