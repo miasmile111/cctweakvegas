@@ -72,8 +72,23 @@ another facet of something already written. Keep this index's catalog in sync (o
   `(side,false)` with **no yield between** is a **silent no-op**: `setOutput` only marks CC's internal
   state dirty, the world syncs on the computer tick by diffing external-vs-internal, and `getOutput`
   reads the internal value so Lua can't see it. Split into `pulseOn`/`pulseOff` driven off the play
-  loop's tick phase. Plus: a dropper needs **≥4 game ticks** between rising edges (cage uses 6), and
-  the line must never share a side with the wired modem. Cost the cage a full build cycle.
+  loop's tick phase. Plus: a dropper needs **≥4 game ticks** between rising edges (cage uses 6); the
+  line must never share a side with the wired modem; **never decrement a queue without having raised
+  the line** (~1 tap in 3 lost) and **never inherit a stale HIGH line** (CC persists output past exit).
+  And the trap that makes it worse: a paired-edge `test`/`drop` tool is immune to both and will report
+  success while the game shreds taps. Cost the cage a full build cycle.
+- [[open-every-modem]] — `open-every-modem.md` — **the floor is not one network.** Opening ONE modem
+  and preferring wired goes deaf to a hub reachable only by **ender modem** → `REGISTRATION FAILED —
+  HUB OFFLINE` against a hub that's running. Open **every** modem at every rednet entry point (station
+  runtime, installer, **the hub itself**, admin tools). Safe: rednet send/broadcast already transmit on
+  all open modems and the daemon de-dupes by `nMessageID` (~9.5s) → no double-debit. Includes how to
+  tell this apart from an old hub that doesn't know your message `kind`.
+- [[station-hardware-discovery]] — `station-hardware-discovery.md` — **identical builds do NOT get
+  identical peripheral names** (CC burns `<type>_<n>` indices on attach/detach; the first cage's
+  droppers came up 1-4). Discover by TYPE; pick the monitor by **size**, not `find("monitor")` (two
+  monitors = a coin-flip boot) and restore the scale on the ones you reject. Deposit-vs-vault is the
+  one thing only a human knows → convention + override. `update` **overwrites the program**, which is
+  why per-station wiring belongs in the `.cfg` and nowhere else. Plus the `<station> test` pattern.
 - [[event-pump-reentrancy]] — `event-pump-reentrancy.md` — a nested `os.pullEvent` loop (rednet
   round-trip, `rednet.lookup`, `sleep`, `parallel`) called from inside a play loop **eats the outer
   loop's own tick timer** → silent freeze (program "running", reboot to clear). One event queue per

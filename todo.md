@@ -113,7 +113,7 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       canvas-edge cells → `encodeCell` squashed it — see `kb/monitor-ui.md`); selected stake = **yellow**.
     - Parked slot polish: celebration art beyond the bar flash; text colours; **advert screen** (see NEXT).
 
-## Cage (diegetic sink) — v1 shipped (2026-07-16), in-world verification PENDING
+## Cage (diegetic sink) — v1 shipped + **IN-WORLD VERIFIED (2026-07-17)** ✓
 
 The `$` exit. A kiosk where a member card's `$` becomes real metal (droppers spitting ingots on the
 floor) and metal becomes `$`. Bidirectional, flat rate, hub-authoritative.
@@ -127,6 +127,22 @@ logic, `cage_hw` peripheral I/O, `cage_symbols` ingot sprites, `cage_advert` idl
 existing `idle_runner` framework, plus `lib/cage_econ.lua` (card-session gateway, sibling of
 `sp_econ`). Deploy: `cage` package added to `src/packages.lua` (manifest verified against the tree).
 All 10 plan tasks landed; per-task + whole-branch review clean.
+
+**Three bugs stood between "all reviews clean" and a working machine — all found AFTER the plan was
+green, and none catchable by a per-task review.** They are the session's real lesson: a faithful
+implementation of a wrong plan is a wrong program.
+1. **The pulse never fired** (`[[redstone-pulse-needs-a-yield]]`) — `setOutput(true)` then `(false)`
+   in one tick is a silent no-op; **the spec and plan mandated it verbatim**. Every withdrawal would
+   have debited the card and dropped nothing, and `getOutput` reads CC's internal state so the machine
+   could not have told you. Caught by the whole-branch review reading the CC:Tweaked source.
+2. **The shower lost ~1 tap in 3** — the queue decremented on a falling edge that had never risen.
+   Worse: `cage test drop` pairs its edges, so **the diagnostic reported success while the game shred-
+   ded taps**. Fixed with a `pulsed` flag + a `pulseOff()` on entry (CC persists output past exit).
+3. **The ender modem was never opened** (`[[open-every-modem]]`) — "prefer wired" opened the peripheral
+   cable, which has no hub on it → `REGISTRATION FAILED — HUB OFFLINE` against a healthy hub. **The hub
+   had the same bug**, so fixing only the station would have changed nothing.
+
+**Hardware self-discovers** (`[[station-hardware-discovery]]`), so cage #2 is wire-it-and-run.
 
 **Tuning knobs:** `cage_rates.DENOMS` (denomination table — item, `$` value, label; **≤6 entries**,
 see the CEILING note in the file — a 7th collides with the idle advert's rate-table rows vs. the
@@ -202,7 +218,20 @@ withdraw, outboxed deposit) → eject mid-shower.
 
 ## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
 
-0. ~~**Build the cage**~~ — **DONE, see the Cage section above.** In-world verification still pending.
+0. ~~**Build the cage**~~ — **DONE + IN-WORLD VERIFIED 2026-07-17.** See the Cage section above.
+   The economy is now a **loop**: `$` enters (slot paytable / `issue` mint) and finally *leaves*
+   (metal out of the cage). Small follow-ups it earned, none blocking:
+   - **`hub_version` / ping in the protocol** — a station can't distinguish "no hub" from "hub too
+     old to know this message", so both read HUB OFFLINE (cost real debugging time this session).
+     Every future protocol change has this failure mode. See `kb/economy.md` lesson 7.
+   - **Extract `lib/card_session.lua`** — `sp_econ` + `cage_econ` are instances 1 and 2 of the same
+     card-session machinery; `mp_econ` is the rule-of-three trigger (see #1 below).
+   - **`cage test drop` doesn't exercise `play()`'s pulse path** — it pairs its edges, so it stayed
+     green through a bug that lost 1 tap in 3. Any future hardware self-test should drive the real
+     code path or say plainly what it doesn't cover.
+   - Cosmetic, filed not fixed: `cage_econ.refund()` shows "REFUNDED $x" to whoever's card is in the
+     drive (not necessarily the payer); `tryDebit` says "NEED $x" even for a dead card id; the dead
+     `droppers` handle table in `cage_hw` (the wrap loop is the real fail-loud preflight).
 1. **General multiplayer capabilities** — the core is already SP/MP-agnostic (`lib/ledger·card·wallet`).
    Build `lib/mp_econ` (multi-card pot / interactive wagers) + a first 2–4-player game or MP mode. Own spec.
 2. **Economy bug — floppy-swap freeze (open).** Station *sometimes* freezes (no crash; reboot to clear)

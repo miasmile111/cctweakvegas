@@ -1,8 +1,8 @@
 ---
 title: A redstone pulse REQUIRES a yield between on and off (same-tick toggle is a silent no-op)
 area: redstone
-verified: source-read 2026-07-16 (CC:Tweaked RedstoneState) — in-world confirmation pending
-tags: [redstone, setOutput, getOutput, pulse, dropper, dispenser, piston, rising edge, cooldown, triggered, tick, updateOutput, no-op, silent failure]
+verified: in-game 2026-07-17 (cage shower working on the live server) + source-read (CC:Tweaked RedstoneState)
+tags: [redstone, setOutput, getOutput, pulse, dropper, dispenser, piston, rising edge, cooldown, triggered, tick, updateOutput, no-op, silent failure, falling edge, stale high]
 ---
 
 **Symptom.** A program "pulses" a redstone line and **nothing in the world reacts** — no dropper
@@ -42,11 +42,36 @@ Then drive them off the station's existing tick loop by phase — **never** with
 `os.pullEvent` inside a play loop (that is the `[[event-pump-reentrancy]]` freeze):
 
 ```lua
--- in the timer branch of the play loop
+-- in the timer branch of the play loop.  `pulsed` and the entry pulseOff are NOT optional — see below.
+hw.pulseOff()                    -- ONCE on entry: never inherit a line someone left HIGH
+...
 local phase = tick % 6
-if     phase == 0 then hw.pulseOn()
-elseif phase == 2 then hw.pulseOff(); loads = pulseLoads(loads) end   -- decrement on the FALLING edge
+if     phase == 0            then hw.pulseOn();  pulsed = true
+elseif phase == 2 and pulsed then hw.pulseOff(); pulsed = false
+                                  loads = pulseLoads(loads)   -- decrement on the FALLING edge
+end
 ```
+
+**Two ways to get this wrong even after splitting the pulse. Both cost the player metal, silently:**
+
+1. **Decrementing without having raised the line.** Work arrives at an arbitrary tick (a player taps
+   mid-cycle), so the *very next* tick can be phase 2. An unguarded `elseif phase == 2` then fires
+   `pulseOff` + decrement having **never** pulsed on: no rising edge, no ingot, but the counter moved.
+   The player pays, nothing drops, and the item sits in the dropper until it falls out during someone
+   **else's** withdrawal — so the count-down desyncs from the floor too. Measured at **~1 tap in 3**
+   (2 of 6 phases). The `pulsed` flag is the whole fix: *never decrement without a real rising edge.*
+   Cost: at most 5 ticks (0.25s) of latency while a tap waits for the next phase 0.
+2. **Inheriting a stale HIGH line.** CC **persists redstone output when a program exits**, and Ctrl+T,
+   an uncaught error and a chunk unload all skip whatever cleanup the quit path does — Ctrl+T doesn't
+   even reboot. Start with the line already high and the first `pulseOn` is *no edge*: the first cycle
+   is debited and ejects nothing. Force `pulseOff()` on entry; the loop's own `os.pullEvent` is the
+   yield that flushes it. (Drop the line on the quit path too, but don't rely on it.)
+
+**The diagnostic trap.** A `test`/`drop` command that pulses in a tight `pulseOn; sleep; pulseOff;
+sleep` loop **always pairs its edges**, so it is immune to (1) and (2) — it will happily report *"the
+pulse works, ingots on the floor"* while the real play loop shreds a third of the taps. A green light
+from a tool that cannot see the failure is worse than no tool. If you build a hardware self-test, make
+it exercise the **same** code path as the game, or state plainly what it does not cover.
 
 **The second constraint: the receiving block has a rate.** A **dropper/dispenser ejects on the
 RISING EDGE only** and then has a **4-game-tick (0.2s) cooldown** — the `triggered` blockstate blocks

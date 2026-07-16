@@ -69,10 +69,18 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
 
 ## Hardware / setup
 
-- **Hub** = computer + wired modem + **disk drive** (the drive is for `issue` to write cards).
-- **Each game station** (slot…) = computer + advanced monitor + lever + wired modem + **disk drive**.
-- Deploy: `update hub`, `update slot`, `update issue` (mind the raw-CDN lag — see
-  `[[deploy-and-identity]]` in the cc-lua KB; re-run `update` a few min after a push).
+- **Hub** = computer + **every modem it can reach stations with** + **disk drive** (the drive is for
+  `issue` to write cards). **The floor is NOT one network:** cabled stations reach the hub over the
+  wire, distant ones only by **ender modem** — so the hub needs *both* and must **open both**. See
+  `[[open-every-modem]]`; this shipped broken and read as "hub offline" on a hub that was running.
+- **Each game station** = computer + advanced monitor + wired modem (peripherals) + **disk drive**,
+  plus whatever reaches the hub (an **ender modem** if it isn't cabled to it). Every rednet entry
+  point opens *all* modems; never pick one.
+- **The cage** adds a deposit + a vault inventory and 2+ droppers — see `todo.md`.
+- Deploy: **`update hub` FIRST, then reboot the hub**, then the stations. Order matters whenever the
+  protocol grew (the stations speak the new `kind` before the hub understands it), and `update` only
+  writes files — **the running program stays old until the machine restarts**. Mind the raw-CDN lag
+  (`[[deploy-and-identity]]`): re-run `update` a few min after a push or you silently pull stale code.
 
 ## Hard-won lessons (don't re-learn these)
 
@@ -98,6 +106,20 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
    unboundedly. Debit-first with a stock check ahead of it risks only a bounded one-time loss (needs
    the hub UP *and* the id gone from the ledger) — refund the shortfall after the fact if a move
    comes up short. The cage's `cage.lua`/`cage_hw.lua` are the reference implementation.
+7. **"HUB OFFLINE" does not mean the hub is offline.** The station cannot tell the difference between
+   *no hub*, *a hub it can't reach*, and *a hub that doesn't understand the message* — all three are
+   simply **no reply within `TIMEOUT`**, and fail-closed reports the same string for all of them. The
+   hub's handler chain is `if/elseif` with **no `else`**: an unknown `kind` matches nothing and it
+   replies **nothing**. So the moment you add a message kind, every station that sends it before the
+   hub is updated *and restarted* reports HUB OFFLINE against a healthy hub. Triage it by which
+   messages work, not by looking at the hub:
+   - balance shows + deposit works + only withdraw fails → hub is **up but old** (knows `query`/
+     `credit`, not `debit`) → `update hub`, **reboot it**.
+   - nothing reaches it at all (even `update`'s registration) → **topology**: the modem that can
+     reach the hub isn't open, or isn't there → `[[open-every-modem]]`.
+   Both of those shipped here, on the same day, presenting identically. Worth a `hub_version`/ping in
+   the protocol so a station can say *"hub is up but too old"* — every future protocol change has this
+   same failure mode. **Not built; the next protocol change should build it.**
 
 ## Open follow-up
 
