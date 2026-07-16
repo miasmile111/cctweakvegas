@@ -13,16 +13,18 @@
 local PROTO = "ccvegas"
 local STORE = "registry.tbl"
 
-local function findWiredModem()
-  return peripheral.find("modem", function(_, m) return not m.isWireless() end)
+local function findModem()
+  -- prefer a wired modem (floor network); accept wireless for testing.
+  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
+  return wired or peripheral.find("modem")
 end
 
-local modem = findWiredModem()
+local modem = findModem()
 if not modem then
-  print("=================================")
-  print(" HUB needs a WIRED MODEM to run!")
-  print("=================================")
-  print("Attach a modem on a network cable, then re-run `hub`.")
+  print("===========================")
+  print(" HUB needs a MODEM to run!")
+  print("===========================")
+  print("Attach a modem (wired on a network cable), then re-run `hub`.")
   return
 end
 

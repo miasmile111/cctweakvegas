@@ -33,8 +33,10 @@ local function save(name, body)
   local f = fs.open(name, "w"); f.write(body); f.close()
 end
 
-local function findWiredModem()
-  return peripheral.find("modem", function(_, m) return not m.isWireless() end)
+local function findModem()
+  -- prefer a wired modem (also carries the monitor + frees sides); accept wireless for testing.
+  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
+  return wired or peripheral.find("modem")
 end
 
 local function loudBanner(title)
@@ -78,13 +80,13 @@ for _, pkg in ipairs(requested) do
 end
 
 -- ------------------------------------------ preflight: required hardware -----
-local modem = findWiredModem()
+local modem = findModem()
 local drive = peripheral.find("drive")
 if not modem or (needsDrive and not drive) then
   if needsDrive then loudBanner("I need a disk drive and wired modem!")
   else               loudBanner("I need a wired modem!") end
   print("Missing on this station:")
-  if not modem then print("  - a WIRED MODEM (for the rednet network)") end
+  if not modem then print("  - a MODEM (for rednet; a WIRED modem also carries the monitor)") end
   if needsDrive and not drive then print("  - a DISK DRIVE  (for member cards)") end
   print("Attach them (modem on a network cable), then re-run `update`.")
   return                                   -- hard stop: not a valid station yet
