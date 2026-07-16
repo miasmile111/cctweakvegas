@@ -77,10 +77,17 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
     JSON → Claude reads it → generates `subpixel.lua` draw code. NOT in the `src/` deploy loop.
   - **DONE — resolution formula exact.** Block→cell pulled from CC `ServerMonitor.rebuild`; slot
     1×2 @0.5 = **15×24** (not 15×21). See `kb/monitor-resolution.md`. MB `$`→`MB` swap shipped (a05efce).
-  - **NEXT — build slot v3 from the owner's mockup.** Handoff: **`docs/slot-v3-mockup-handoff.md`**;
-    drawing: **`docs/mockups/slot-v3.json`**. Keep existing gradient+bulbs; header text no-bg; all text
-    white first pass. New: card header, big WIN amount, celebration zone, **3 selectable stakes**
-    ($10/$25/$100), banner. Open Qs: diegetic stake-select control; text-vs-gradient cell tradeoff.
+  - **DONE — slot v3 built** (spec `docs/superpowers/specs/2026-07-16-slot-v3-design.md`, plan
+    `docs/superpowers/plans/2026-07-16-slot-v3.md`). Rebuilt `slot.lua` to the mockup's fixed 15×24
+    bands (card header, `WIN:`+amount, celebration zone, reel viewport, orange/red bars, side bulbs);
+    reuses the GRAD gradient + `bulb()` verbatim; all text white; text-cell bg bound to the animated
+    gradient slot so labels ride the gradient. **3 selectable stakes** ($10/$25/$100) via a diegetic
+    **stake-cycle button** (`STAKE_SIDE`/`STAKE_LEVEL`, rising-edge; persists across spins, resets to
+    $10 on wake). Economy made stake-variable: `slot_pay.eval(result,stake)`+`STAKES`, `sp_econ.tryBet(stake)`
+    captures `stakedStake`, `settle` pays against it. Unit tests 15/15; whole-file review clean.
+    **NEXT — in-world verify** after push: run `slot test` to find `STAKE_SIDE` (the cycle button's
+    side), wire the button, `update slot`, confirm cycle/persist/reset + variable payout. Polish later:
+    big-digit win font, celebration art, text colours (all white first pass by design).
 - **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
   economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
   balance/stake/win header layout; any deny/row-2 visual nits.
@@ -105,9 +112,11 @@ Non-blocking follow-ups from the final review (see the SDD ledger F1/F2):
 - Reel feel: `SPIN_SPEED0` / `DECAY` / `MIN_SPEED` (`slot_logic.lua`), stop ticks 12/20/28 (`slot.lua`).
 - Gradient: `GRAD_DEEP` / `GRAD_TEAL` and drift rate `tick * 0.05` (`slot.lua`).
 - Layout: viewport at `cv.h * 0.34`, `barH`, bulb spacing (`topLayout` in `slot.lua`).
-- Config: `TOP_NAME`, `SPIN_SIDE`, `SPIN_LEVEL=13` (`slot.lua`).
-- Payout: `STAKE=10`; per-symbol multiplier `cherry 3× · bell 5× · bar 8× · seven 25× (jackpot)`
-  (`slot/slot_pay.lua`). Starting card balance default `100` (`issue`).
+- Config: `TOP_NAME`, `SPIN_SIDE`, `SPIN_LEVEL=13`, `STAKE_SIDE`, `STAKE_LEVEL=13` (`slot.lua`).
+- Layout (v3): fixed 15×24 cell-row bands in `topLayout` (`R(row)` helper); reel viewport = rows 15–17.
+- Stakes: `STAKES={10,25,100}` (`slot/slot_pay.lua`); cycle button on `STAKE_SIDE`, `stakeIdx` a `play()`-local.
+- Payout: per-symbol multiplier `cherry 3× · bell 5× · bar 8× · seven 25× (jackpot)`; payout = `stake × mult`
+  (`slot/slot_pay.lua`, `eval(result,stake)`). Starting card balance default `100` (`issue`).
 
 ## slot v1 — status (complete)
 
