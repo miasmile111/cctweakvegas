@@ -1,0 +1,967 @@
+<title>CC:Tweaked Monitors — What Is One Pixel?</title>
+<style>
+  /* ---- tokens ---------------------------------------------------------- */
+  :root {
+    --ground:   #eef1f6;
+    --panel:    #ffffff;
+    --panel-2:  #f6f8fc;
+    --ink:      #1a2233;
+    --ink-soft: #55627a;
+    --ink-faint:#8a95ab;
+    --line:     #d5dbe8;
+    --line-2:   #e7ebf3;
+    --teal:     #0aa78d;
+    --teal-bg:  #d7f5ee;
+    --blue:     #3366cc;
+    --amber:    #c8930a;
+    --amber-px: #f4c430;
+    --red:      #d83843;
+    --green:    #1f9d5e;
+    --grid:     #c3cbdc;
+    --shadow:   0 1px 2px rgba(20,30,60,.06), 0 8px 24px rgba(20,30,60,.06);
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:   #060912;
+      --panel:    #0e1526;
+      --panel-2:  #121b30;
+      --ink:      #c9d4e6;
+      --ink-soft: #8b98b4;
+      --ink-faint:#5c6883;
+      --line:     #1f2a44;
+      --line-2:   #172136;
+      --teal:     #12d7b8;
+      --teal-bg:  #0c2b2a;
+      --blue:     #5b8bff;
+      --amber:    #e6b53c;
+      --amber-px: #f4c430;
+      --red:      #ff4d57;
+      --green:    #35d07f;
+      --grid:     #2a3960;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#eef1f6; --panel:#ffffff; --panel-2:#f6f8fc; --ink:#1a2233; --ink-soft:#55627a;
+    --ink-faint:#8a95ab; --line:#d5dbe8; --line-2:#e7ebf3; --teal:#0aa78d; --teal-bg:#d7f5ee;
+    --blue:#3366cc; --amber:#c8930a; --amber-px:#f4c430; --red:#d83843; --green:#1f9d5e;
+    --grid:#c3cbdc; --shadow:0 1px 2px rgba(20,30,60,.06),0 8px 24px rgba(20,30,60,.06);
+  }
+  :root[data-theme="dark"] {
+    --ground:#060912; --panel:#0e1526; --panel-2:#121b30; --ink:#c9d4e6; --ink-soft:#8b98b4;
+    --ink-faint:#5c6883; --line:#1f2a44; --line-2:#172136; --teal:#12d7b8; --teal-bg:#0c2b2a;
+    --blue:#5b8bff; --amber:#e6b53c; --amber-px:#f4c430; --red:#ff4d57; --green:#35d07f;
+    --grid:#2a3960; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6;
+    font-size: 16px; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px 120px; }
+
+  /* ---- masthead -------------------------------------------------------- */
+  header.mast {
+    max-width: 960px; margin: 0 auto; padding: 44px 24px 28px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;
+  }
+  .mast .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--teal); margin: 0 0 10px;
+  }
+  .mast h1 {
+    font-family: var(--mono); font-weight: 600; font-size: clamp(26px, 4.4vw, 40px);
+    line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -.01em;
+  }
+  .mast h1 .dim { color: var(--ink-faint); }
+  .mast p.lede { margin: 14px 0 0; max-width: 62ch; color: var(--ink-soft); font-size: 16.5px; }
+
+  /* theme toggle */
+  .toggle {
+    flex: none; font-family: var(--mono); font-size: 12px; letter-spacing: .06em;
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink-soft);
+    padding: 8px 12px; border-radius: 999px;
+  }
+  .toggle:hover { color: var(--ink); border-color: var(--teal); }
+  .toggle:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  /* ---- section rhythm -------------------------------------------------- */
+  .fignum {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-faint); display: flex; align-items: center; gap: 12px; margin: 64px 0 6px;
+  }
+  .fignum::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+  h2 {
+    font-family: var(--mono); font-weight: 600; font-size: 23px; letter-spacing: -.01em;
+    margin: 0 0 14px; text-wrap: balance;
+  }
+  h3 { font-family: var(--mono); font-weight: 600; font-size: 16px; margin: 26px 0 8px; }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  p.small { font-size: 14px; color: var(--ink-soft); }
+  strong { color: var(--ink); font-weight: 650; }
+  em.k { font-style: normal; color: var(--teal); font-family: var(--mono); font-weight: 600; }
+  code {
+    font-family: var(--mono); font-size: .9em; background: var(--panel-2);
+    border: 1px solid var(--line-2); border-radius: 5px; padding: .08em .38em;
+  }
+  a { color: var(--teal); }
+
+  /* ---- figure card ----------------------------------------------------- */
+  .fig {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 20px; margin: 18px 0 6px;
+  }
+  .fig-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint);
+    letter-spacing: .04em; margin-bottom: 16px; border-bottom: 1px dashed var(--line);
+    padding-bottom: 12px;
+  }
+  .fig-head b { color: var(--ink); font-weight: 600; letter-spacing: 0; }
+  .fig-body { display: grid; gap: 20px; }
+  @media (min-width: 720px) { .fig-body.split { grid-template-columns: 1fr 260px; align-items: start; } }
+
+  canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; border-radius: 8px; }
+  .canvas-hold { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 14px; overflow-x: auto; }
+
+  /* readout panel */
+  .readout {
+    font-family: var(--mono); font-size: 13px; background: var(--panel-2);
+    border: 1px solid var(--line-2); border-radius: 10px; padding: 14px 16px;
+  }
+  .readout h4 {
+    margin: 0 0 10px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 600;
+  }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+  .kv dt { color: var(--ink-soft); }
+  .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .kv dd.hl { color: var(--teal); font-weight: 600; }
+
+  /* controls */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    font-family: var(--mono); font-size: 12.5px; padding: 7px 12px; cursor: pointer;
+    background: var(--panel); color: var(--ink-soft); border: 0; border-right: 1px solid var(--line);
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--teal); color: #06121a; font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  .btn {
+    font-family: var(--mono); font-size: 12.5px; padding: 8px 14px; cursor: pointer;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .btn:hover { border-color: var(--teal); }
+  .btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  label.field { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 8px; }
+  input[type="number"] {
+    font-family: var(--mono); font-size: 13px; width: 66px; padding: 6px 8px;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 7px;
+  }
+  input[type="range"] { accent-color: var(--teal); }
+  .swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+  .swatch { width: 20px; height: 20px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; }
+  .swatch[aria-pressed="true"] { border-color: var(--teal); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--teal); }
+  .swatch:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  /* callout */
+  .note {
+    border-left: 3px solid var(--teal); background: var(--teal-bg); color: var(--ink);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 14.5px;
+  }
+  .note b { font-family: var(--mono); }
+  .warn { border-left-color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, var(--panel)); }
+
+  /* spec table */
+  table.spec { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 4px; }
+  table.spec th, table.spec td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-2); }
+  table.spec th { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+  table.spec td { font-variant-numeric: tabular-nums; }
+  table.spec td.mono, table.spec th.mono { font-family: var(--mono); }
+  table.spec tr:last-child td { border-bottom: 0; }
+  table.spec td .tag { color: var(--teal); font-family: var(--mono); font-size: 12px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--mono); font-size: 12px; color: var(--ink-soft); margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chip { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  footer.end { max-width: 960px; margin: 0 auto; padding: 40px 24px; color: var(--ink-faint); font-family: var(--mono); font-size: 12.5px; border-top: 1px solid var(--line); }
+  footer.end a { color: var(--teal); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<header class="mast">
+  <div>
+    <p class="eyebrow">CC:Tweaked · Monitor Reference</p>
+    <h1>What is <span class="dim">one</span> pixel?</h1>
+    <p class="lede">A hands-on datasheet for the slot machine's medium. Three grids stack inside every
+      monitor — cells, subpixels, real pixels. Once you can read all three, "move it up one pixel"
+      stops being a guess.</p>
+  </div>
+  <button class="toggle" id="themeBtn" aria-label="Toggle colour theme">◐ <span id="themeLabel">Theme</span></button>
+</header>
+
+<main class="wrap">
+
+  <!-- ============================================================ INTRO -->
+  <p>Everything the slot draws lands on a grid of <strong>character cells</strong> — the same grid a
+    text terminal uses. <code>monitor.getSize()</code> reports that grid in cells, not pixels. The
+    pixel-art look comes from a trick played <em>inside</em> each cell. To steer layout, you need the
+    exact size of a cell and of the trick's sub-unit. Both are fixed numbers. Here they are, verified:</p>
+
+  <table class="spec">
+    <thead><tr><th>Unit</th><th>Size</th><th>How you address it</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1 character cell</td><td class="mono"><strong>6 × 9</strong> real pixels</td><td>cursor pos + <code>write</code>/<code>blit</code></td><td><span class="tag">confirmed</span></td></tr>
+      <tr><td class="mono">1 subpixel</td><td class="mono"><strong>3 × 3</strong> real pixels</td><td>teletext char 128–159</td><td><span class="tag">6/2 × 9/3</span></td></tr>
+      <tr><td class="mono">cell → subpixels</td><td class="mono"><strong>2 × 3</strong> per cell</td><td>2 colours per cell, max</td><td><span class="tag">in-world</span></td></tr>
+      <tr><td class="mono">text scale</td><td class="mono">0.5 – 5.0, step 0.5</td><td><code>setTextScale</code></td><td><span class="tag">confirmed</span></td></tr>
+    </tbody>
+  </table>
+  <p class="small">Glyph size confirmed against CraftOS-PC's graphics-mode spec ("6× the width and 9×
+    the height of the text terminal") and the CC font; teletext 2×3 / 2-colour behaviour is verified
+    in-world by <code>src/lib/subpixel.lua</code>. The subpixel is <strong>nearly square</strong>
+    (3×3) — that is why the slot's art reads cleanly.</p>
+
+  <!-- ============================================================ FIG 1 -->
+  <p class="fignum">Figure 01 — Anatomy of one cell</p>
+  <h2>Six by nine, split two by three</h2>
+  <p>A single cell is a fixed <strong>6-wide × 9-tall</strong> block of real pixels. The teletext
+    characters (codes 128–159) carve it into a <strong>2 × 3</strong> grid of subpixels — each subpixel
+    is a <strong>3 × 3</strong> patch. The catch: a cell can show only <strong>two colours</strong> at
+    once (a foreground and a background). Every subpixel picks one of those two.</p>
+
+  <div class="fig">
+    <div class="fig-head"><b>Fig.01 — one cell, magnified</b><span>real px · subpixel · colour budget</span></div>
+    <div class="fig-body">
+      <div class="canvas-hold"><canvas id="c-anatomy" width="720" height="360"></canvas></div>
+      <div class="legend">
+        <span><span class="chip" style="background:var(--grid)"></span>real pixel (6×9 = 54)</span>
+        <span><span class="chip" style="background:var(--teal)"></span>subpixel bound (2×3 = 6)</span>
+        <span><span class="chip" style="background:var(--amber-px)"></span>one 3×3 subpixel</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ FIG 2 -->
+  <p class="fignum">Figure 02 — The answer</p>
+  <h2>"Move it up one pixel" — one <em class="k">what</em>?</h2>
+  <p>In <code>subpixel.lua</code> a "pixel" is <strong>one subpixel</strong>. So one step is
+    <strong>3 real pixels</strong> — which is <strong>½ a cell across</strong> and <strong>⅓ a cell
+    down</strong>. Hover the grid: the readout shows the same point in all three coordinate systems at
+    once. The canvas is <code>cols·2</code> wide and <code>rows·3</code> tall.</p>
+
+  <div class="fig">
+    <div class="fig-head"><b>Fig.02 — coordinate translator</b><span>hover / tap the grid</span></div>
+    <div class="fig-body split">
+      <div>
+        <div class="canvas-hold"><canvas id="c-zoom" width="720" height="540"></canvas></div>
+        <div class="controls">
+          <div class="seg" id="zoom-layers" role="group" aria-label="Overlay layers">
+            <button data-l="cells"    aria-pressed="true">cells</button>
+            <button data-l="subpx"    aria-pressed="true">subpixels</button>
+            <button data-l="realpx"   aria-pressed="false">real px</button>
+          </div>
+        </div>
+      </div>
+      <div class="readout" id="zoom-read">
+        <h4>Cursor → coordinates</h4>
+        <dl class="kv">
+          <dt>cell (col,row)</dt><dd id="z-cell">—</dd>
+          <dt>subpixel (x,y)</dt><dd id="z-sub" class="hl">—</dd>
+          <dt>real px (x,y)</dt><dd id="z-real">—</dd>
+          <dt>within cell</dt><dd id="z-within">—</dd>
+        </dl>
+        <p class="small" style="margin:12px 0 0">One subpixel step = <strong>3 real px</strong>.
+          Two steps across = one whole cell. Three steps down = one whole cell.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ FIG 3 -->
+  <p class="fignum">Figure 03 — The teletext trick</p>
+  <h2>How six subpixels become one character</h2>
+  <p>The monitor can't set a subpixel directly — it can only place a <em>character</em> with a
+    foreground and background colour. Codes <strong>128–159</strong> are the 32 shapes that fill a
+    2×3 pattern. Click the six subpixels below to paint them; the panel shows the exact character and
+    <code>blit</code> colours <code>subpixel.lua</code> would emit — including the invert trick it uses
+    when the bottom-right subpixel is foreground.</p>
+
+  <div class="fig">
+    <div class="fig-head"><b>Fig.03 — teletext cell editor</b><span>click subpixels · pick fg / bg</span></div>
+    <div class="fig-body split">
+      <div>
+        <div class="canvas-hold"><canvas id="c-tele" width="720" height="420"></canvas></div>
+        <div class="controls">
+          <label class="field">fg <span class="swatches" id="tele-fg"></span></label>
+        </div>
+        <div class="controls">
+          <label class="field">bg <span class="swatches" id="tele-bg"></span></label>
+        </div>
+      </div>
+      <div class="readout" id="tele-read">
+        <h4>encodeCell output</h4>
+        <dl class="kv">
+          <dt>low5 bitmask</dt><dd id="t-mask">0</dd>
+          <dt>bottom-right</dt><dd id="t-br">bg</dd>
+          <dt>char code</dt><dd id="t-code" class="hl">128</dd>
+          <dt>blit fg</dt><dd id="t-fg">0</dd>
+          <dt>blit bg</dt><dd id="t-bg">f</dd>
+        </dl>
+        <p class="small" style="margin:12px 0 0">Two colours per cell is the whole budget. Diagonal
+          detail or a third colour inside one cell is impossible — that's the "subpixel weirdness".</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ FIG 4 -->
+  <p class="fignum">Figure 04 — The two-colour collapse</p>
+  <h2>What happens when you ask for three colours</h2>
+  <p>Paint the 2×3 block with as many colours as you like, then run the encoder. It does exactly what
+    <code>encodeCell</code> does: the <strong>most common</strong> colour becomes the background, the
+    <strong>first different</strong> one becomes the foreground, and <em>everything else snaps</em> to
+    whichever of those two it is not. This is why a gradient can look muddy where colours meet — each
+    cell rounds to two.</p>
+
+  <div class="fig">
+    <div class="fig-head"><b>Fig.04 — colour budget enforcer</b><span>paint freely → encode → 2 colours</span></div>
+    <div class="fig-body split">
+      <div>
+        <div class="canvas-hold"><canvas id="c-collapse" width="720" height="300"></canvas></div>
+        <div class="controls">
+          <span class="swatches" id="collapse-pal"></span>
+          <button class="btn" id="collapse-encode">▶ encode</button>
+          <button class="btn" id="collapse-reset">reset</button>
+        </div>
+      </div>
+      <div class="readout" id="collapse-read">
+        <h4>Encoder decision</h4>
+        <dl class="kv">
+          <dt>distinct colours</dt><dd id="cl-distinct">1</dd>
+          <dt>→ background</dt><dd id="cl-bg" class="hl">—</dd>
+          <dt>→ foreground</dt><dd id="cl-fg" class="hl">—</dd>
+          <dt>subpixels snapped</dt><dd id="cl-snapped">0</dd>
+        </dl>
+        <p class="small" style="margin:12px 0 0">Left = what you painted. Right = what the monitor can
+          actually show in one cell.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ FIG 5 -->
+  <p class="fignum">Figure 05 — Text scale ↔ resolution</p>
+  <h2>Smaller scale, more cells, finer canvas</h2>
+  <p>The physical monitor is fixed; <code>setTextScale</code> only changes how big each cell is drawn.
+    Smaller scale ⇒ more cells fit ⇒ the subpixel canvas gets bigger. The slot runs at
+    <strong>0.5</strong> — the maximum resolution. The exact cell count for a given block arrangement
+    is whatever <code>getSize()</code> returns in-world; slide below to see how it drives the derived
+    canvas and real-pixel dimensions.</p>
+
+  <div class="fig">
+    <div class="fig-head"><b>Fig.05 — scale → getSize → canvas</b><span>slide the scale · type real cell count</span></div>
+    <div class="fig-body split">
+      <div>
+        <div class="canvas-hold"><canvas id="c-scale" width="720" height="300"></canvas></div>
+        <div class="controls">
+          <label class="field">scale
+            <input type="range" id="scale-range" min="0.5" max="5" step="0.5" value="0.5">
+            <span id="scale-val" class="mono">0.5</span>
+          </label>
+        </div>
+        <div class="controls">
+          <label class="field">getSize() cols <input type="number" id="scale-cols" value="15" min="1" max="200"></label>
+          <label class="field">rows <input type="number" id="scale-rows" value="21" min="1" max="200"></label>
+          <span class="small">at scale 0.5 — estimate, confirm in-world</span>
+        </div>
+      </div>
+      <div class="readout" id="scale-read">
+        <h4>Derived (at current cols×rows)</h4>
+        <dl class="kv">
+          <dt>cells</dt><dd id="s-cells">15 × 21</dd>
+          <dt>subpixel canvas</dt><dd id="s-canvas" class="hl">30 × 63</dd>
+          <dt>real pixels</dt><dd id="s-real">90 × 189</dd>
+          <dt>vs scale 1.0</dt><dd id="s-vs">~2× finer</dd>
+        </dl>
+        <p class="small" style="margin:12px 0 0">Halving the scale roughly doubles cells on each axis —
+          four times the drawable subpixels.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ FIG 6 -->
+  <p class="fignum">Figure 06 — The slot machine, dissected</p>
+  <h2>Two coordinate systems on one screen</h2>
+  <p>Here is the payoff. The slot draws its <strong>body</strong> — gradient, reel viewport, frame
+    bars, bulbs, banner — on the <em class="k">subpixel</em> canvas, using the layout math in
+    <code>topLayout()</code>. But the <strong>economy header</strong> (<code>Alice  240 MB</code>) and
+    the <strong>WIN!/LOSE</strong> label are plain <code>write</code> calls on the <em class="k">cell</em>
+    grid, laid on top. Same monitor, two grids. Toggle the layers to see the seam.</p>
+  <p class="small">Every region below is computed live by the real <code>topLayout()</code> formulas
+    (proportions of <code>cv.w</code>/<code>cv.h</code>, with <code>SYM_W=8, SYM_H=9, barH=7,
+    bannerH=5</code>). Plug the true <code>getSize()</code> in and the diagram is exact.</p>
+
+  <div class="fig">
+    <div class="fig-head"><b>Fig.06 — slot layout map</b><span>subpixel body + cell text overlay</span></div>
+    <div class="fig-body split">
+      <div>
+        <div class="canvas-hold"><canvas id="c-slot" width="480" height="640"></canvas></div>
+        <div class="controls">
+          <div class="seg" id="slot-layers" role="group" aria-label="Slot layers">
+            <button data-l="art"  aria-pressed="true">subpixel art</button>
+            <button data-l="text" aria-pressed="true">text cells</button>
+            <button data-l="grid" aria-pressed="false">cell grid</button>
+          </div>
+        </div>
+        <div class="controls">
+          <label class="field">cols <input type="number" id="slot-cols" value="15" min="8" max="120"></label>
+          <label class="field">rows <input type="number" id="slot-rows" value="21" min="12" max="200"></label>
+        </div>
+      </div>
+      <div class="readout" id="slot-read">
+        <h4>topLayout() — subpixel coords</h4>
+        <dl class="kv">
+          <dt>canvas</dt><dd id="sl-canvas">30 × 63</dd>
+          <dt>viewport y</dt><dd id="sl-view" class="hl">—</dd>
+          <dt>reels x</dt><dd id="sl-xs">—</dd>
+          <dt>top bar y</dt><dd id="sl-topbar">—</dd>
+          <dt>banner y</dt><dd id="sl-banner">—</dd>
+          <dt>header cells</dt><dd id="sl-header" class="hl">rows 1–2</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="legend">
+      <span><span class="chip" style="background:var(--blue)"></span>gradient</span>
+      <span><span class="chip" style="background:#5a6a80"></span>viewport</span>
+      <span><span class="chip" style="background:var(--red)"></span>frame bar</span>
+      <span><span class="chip" style="background:var(--amber-px)"></span>bulb</span>
+      <span><span class="chip" style="background:var(--green)"></span>banner</span>
+      <span><span class="chip" style="background:var(--teal)"></span>text cell</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>The seam to remember:</b> when you say "nudge the balance text," that is the <b>cell</b> grid —
+    whole 6×9 steps, positioned by <code>setCursorPos</code>. When you say "shift the reel viewport,"
+    that is the <b>subpixel</b> canvas — 3×3 steps, positioned by <code>topLayout</code>. Different
+    rulers. Next session we formalise a preview so you can see both before deploying.
+  </div>
+
+</main>
+
+<footer class="end">
+  cctweaked · monitor reference · glyph 6×9 verified (CraftOS-PC gfxmode + CC font) ·
+  teletext 2×3 / 2-colour verified in-world (src/lib/subpixel.lua) ·
+  cell counts read from getSize() — confirm the slot's in-world next session.
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- theme toggle ------------------------------------------------------
+  var root = document.documentElement, tLabel = document.getElementById("themeLabel");
+  function sysDark(){ return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches; }
+  function curDark(){ var t = root.getAttribute("data-theme"); return t ? t === "dark" : sysDark(); }
+  function setLabel(){ tLabel.textContent = curDark() ? "Light" : "Dark"; }
+  document.getElementById("themeBtn").addEventListener("click", function () {
+    root.setAttribute("data-theme", curDark() ? "light" : "dark"); setLabel(); repaintAll();
+  });
+  setLabel();
+
+  // read a CSS token
+  function tok(name){ return getComputedStyle(root).getPropertyValue(name).trim(); }
+
+  // CC:Tweaked default palette (index order 0..15), authentic hex
+  var CC = [
+    ["white","#f0f0f0"],["orange","#f2b233"],["magenta","#e57fd8"],["lightBlue","#99b2f2"],
+    ["yellow","#dede6c"],["lime","#7fcc19"],["pink","#f2b2cc"],["gray","#4c4c4c"],
+    ["lightGray","#999999"],["cyan","#4c99b2"],["purple","#b266e5"],["blue","#3366cc"],
+    ["brown","#7f664c"],["green","#57a64e"],["red","#cc4c4c"],["black","#111111"]
+  ];
+  var BLIT = "0123456789abcdef";
+
+  // hi-dpi canvas setup: returns {ctx,w,h} in CSS pixels
+  function fit(cv){
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var cssW = cv.clientWidth || cv.width, ratio = cv.height / cv.width;
+    var cssH = cssW * ratio;
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+    cv.style.height = cssH + "px";
+    var ctx = cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.imageSmoothingEnabled = false;
+    return { ctx: ctx, w: cssW, h: cssH };
+  }
+
+  var repainters = [];
+  function repaintAll(){ repainters.forEach(function(f){ try{ f(); }catch(e){} }); }
+  window.addEventListener("resize", function(){ clearTimeout(window.__rt); window.__rt = setTimeout(repaintAll, 120); });
+
+  // ======================================================== FIG 1: anatomy
+  (function(){
+    var cv = document.getElementById("c-anatomy");
+    function draw(){
+      var f = fit(cv), ctx = f.ctx, W = f.w, H = f.h;
+      ctx.clearRect(0,0,W,H);
+      // cell = 6x9 real px. draw magnified with margins.
+      var padL = 90, padT = 20, padR = 20, padB = 30;
+      var gw = W - padL - padR, gh = H - padT - padB;
+      var pxW = gw / 6, pxH = gh / 9;
+      var line = tok("--line"), grid = tok("--grid"), ink = tok("--ink-soft");
+      var teal = tok("--teal"), amber = tok("--amber-px");
+      // subpixel background tint on the (1,0) subpixel -> highlight one 3x3
+      // real-pixel grid
+      for (var ry=0; ry<9; ry++){ for (var rx=0; rx<6; rx++){
+        var x = padL + rx*pxW, y = padT + ry*pxH;
+        // highlight one whole subpixel (cols 0-1, rows 3-5 => middle-left)
+        var inHi = (rx<2 && ry>=3 && ry<6);
+        ctx.fillStyle = inHi ? amber : tok("--panel");
+        ctx.globalAlpha = inHi ? 0.5 : 1;
+        ctx.fillRect(x, y, pxW-1, pxH-1);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = grid; ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(x)+.5, Math.round(y)+.5, Math.round(pxW-1), Math.round(pxH-1));
+      }}
+      // subpixel boundaries (2 cols x 3 rows) heavy teal
+      ctx.strokeStyle = teal; ctx.lineWidth = 2.5;
+      for (var sx=0; sx<=2; sx++){ var X = padL + sx*3*pxW;
+        ctx.beginPath(); ctx.moveTo(X, padT); ctx.lineTo(X, padT+gh); ctx.stroke(); }
+      for (var sy=0; sy<=3; sy++){ var Y = padT + sy*3*pxH;
+        ctx.beginPath(); ctx.moveTo(padL, Y); ctx.lineTo(padL+gw, Y); ctx.stroke(); }
+      // labels
+      ctx.fillStyle = ink; ctx.font = "12px ui-monospace, Consolas, monospace";
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      for (var r=0;r<9;r++){ ctx.fillText(String(r), padL-30, padT + r*pxH + pxH/2); }
+      ctx.save(); ctx.translate(padL-58, padT+gh/2); ctx.rotate(-Math.PI/2);
+      ctx.textAlign="center"; ctx.fillStyle=ink; ctx.fillText("9 real px tall", 0, 0); ctx.restore();
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      for (var c=0;c<6;c++){ ctx.fillStyle=ink; ctx.fillText(String(c), padL + c*pxW + pxW/2, padT+gh+6); }
+      ctx.fillStyle = teal; ctx.font = "bold 12px ui-monospace, Consolas, monospace";
+      ctx.fillText("6 real px wide  =  2 subpixels", padL+gw/2, padT+gh+18);
+    }
+    repainters.push(draw); draw();
+  })();
+
+  // ======================================================== FIG 2: zoom translator
+  (function(){
+    var cv = document.getElementById("c-zoom");
+    var COLS = 4, ROWS = 3;                 // a 4x3 cell region
+    var layers = { cells:true, subpx:true, realpx:false };
+    var hover = null;                       // {sx,sy} subpixel coords (1-based)
+    document.querySelectorAll("#zoom-layers button").forEach(function(b){
+      b.addEventListener("click", function(){
+        var on = b.getAttribute("aria-pressed")==="true";
+        b.setAttribute("aria-pressed", on?"false":"true");
+        layers[b.dataset.l] = !on; draw();
+      });
+    });
+    var geom = null;
+    function draw(){
+      var f = fit(cv), ctx = f.ctx, W = f.w, H = f.h;
+      ctx.clearRect(0,0,W,H);
+      var pad = 16;
+      var subW = COLS*2, subH = ROWS*3;     // subpixels
+      var cell = Math.min((W-2*pad)/subW, (H-2*pad)/subH);
+      var gx = (W - cell*subW)/2, gy = pad;
+      geom = { gx:gx, gy:gy, cell:cell, subW:subW, subH:subH };
+      var panel2 = tok("--panel-2"), grid = tok("--grid"), line = tok("--line");
+      var teal = tok("--teal"), blue = tok("--blue"), ink = tok("--ink-soft"), amber = tok("--amber-px");
+      // ground
+      ctx.fillStyle = panel2; ctx.fillRect(gx, gy, cell*subW, cell*subH);
+      // real px grid (finest)
+      if (layers.realpx){
+        ctx.strokeStyle = grid; ctx.lineWidth = 1; ctx.globalAlpha = .6;
+        var rpx = cell/3;                   // 3 real px per subpixel
+        for (var i=0;i<=subW*3;i++){ var X=gx+i*rpx; ctx.beginPath(); ctx.moveTo(X,gy); ctx.lineTo(X,gy+cell*subH); ctx.stroke(); }
+        for (var j=0;j<=subH*3;j++){ var Y=gy+j*rpx; ctx.beginPath(); ctx.moveTo(gx,Y); ctx.lineTo(gx+cell*subW,Y); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+      }
+      // hover highlight (one subpixel)
+      if (hover){
+        ctx.fillStyle = amber; ctx.globalAlpha = .55;
+        ctx.fillRect(gx+(hover.sx-1)*cell, gy+(hover.sy-1)*cell, cell, cell);
+        ctx.globalAlpha = 1;
+      }
+      // subpixel grid
+      if (layers.subpx){
+        ctx.strokeStyle = teal; ctx.lineWidth = 1.4; ctx.globalAlpha = .8;
+        for (var s=0;s<=subW;s++){ var X=gx+s*cell; ctx.beginPath(); ctx.moveTo(X,gy); ctx.lineTo(X,gy+cell*subH); ctx.stroke(); }
+        for (var t=0;t<=subH;t++){ var Y=gy+t*cell; ctx.beginPath(); ctx.moveTo(gx,Y); ctx.lineTo(gx+cell*subW,Y); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+      }
+      // cell grid (heaviest)
+      if (layers.cells){
+        ctx.strokeStyle = blue; ctx.lineWidth = 2.5;
+        for (var cx=0;cx<=COLS;cx++){ var X=gx+cx*2*cell; ctx.beginPath(); ctx.moveTo(X,gy); ctx.lineTo(X,gy+cell*subH); ctx.stroke(); }
+        for (var cy=0;cy<=ROWS;cy++){ var Y=gy+cy*3*cell; ctx.beginPath(); ctx.moveTo(gx,Y); ctx.lineTo(gx+cell*subW,Y); ctx.stroke(); }
+      }
+      // caption
+      ctx.fillStyle = ink; ctx.font = "12px ui-monospace, Consolas, monospace";
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText(COLS+"×"+ROWS+" cells  =  "+subW+"×"+subH+" subpixels  =  "+(subW*3)+"×"+(subH*3)+" real px",
+                   W/2, gy+cell*subH+10);
+    }
+    function pick(ev){
+      if (!geom) return;
+      var r = cv.getBoundingClientRect();
+      var px = (ev.touches?ev.touches[0].clientX:ev.clientX) - r.left;
+      var py = (ev.touches?ev.touches[0].clientY:ev.clientY) - r.top;
+      var sx = Math.floor((px - geom.gx)/geom.cell)+1;
+      var sy = Math.floor((py - geom.gy)/geom.cell)+1;
+      if (sx<1||sy<1||sx>geom.subW||sy>geom.subH){ hover=null; draw(); readout(); return; }
+      hover = { sx:sx, sy:sy }; draw(); readout();
+    }
+    function readout(){
+      var set = function(id,v){ document.getElementById(id).textContent = v; };
+      if (!hover){ set("z-cell","—"); set("z-sub","—"); set("z-real","—"); set("z-within","—"); return; }
+      var cx = Math.ceil(hover.sx/2), cy = Math.ceil(hover.sy/3);
+      var wx = ((hover.sx-1)%2), wy = ((hover.sy-1)%3);
+      set("z-cell", "("+cx+","+cy+")");
+      set("z-sub", "("+hover.sx+","+hover.sy+")");
+      set("z-real", "("+((hover.sx-1)*3+1)+","+((hover.sy-1)*3+1)+")");
+      set("z-within", "col "+wx+" · row "+wy+" of 2×3");
+    }
+    cv.addEventListener("mousemove", pick);
+    cv.addEventListener("mouseleave", function(){ hover=null; draw(); readout(); });
+    cv.addEventListener("touchstart", function(e){ pick(e); e.preventDefault(); }, {passive:false});
+    cv.addEventListener("touchmove", function(e){ pick(e); e.preventDefault(); }, {passive:false});
+    repainters.push(function(){ draw(); }); draw(); readout();
+  })();
+
+  // ======================================================== FIG 3: teletext editor
+  (function(){
+    var cv = document.getElementById("c-tele");
+    // subpixel positions order matches subpixel.lua: 1 topL,2 topR,3 midL,4 midR,5 botL,6 botR
+    var on = [false,false,false,false,false,false];   // index 0..5
+    var fgIdx = 0, bgIdx = 15;                          // white fg, black bg
+    var bits = [1,2,4,8,16];
+    // build swatch pickers
+    function buildSw(host, get, set){
+      CC.forEach(function(c, i){
+        var b = document.createElement("button");
+        b.className = "swatch"; b.style.background = c[1]; b.title = c[0];
+        b.setAttribute("aria-pressed", get()===i ? "true":"false");
+        b.addEventListener("click", function(){
+          set(i);
+          host.querySelectorAll(".swatch").forEach(function(s,si){ s.setAttribute("aria-pressed", si===i?"true":"false"); });
+          draw(); readout();
+        });
+        host.appendChild(b);
+      });
+    }
+    buildSw(document.getElementById("tele-fg"), function(){return fgIdx;}, function(i){fgIdx=i;});
+    buildSw(document.getElementById("tele-bg"), function(){return bgIdx;}, function(i){bgIdx=i;});
+
+    var geom=null;
+    function draw(){
+      var f = fit(cv), ctx=f.ctx, W=f.w, H=f.h;
+      ctx.clearRect(0,0,W,H);
+      var line=tok("--line"), grid=tok("--grid"), ink=tok("--ink-soft"), teal=tok("--teal");
+      // LEFT: editable 2x3 big;  RIGHT: rendered character preview at real size-ish
+      var pad=18, colGap=40;
+      var leftW = (W-2*pad-colGap)*0.62, rightW=(W-2*pad-colGap)-leftW;
+      var subW=2, subH=3;
+      var cell = Math.min(leftW/subW, (H-2*pad-30)/subH);
+      var gx=pad, gy=pad;
+      geom={gx:gx,gy:gy,cell:cell};
+      for (var sy=0;sy<3;sy++){ for (var sx=0;sx<2;sx++){
+        var idx = sy*2+sx;  // 0..5 in reading order = topL,topR,midL,midR,botL,botR
+        var x=gx+sx*cell, y=gy+sy*cell;
+        ctx.fillStyle = on[idx] ? CC[fgIdx][1] : CC[bgIdx][1];
+        ctx.fillRect(x,y,cell,cell);
+        ctx.strokeStyle = teal; ctx.lineWidth=2; ctx.strokeRect(x+1,y+1,cell-2,cell-2);
+        ctx.fillStyle = on[idx] ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.35)";
+        ctx.font = "11px ui-monospace, Consolas, monospace"; ctx.textAlign="left"; ctx.textBaseline="top";
+        ctx.fillText(on[idx]?"fg":"bg", x+6, y+6);
+      }}
+      ctx.fillStyle=ink; ctx.font="12px ui-monospace, Consolas, monospace";
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText("click to toggle", gx+cell, gy+3*cell+8);
+      // RIGHT preview: draw the actual 6x9 glyph as the 2x3 pattern at real ratio
+      var rgx = pad+leftW+colGap, rgy=pad;
+      var rpxW = rightW/6, rpxH = Math.min((H-2*pad-30)/9, rpxW);
+      var totW=rpxW*6, totH=rpxH*9;
+      var ox = rgx + (rightW-totW)/2;
+      for (var ry=0;ry<9;ry++){ for (var rx=0;rx<6;rx++){
+        var subx = Math.floor(rx/3), suby=Math.floor(ry/3);   // which subpixel this real px is in
+        var oidx = suby*2+subx;
+        ctx.fillStyle = on[oidx] ? CC[fgIdx][1] : CC[bgIdx][1];
+        ctx.fillRect(ox+rx*rpxW, rgy+ry*rpxH, rpxW, rpxH);
+      }}
+      ctx.strokeStyle=grid; ctx.lineWidth=1; ctx.strokeRect(ox+.5, rgy+.5, totW, totH);
+      ctx.fillStyle=ink; ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText("rendered cell (6×9)", ox+totW/2, rgy+totH+8);
+    }
+    // replicate subpixel.lua encodeCell for a 2-colour cell (fg/bg by our pickers)
+    function encode(){
+      // colours per position (as fg/bg choice) -> we already know fg/bg; compute low5 + invert
+      var c = on.slice(); // booleans: true=fg
+      // low5 over positions 1..5 where c==fg
+      var low5=0; for (var i=0;i<5;i++){ if (c[i]) low5 += bits[i]; }
+      var brFg = c[5]; // position 6 bottom-right
+      var code, F, B;
+      if (brFg){ code = 128 + (31-low5); F=bgIdx; B=fgIdx; }
+      else     { code = 128 + low5;      F=fgIdx; B=bgIdx; }
+      return { code:code, low5:low5, brFg:brFg, F:F, B:B };
+    }
+    function readout(){
+      var e=encode(), set=function(id,v){document.getElementById(id).textContent=v;};
+      set("t-mask", e.low5 + "  (0b"+("00000"+e.low5.toString(2)).slice(-5)+")");
+      set("t-br", e.brFg ? "fg → invert" : "bg");
+      set("t-code", e.code + "  (char " + e.code + ")");
+      set("t-fg", BLIT[e.F] + "  " + CC[e.F][0]);
+      set("t-bg", BLIT[e.B] + "  " + CC[e.B][0]);
+    }
+    cv.addEventListener("click", function(ev){
+      if(!geom) return;
+      var r=cv.getBoundingClientRect(), px=ev.clientX-r.left, py=ev.clientY-r.top;
+      var sx=Math.floor((px-geom.gx)/geom.cell), sy=Math.floor((py-geom.gy)/geom.cell);
+      if(sx<0||sx>1||sy<0||sy>2) return;
+      on[sy*2+sx]=!on[sy*2+sx]; draw(); readout();
+    });
+    repainters.push(function(){ draw(); }); draw(); readout();
+  })();
+
+  // ======================================================== FIG 4: collapse
+  (function(){
+    var cv = document.getElementById("c-collapse");
+    var PAL = [0,1,4,11,13,14];              // white orange yellow blue green red (indices into CC)
+    var sel = 11;                            // current brush
+    var paint = [0,1,4,11,13,14];            // 6 subpixels seeded multi-colour (indices into CC)
+    var encoded = null;                      // {bg,fg,cells:[idx...]}
+    // brush swatches
+    var host = document.getElementById("collapse-pal");
+    PAL.forEach(function(ci){
+      var b=document.createElement("button"); b.className="swatch"; b.style.background=CC[ci][1];
+      b.title=CC[ci][0]; b.setAttribute("aria-pressed", ci===sel?"true":"false");
+      b.addEventListener("click", function(){ sel=ci;
+        host.querySelectorAll(".swatch").forEach(function(s,si){ s.setAttribute("aria-pressed", PAL[si]===sel?"true":"false"); });
+      });
+      host.appendChild(b);
+    });
+    var geom=null;
+    function draw(){
+      var f=fit(cv), ctx=f.ctx, W=f.w, H=f.h; ctx.clearRect(0,0,W,H);
+      var ink=tok("--ink-soft"), teal=tok("--teal"), grid=tok("--grid");
+      var pad=18, gap=70, subW=2, subH=3;
+      var cell=Math.min((W-2*pad-gap)/ (subW*2), (H-2*pad-26)/subH);
+      // LEFT painted
+      var lx=pad, ly=pad+ (H-2*pad-26 - cell*subH)/2;
+      geom={lx:lx,ly:ly,cell:cell};
+      for (var i=0;i<6;i++){ var sx=i%2, sy=Math.floor(i/2);
+        ctx.fillStyle=CC[paint[i]][1]; ctx.fillRect(lx+sx*cell, ly+sy*cell, cell, cell);
+        ctx.strokeStyle=grid; ctx.lineWidth=1.5; ctx.strokeRect(lx+sx*cell+.5, ly+sy*cell+.5, cell-1, cell-1);
+      }
+      ctx.fillStyle=ink; ctx.font="12px ui-monospace, Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText("painted (click)", lx+cell, ly+cell*subH+6);
+      // arrow
+      var ax=lx+cell*subW+gap/2;
+      ctx.strokeStyle=teal; ctx.lineWidth=2; ctx.beginPath();
+      ctx.moveTo(ax-14, ly+cell*subH/2); ctx.lineTo(ax+14, ly+cell*subH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ax+8, ly+cell*subH/2-6); ctx.lineTo(ax+14, ly+cell*subH/2); ctx.lineTo(ax+8, ly+cell*subH/2+6); ctx.stroke();
+      // RIGHT encoded (or ghost)
+      var rx=lx+cell*subW+gap;
+      for (var j=0;j<6;j++){ var sx2=j%2, sy2=Math.floor(j/2);
+        var ci = encoded ? encoded.cells[j] : paint[j];
+        ctx.globalAlpha = encoded ? 1 : .25;
+        ctx.fillStyle=CC[ci][1]; ctx.fillRect(rx+sx2*cell, ly+sy2*cell, cell, cell);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle=grid; ctx.lineWidth=1.5; ctx.strokeRect(rx+sx2*cell+.5, ly+sy2*cell+.5, cell-1, cell-1);
+      }
+      ctx.fillStyle=ink; ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText(encoded?"2 colours only":"press encode", rx+cell, ly+cell*subH+6);
+    }
+    function encode(){
+      // majority = bg; first different = fg (subpixel.lua)
+      var counts={}, order=[];
+      paint.forEach(function(ci){ if(counts[ci]===undefined){counts[ci]=0; order.push(ci);} counts[ci]++; });
+      var bg=paint[0], best=-1;
+      // pairs iteration order: use order of first appearance for determinism
+      order.forEach(function(ci){ if(counts[ci]>best){ best=counts[ci]; bg=ci; } });
+      var fg=bg; for (var i=0;i<6;i++){ if(paint[i]!==bg){ fg=paint[i]; break; } }
+      var cells=[], snapped=0;
+      for (var k=0;k<6;k++){
+        if (paint[k]===bg){ cells.push(bg); }
+        else if (paint[k]===fg){ cells.push(fg); }
+        else { // snap to nearer of fg/bg by rgb distance
+          var d1=dist(paint[k],fg), d0=dist(paint[k],bg);
+          cells.push(d1<d0?fg:bg); snapped++;
+        }
+      }
+      encoded={bg:bg,fg:fg,cells:cells,distinct:order.length,snapped:snapped};
+    }
+    function hex2rgb(h){ return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]; }
+    function dist(a,b){ var x=hex2rgb(CC[a][1]),y=hex2rgb(CC[b][1]); return (x[0]-y[0])**2+(x[1]-y[1])**2+(x[2]-y[2])**2; }
+    function readout(){
+      var set=function(id,v){document.getElementById(id).textContent=v;};
+      var distinct=new Set(paint).size;
+      set("cl-distinct", distinct);
+      set("cl-bg", encoded? CC[encoded.bg][0] : "—");
+      set("cl-fg", encoded? CC[encoded.fg][0] : "—");
+      set("cl-snapped", encoded? encoded.snapped : 0);
+    }
+    cv.addEventListener("click", function(ev){
+      if(!geom) return; var r=cv.getBoundingClientRect(), px=ev.clientX-r.left, py=ev.clientY-r.top;
+      var sx=Math.floor((px-geom.lx)/geom.cell), sy=Math.floor((py-geom.ly)/geom.cell);
+      if(sx<0||sx>1||sy<0||sy>2) return;
+      paint[sy*2+sx]=sel; encoded=null; draw(); readout();
+    });
+    document.getElementById("collapse-encode").addEventListener("click", function(){ encode(); draw(); readout(); });
+    document.getElementById("collapse-reset").addEventListener("click", function(){
+      paint=[0,1,4,11,13,14]; encoded=null; draw(); readout();
+    });
+    repainters.push(function(){ draw(); }); draw(); readout();
+  })();
+
+  // ======================================================== FIG 5: scale
+  (function(){
+    var cv=document.getElementById("c-scale");
+    var range=document.getElementById("scale-range"), val=document.getElementById("scale-val");
+    var colsI=document.getElementById("scale-cols"), rowsI=document.getElementById("scale-rows");
+    function draw(){
+      var f=fit(cv), ctx=f.ctx, W=f.w, H=f.h; ctx.clearRect(0,0,W,H);
+      var ink=tok("--ink-soft"), teal=tok("--teal"), blue=tok("--blue"), grid=tok("--grid"), panel2=tok("--panel-2");
+      var scale=parseFloat(range.value);
+      // illustrate a fixed 1x2 block monitor; cell size drawn scales with `scale`
+      var pad=20;
+      // base cells-per-block at scale 1 (illustrative constant for the drawing only)
+      var baseCol=7, baseRow=5;            // ~cells per block @ scale1 (illustrative)
+      var blocksW=1, blocksH=2;
+      var colsAt=Math.max(1, Math.round(baseCol*blocksW/scale));
+      var rowsAt=Math.max(1, Math.round(baseRow*blocksH/scale));
+      // draw the monitor face with colsAt x rowsAt cells
+      var availW=W-2*pad, availH=H-2*pad-24;
+      var cw=Math.min(availW/colsAt, availH/rowsAt);
+      var gw=cw*colsAt, gh=cw*rowsAt, gx=(W-gw)/2, gy=pad;
+      ctx.fillStyle=panel2; ctx.fillRect(gx,gy,gw,gh);
+      ctx.strokeStyle=grid; ctx.lineWidth=1;
+      for (var c=0;c<=colsAt;c++){ var X=gx+c*cw; ctx.beginPath(); ctx.moveTo(X,gy); ctx.lineTo(X,gy+gh); ctx.stroke(); }
+      for (var r=0;r<=rowsAt;r++){ var Y=gy+r*cw; ctx.beginPath(); ctx.moveTo(gx,Y); ctx.lineTo(gx+gw,Y); ctx.stroke(); }
+      // block boundary (the physical 1x2)
+      ctx.strokeStyle=teal; ctx.lineWidth=2.5; ctx.strokeRect(gx,gy,gw,gh);
+      ctx.beginPath(); ctx.moveTo(gx, gy+gh/2); ctx.lineTo(gx+gw, gy+gh/2); ctx.stroke();
+      ctx.fillStyle=ink; ctx.font="12px ui-monospace, Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText("1×2 block monitor @ scale "+scale.toFixed(1)+"  →  ~"+colsAt+"×"+rowsAt+" cells (illustrative)", W/2, gy+gh+8);
+    }
+    function readout(){
+      var cols=Math.max(1,parseInt(colsI.value)||1), rows=Math.max(1,parseInt(rowsI.value)||1);
+      var set=function(id,v){document.getElementById(id).textContent=v;};
+      set("s-cells", cols+" × "+rows);
+      set("s-canvas", (cols*2)+" × "+(rows*3));
+      set("s-real", (cols*6)+" × "+(rows*9));
+      var scale=parseFloat(range.value);
+      set("s-vs", scale<1?"finer than 1.0": scale>1?"coarser than 1.0":"baseline");
+    }
+    range.addEventListener("input", function(){ val.textContent=parseFloat(range.value).toFixed(1); draw(); readout(); });
+    colsI.addEventListener("input", readout); rowsI.addEventListener("input", readout);
+    repainters.push(function(){ draw(); }); draw(); readout();
+  })();
+
+  // ======================================================== FIG 6: slot dissection
+  (function(){
+    var cv=document.getElementById("c-slot");
+    var colsI=document.getElementById("slot-cols"), rowsI=document.getElementById("slot-rows");
+    var layers={art:true,text:true,grid:false};
+    document.querySelectorAll("#slot-layers button").forEach(function(b){
+      b.addEventListener("click", function(){
+        var on=b.getAttribute("aria-pressed")==="true"; b.setAttribute("aria-pressed", on?"false":"true");
+        layers[b.dataset.l]=!on; draw();
+      });
+    });
+    // faithful port of topLayout() from slot.lua
+    var SYM_W=8, SYM_H=9, SYMBOL_PX=SYM_H+2; // 11
+    function topLayout(w,h){
+      var marginX=Math.max(2, Math.floor(w*0.10));
+      var zoneW=w-2*marginX;
+      var gap=Math.floor((zoneW-3*SYM_W)/2); if(gap<0)gap=0;
+      var startX=marginX+Math.floor((zoneW-(3*SYM_W+2*gap))/2)+1;
+      var xs=[]; for(var i=1;i<=3;i++){ xs[i-1]=startX+(i-1)*(SYM_W+gap); }
+      var barH=Math.max(3, Math.floor(SYMBOL_PX*0.7)); // 7
+      var bannerH=5, bannerTop=h-bannerH+1;
+      var viewTop=Math.floor(h*0.34)+barH;
+      var viewBot=bannerTop-1-barH;
+      var paylineY=Math.floor((viewTop+viewBot)/2 - SYM_H/2);
+      return {marginX:marginX, xs:xs, barH:barH, bannerH:bannerH, bannerTop:bannerTop,
+              viewTop:viewTop, viewBot:viewBot, paylineY:paylineY,
+              topBarY:viewTop-barH, botBarY:viewBot+1};
+    }
+    function draw(){
+      var f=fit(cv), ctx=f.ctx, W=f.w, H=f.h; ctx.clearRect(0,0,W,H);
+      var cols=Math.max(8,parseInt(colsI.value)||15), rows=Math.max(12,parseInt(rowsI.value)||21);
+      var cw=cols*2, ch=rows*3;             // subpixel canvas
+      var L=topLayout(cw,ch);
+      // fit canvas into the drawing area, 1 subpixel -> `u` device px
+      var pad=14; var u=Math.min((W-2*pad)/cw, (H-2*pad)/ch);
+      var gw=cw*u, gh=ch*u, gx=(W-gw)/2, gy=pad;
+      var blue=tok("--blue"), red=tok("--red"), amber=tok("--amber-px"), green=tok("--green"),
+          teal=tok("--teal"), ink=tok("--ink"), inkS=tok("--ink-soft"), line=tok("--line");
+      function R(x,y,w,h,col,a){ ctx.globalAlpha=a==null?1:a; ctx.fillStyle=col;
+        ctx.fillRect(gx+(x-1)*u, gy+(y-1)*u, w*u, h*u); ctx.globalAlpha=1; }
+      // ground
+      ctx.fillStyle=tok("--panel-2"); ctx.fillRect(gx,gy,gw,gh);
+      if (layers.art){
+        // gradient bands (5 bands, blue)
+        var bandH=Math.ceil(ch/5);
+        for (var b=0;b<5;b++){ R(1, 1+b*bandH, cw, bandH, blue, 0.28+0.12*Math.sin(b)); }
+        // payline highlight
+        R(1, L.paylineY-1, cw, SYM_H+2, "#5a6a80", 0.5);
+        // reel columns (viewport)
+        for (var i=0;i<3;i++){ R(L.xs[i], L.viewTop, SYM_W, L.viewBot-L.viewTop+1, "#8794ab", 0.55); }
+        // frame bars
+        R(1, L.topBarY, cw, L.barH, red, 0.9);
+        R(1, L.botBarY, cw, L.barH, red, 0.9);
+        // bulbs (amber) around: top & bottom rows + side lanes
+        var topRow=L.topBarY+Math.floor(L.barH/2)-1, botRow=L.botBarY+Math.floor(L.barH/2)-1;
+        for (var x=L.marginX; x<=cw-L.marginX; x+=4){ R(x, topRow, 2,2, amber); R(x, botRow, 2,2, amber); }
+        for (var y=L.viewTop; y<=L.viewBot; y+=4){ R(1, y, 2,2, amber); R(cw-1, y, 2,2, amber); }
+        // banner
+        R(1, L.bannerTop, cw, L.bannerH, green, 0.85);
+      }
+      // cell grid overlay
+      if (layers.grid){
+        ctx.strokeStyle=line; ctx.lineWidth=1; ctx.globalAlpha=.5;
+        for (var c=0;c<=cols;c++){ var X=gx+c*2*u; ctx.beginPath(); ctx.moveTo(X,gy); ctx.lineTo(X,gy+gh); ctx.stroke(); }
+        for (var r=0;r<=rows;r++){ var Y=gy+r*3*u; ctx.beginPath(); ctx.moveTo(gx,Y); ctx.lineTo(gx+gw,Y); ctx.stroke(); }
+        ctx.globalAlpha=1;
+      }
+      // text-cell layer: header rows 1-2 (subpixel rows 1-6), banner cell row (last)
+      if (layers.text){
+        // header band = cell rows 1..2 => subpixel rows 1..6
+        ctx.strokeStyle=teal; ctx.lineWidth=2; ctx.setLineDash([5,4]);
+        ctx.strokeRect(gx+1, gy+1, gw-2, 6*u);
+        // WIN/LOSE banner = last cell row => subpixel rows ch-2..ch
+        var lastRowTop = (rows-1)*3;
+        ctx.strokeRect(gx+1, gy+lastRowTop*u+1, gw-2, 3*u-2);
+        ctx.setLineDash([]);
+        // faux text glyphs in header (blocky) to signal "cells"
+        ctx.fillStyle=teal; ctx.font="bold "+Math.max(9,Math.min(14, 2.4*u))+"px ui-monospace, Consolas, monospace";
+        ctx.textAlign="left"; ctx.textBaseline="middle";
+        ctx.fillText("Alice  240 MB", gx+4, gy+1.5*u);
+        ctx.fillText("stake 10  win 0", gx+4, gy+4.5*u);
+        ctx.textAlign="center";
+        ctx.fillText("WIN!", gx+gw/2, gy+(lastRowTop+1.5)*u);
+      }
+      // caption
+      ctx.fillStyle=inkS; ctx.font="11px ui-monospace, Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="bottom";
+      ctx.fillText(cw+"×"+ch+" subpixel canvas · header on cell grid", W/2, gy+gh+ (H-gy-gh)/2);
+      // readout
+      var set=function(id,v){document.getElementById(id).textContent=v;};
+      set("sl-canvas", cw+" × "+ch);
+      set("sl-view", "["+L.viewTop+" – "+L.viewBot+"]");
+      set("sl-xs", L.xs.join(", "));
+      set("sl-topbar", L.topBarY+"  (h "+L.barH+")");
+      set("sl-banner", "["+L.bannerTop+" – "+ch+"]");
+      set("sl-header", "rows 1–2 = subpx 1–6");
+    }
+    colsI.addEventListener("input", draw); rowsI.addEventListener("input", draw);
+    repainters.push(function(){ draw(); }); draw();
+  })();
+
+})();
+</script>
