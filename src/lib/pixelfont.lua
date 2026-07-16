@@ -31,40 +31,62 @@ local function glyphW(font, ch)
   return g and #g[1] or 0
 end
 
--- total pixel width of a string in `font` with `gap` blank subpixels between glyphs
-function M.textWidth(font, str, gap)
-  gap = gap or 1
+-- The owner's hand-drawn $ glyphs — TWO SIZES, NOT two scales. `scale` doubles pixels; SIGN_LG is
+-- separately drawn with detail a scaled SIGN_SM could never have. Keep both; scale is orthogonal.
+--   SIGN_SM 5x10 (mockup(3).json) — pairs with 1x digits.
+--   SIGN_LG 7x14 (mockup(4).json) — thicker, stem overshooting. Pairs with BIG @2x (12 tall):
+--     14 vs 12 overshoots a subpixel above and below, which is how a $ sits against figures.
+M.SIGN_SM = {
+  ["$"] = { "..#..", ".###.", "#.#.#", "#.#..", ".##..", "..##.", "..#.#", "#.#.#", ".###.", "..#.." },
+}
+M.SIGN_LG = {
+  ["$"] = { "...#...", "...#...", "..###..", ".#####.", "##.#.#.", "##.#...", ".####..",
+            "..####.", "...#.##", "##.#.##", ".#####.", "..###..", "...#...", "...#..." },
+}
+
+-- total pixel width of a string in `font`: glyphs scaled by `scale`, `gap` blank subpixels between
+-- (gap is NOT scaled — it is raw subpixels). scale defaults to 1, gap to 1.
+function M.textWidth(font, str, gap, scale)
+  gap, scale = gap or 1, scale or 1
   local w = 0
-  for i = 1, #str do w = w + glyphW(font, str:sub(i, i)) + gap end
+  for i = 1, #str do w = w + glyphW(font, str:sub(i, i)) * scale + gap end
   return w - gap
 end
 
-function M.drawGlyph(cv, font, ch, x, y, color)
+-- at scale s, each glyph pixel becomes an s x s block (nearest-neighbour, no smoothing)
+function M.drawGlyph(cv, font, ch, x, y, color, scale)
+  scale = scale or 1
   local g = font[ch]
   if not g then return end
   for r = 1, #g do
     local row = g[r]
     for c = 1, #row do
-      if row:sub(c, c) == "#" then cv:setPixel(x + c - 1, y + r - 1, color) end
+      if row:sub(c, c) == "#" then
+        for dy = 0, scale - 1 do
+          for dx = 0, scale - 1 do
+            cv:setPixel(x + (c - 1) * scale + dx, y + (r - 1) * scale + dy, color)
+          end
+        end
+      end
     end
   end
 end
 
-function M.drawText(cv, font, str, x, y, color, gap)
-  gap = gap or 1
+function M.drawText(cv, font, str, x, y, color, gap, scale)
+  gap, scale = gap or 1, scale or 1
   local cx = x
   for i = 1, #str do
     local ch = str:sub(i, i)
-    M.drawGlyph(cv, font, ch, cx, y, color)
-    cx = cx + glyphW(font, ch) + gap
+    M.drawGlyph(cv, font, ch, cx, y, color, scale)
+    cx = cx + glyphW(font, ch) * scale + gap
   end
 end
 
 -- draw horizontally centered across the whole canvas width (cv.w)
-function M.drawCentered(cv, font, str, y, color, gap)
-  gap = gap or 1
-  local w = M.textWidth(font, str, gap)
-  M.drawText(cv, font, str, math.floor((cv.w - w) / 2) + 1, y, color, gap)
+function M.drawCentered(cv, font, str, y, color, gap, scale)
+  gap, scale = gap or 1, scale or 1
+  local w = M.textWidth(font, str, gap, scale)
+  M.drawText(cv, font, str, math.floor((cv.w - w) / 2) + 1, y, color, gap, scale)
 end
 
 return M
