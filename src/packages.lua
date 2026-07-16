@@ -33,6 +33,7 @@ return {
     station = false,
     files = {
       { name = "idle_logic", path = "lib/idle_logic.lua" },
+      { name = "ledger",     path = "lib/ledger.lua" },
       { name = "hub",        path = "hub/hub.lua" },
     },
   },

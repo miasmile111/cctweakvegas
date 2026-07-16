@@ -73,6 +73,19 @@ local function persist()
   local f = fs.open(STORE, "w"); f.write(textutils.serialize(reg)); f.close()
 end
 
+-- ---- score ledger (the economy) --------------------------------------------
+local ledger      = require("ledger")
+local LEDGER_STORE = "ledger.tbl"
+local scores = {}
+if fs.exists(LEDGER_STORE) then
+  local f = fs.open(LEDGER_STORE, "r"); local d = f.readAll(); f.close()
+  local ok, t = pcall(textutils.unserialize, d)
+  if ok and type(t) == "table" then scores = t end
+end
+local function persistLedger()
+  local f = fs.open(LEDGER_STORE, "w"); f.write(textutils.serialize(scores)); f.close()
+end
+
 local function assign(computerID, package)
   local a = reg.assignments[computerID]
   if not a then a = {}; reg.assignments[computerID] = a end
@@ -99,6 +112,32 @@ local function registrar()
       local n = assign(msg.computerID, msg.package)
       rednet.send(sender, { kind = "assigned", package = msg.package, instance = n }, PROTO)
       print(("  #%d  %s -> %s%d"):format(msg.computerID, msg.package, msg.package, n))
+    elseif type(msg) == "table" and msg.kind == "mint" and type(msg.name) == "string" then
+      local id, err = ledger.mint(scores, msg.name, tonumber(msg.balance) or 0)
+      if id then
+        persistLedger()
+        rednet.send(sender, { kind = "minted", id = id }, PROTO)
+        print(("  mint %s = %d"):format(id, scores[id]))
+      else
+        rednet.send(sender, { kind = "mint_deny", reason = err }, PROTO)
+      end
+    elseif type(msg) == "table" and msg.kind == "bet"
+           and type(msg.id) == "string" and type(msg.stake) == "number" then
+      local ok, bal = ledger.debit(scores, msg.id, msg.stake)
+      if ok then
+        persistLedger()
+        rednet.send(sender, { kind = "bet_ok", id = msg.id, balance = bal }, PROTO)
+      else
+        rednet.send(sender, { kind = "bet_deny", id = msg.id, balance = bal,
+                              reason = (bal == nil) and "unknown" or "insufficient" }, PROTO)
+      end
+    elseif type(msg) == "table" and msg.kind == "credit"
+           and type(msg.id) == "string" and type(msg.delta) == "number" then
+      local bal = ledger.apply(scores, msg.id, msg.delta)
+      if bal then persistLedger() end
+      rednet.send(sender, { kind = "balance", id = msg.id, balance = bal }, PROTO)
+    elseif type(msg) == "table" and msg.kind == "query" and type(msg.id) == "string" then
+      rednet.send(sender, { kind = "balance", id = msg.id, balance = ledger.balance(scores, msg.id) }, PROTO)
     elseif idle.isPresenceQuery(msg) then
       rednet.send(sender, { kind = "presence", zone = "all", present = occupied }, PROTO)
     end
