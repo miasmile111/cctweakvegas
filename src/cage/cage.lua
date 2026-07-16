@@ -4,8 +4,24 @@
 --   the ingots onto the floor and the big number counts DOWN. Fill the deposit chest and tap
 --   DEPOSIT -> the metal is valued, swept to the vault, and the number counts UP.
 --   Layout is the owner-approved tools/cage-preview.html, ported pixel for pixel.
---   Run:  cage        -> play (idle_runner parks it asleep until a player walks up)
+--   Run:  cage                    -> play (idle_runner parks it asleep until a player walks up)
+--   Run:  cage test               -> what's attached, every monitor's size, the RESOLVED config,
+--                                    and what's in the vault. Start here when a cage won't boot.
+--   Run:  cage test drop iron 4   -> shower real metal onto the floor, debiting NOBODY. The one
+--                                    check only the server can answer: do the droppers actually fire?
 --   Quit: Q on the computer's terminal.
+--
+-- HARDWARE IS DISCOVERED, NOT CONFIGURED. Network names are NOT stable across identically-built
+-- cages (CC hands out `<type>_<n>` from the lowest free index, and any attach/detach burns a number
+-- — this floor's droppers came up 1-4, not 0-3). So the cage finds its own kit by TYPE at boot:
+--   * droppers -> every `minecraft:dropper` on the network. Any count; the shower round-robins.
+--   * deposit  -> the LOWEST-NAMED non-dropper inventory. Attach the player-facing barrel FIRST.
+--   * vault    -> the next one.
+--   * monitor  -> the one that is 36x24 at scale 0.5. Picking by SIZE, not by "first monitor found",
+--                 because a cage with two monitors attached would otherwise be a coin flip.
+-- `cage.cfg` overrides any of it and always wins — that's for the odd station that numbered
+-- differently, or a floor where the barrels were attached in the wrong order. A standard build
+-- needs NO cage.cfg at all. `side` is the one thing that can't be discovered.
 --
 -- Wiring (all names/sides live in `cage.cfg` — rewire without re-importing; see below):
 --   * Computer + ADVANCED MONITOR 2x2 @ text scale 0.5 (= 36x24 cells, exactly square).
@@ -23,27 +39,37 @@
 --     instead of dust and no dropper would ever fire — which looks EXACTLY like a dead pulse.
 --     Default `side=back` + modem on the right don't collide; keep them apart if you rewire.
 --   * Every peripheral must be ATTACHED to the modem network (right-click each modem until it's red).
---     Run `peripherals` on the computer to list the network names, then fill in cage.cfg.
+--     An unattached (grey) modem means the block does not exist to the computer. `cage test` lists
+--     what it can actually see.
 --
--- cage.cfg (optional, sits next to this program; `key=value`, `#` comments, droppers comma-separated):
---   deposit=minecraft:chest_0
---   vault=minecraft:chest_1
---   droppers=minecraft:dropper_0,minecraft:dropper_1,minecraft:dropper_2   # any length; 8 is fine
---   side=back                # computer output side for the shared line — NEVER the modem's side
---   monitor=monitor_0        # omit to auto-find the first attached monitor
+-- cage.cfg — OPTIONAL. A standard build needs none of it; each line just pins one thing discovery
+-- would otherwise work out. It lives next to the program and is NOT part of the `cage` package, so
+-- `update cage` never overwrites it — that is the whole point of it existing. Never put wiring in
+-- this file's config block: the next `update` will delete it. Format is `key=value`, `#` comments,
+-- droppers comma-separated:
+--   deposit=sophisticatedstorage:barrel_0   # only if the barrels attached in the wrong order
+--   vault=sophisticatedstorage:barrel_1
+--   droppers=minecraft:dropper_1,minecraft:dropper_2   # only to use SOME of the droppers present
+--   side=back                # redstone out for the shared line — NEVER the modem's side
+--   monitor=monitor_0        # only if two monitors are both 36x24
 --   zone=all
+
+local args = { ... }
 
 local font  = require("pixelfont")
 local rates = require("cage_rates")
 local sym   = require("cage_symbols")
 
 -- ---- config defaults (override any of these in cage.cfg) --------------------
+-- Everything nil here is DISCOVERED at boot (see `discover()`), because network names are not stable
+-- across identically-built cages. cage.cfg overrides any of it and always wins. `side` is the one
+-- thing that can't be discovered — a redstone output has nothing to introspect.
 local CFG = {
-  deposit  = "minecraft:chest_0",
-  vault    = "minecraft:chest_1",
-  droppers = { "minecraft:dropper_0", "minecraft:dropper_1", "minecraft:dropper_2" },
+  deposit  = nil,        -- nil = lowest-named non-dropper inventory (the player-facing barrel)
+  vault    = nil,        -- nil = the next one
+  droppers = nil,        -- nil = every minecraft:dropper on the network
   side     = "back",     -- computer output side feeding the droppers' shared redstone line
-  monitor  = nil,        -- nil = auto-find
+  monitor  = nil,        -- nil = the monitor that is 36x24 at scale 0.5 (a 2x2 advanced)
   zone     = "all",      -- proximity zone this station answers to
 }
 local CFG_FILE = "cage.cfg"
@@ -265,20 +291,218 @@ local function loadCfg()
 end
 loadCfg()
 
+-- ---- hardware discovery -----------------------------------------------------
+-- Every cage on the floor is the same build (2 modems, 2 barrels, N droppers, 1 redstone line), but
+-- the NETWORK NAMES are not stable between them: CC assigns `<type>_<n>` from the lowest free index
+-- on that network, and any attach/detach burns a number — this build's droppers came up 1-4, not 0-3.
+-- So names can't be hardcoded and can't be assumed identical across stations. Instead we discover by
+-- TYPE, which is stable, and let cage.cfg override any of it for the odd station.
+
+-- "barrel_10" must sort after "barrel_9": compare the prefix, then the trailing index NUMERICALLY.
+local function nameLess(a, b)
+  local ap, an = a:match("^(.-)_?(%d*)$")
+  local bp, bn = b:match("^(.-)_?(%d*)$")
+  if ap ~= bp then return a < b end
+  if an == "" or bn == "" then return a < b end
+  return tonumber(an) < tonumber(bn)
+end
+
+local function namesOfType(t)
+  local out = {}
+  for _, name in ipairs(peripheral.getNames()) do
+    if peripheral.hasType(name, t) then out[#out + 1] = name end
+  end
+  table.sort(out, nameLess)
+  return out
+end
+
+-- Every dropper on the network, in name order. Count never matters: cage_hw sizes itself from this
+-- and cage_vault round-robins across whatever it's given.
+local function findDroppers()
+  return namesOfType("minecraft:dropper")
+end
+
+-- The two barrels/chests: an `inventory` that ISN'T a dropper. Sorted, so it's deterministic:
+-- LOWEST-NAMED IS THE DEPOSIT (the player-facing one), next is the vault. Attach the deposit first
+-- on a new build and this needs no config at all. Both are the same block to the computer — which is
+-- the deposit is a fact only a human knows, so it's the one thing cage.cfg is really for.
+local function findBarrels()
+  local out = {}
+  for _, name in ipairs(peripheral.getNames()) do
+    if peripheral.hasType(name, "inventory") and not peripheral.hasType(name, "minecraft:dropper") then
+      out[#out + 1] = name
+    end
+  end
+  table.sort(out, nameLess)
+  return out
+end
+
+-- The cage's monitor is the one that is EXACTLY 36x24 at scale 0.5 (a 2x2 advanced). Picking by size
+-- instead of `peripheral.find("monitor")` matters: this build has two monitors attached, and find()
+-- would return whichever came first — a coin flip that silently draws the kiosk on the wrong screen.
+-- Probing costs a setTextScale, so restore the scale on every monitor we reject.
+local MON_W, MON_H = 36, 24
+local function monSizeAt05(name)
+  local m = peripheral.wrap(name)
+  if not m then return nil end
+  local okOld, old = pcall(m.getTextScale)
+  local ok, w, h = pcall(function()
+    m.setTextScale(0.5)
+    return m.getSize()
+  end)
+  if not ok then return nil end
+  return w, h, (okOld and old or nil), m
+end
+
+local function findMonitorBySize()
+  for _, name in ipairs(namesOfType("monitor")) do
+    local w, h, old, m = monSizeAt05(name)
+    if w == MON_W and h == MON_H then return name end
+    if m and old then pcall(m.setTextScale, old) end   -- not ours: put it back how we found it
+  end
+  return nil
+end
+
+-- Fill in anything cage.cfg didn't pin. cfg always wins.
+local DISCOVERED = { deposit = false, vault = false, droppers = false, monitor = false }
+local function discover()
+  if not CFG.droppers then
+    local d = findDroppers()
+    if #d > 0 then CFG.droppers, DISCOVERED.droppers = d, true end
+  end
+  if not CFG.deposit or not CFG.vault then
+    local b = findBarrels()
+    -- Never hand the SAME barrel to both roles. cage.cfg may pin just one of them (e.g. only
+    -- `vault=barrel_0`), and a naive b[1]/b[2] would then also pick barrel_0 as the deposit —
+    -- the cage would sweep a barrel into itself.
+    local function firstOther(taken)
+      for i = 1, #b do if b[i] ~= taken then return b[i] end end
+      return nil
+    end
+    if not CFG.deposit then
+      local pick = firstOther(CFG.vault)
+      if pick then CFG.deposit, DISCOVERED.deposit = pick, true end
+    end
+    if not CFG.vault then
+      local pick = firstOther(CFG.deposit)
+      if pick then CFG.vault, DISCOVERED.vault = pick, true end
+    end
+  end
+  if not CFG.monitor then
+    local m = findMonitorBySize()
+    if m then CFG.monitor, DISCOVERED.monitor = m, true end
+  end
+end
+discover()
+
 local function findMon(name)
   if name then
+    -- hasType, not `getType(name) == "monitor"`: getType returns MULTIPLE types since CC 1.99.
     local m = peripheral.wrap(name)
-    if not m or peripheral.getType(name) ~= "monitor" then
-      error(("Monitor '%s' not found. Run `peripherals`, then fix monitor= in cage.cfg."):format(name), 0)
+    if not m or not peripheral.hasType(name, "monitor") then
+      error(("Monitor '%s' not found. Run `cage test`, then fix monitor= in cage.cfg."):format(name), 0)
     end
     return m
   end
-  local m = peripheral.find("monitor")
-  if not m then
-    error("No monitor attached. Attach the 2x2 advanced monitor, or set monitor= in cage.cfg.", 0)
-  end
-  return m
+  -- discover() couldn't find a 36x24 @0.5 monitor. Don't silently grab the wrong screen.
+  error("No 36x24 monitor found (need a 2x2 ADVANCED monitor).\n" ..
+        "Run `cage test` to see every monitor's size, then set monitor= in cage.cfg.", 0)
 end
+
+-- ---- `cage test` — setup + wiring diagnostics -------------------------------
+-- Runs BEFORE the hard-stops below on purpose: its whole job is to tell you WHY a cage won't boot,
+-- so it must survive a config that makes cage_hw.new() refuse.
+local function src(k) return DISCOVERED[k] and "(auto)" or "(cage.cfg)" end
+
+local function testMode(cmd, a, b)
+  if cmd == "drop" then
+    -- Fire real metal onto the floor WITHOUT debiting anyone. This is the one thing only the server
+    -- can answer: does a rising edge actually reach the droppers? Blocking sleeps are fine here —
+    -- we're not in play(), there's no tick loop to starve, and the sleep IS the yield that lets CC
+    -- flush the redstone output to the world (see [[redstone-pulse-needs-a-yield]]).
+    local d = rates.byKey(a)
+    if not d then
+      print("unknown metal: " .. tostring(a))
+      local keys = {}
+      for i = 1, #rates.DENOMS do keys[#keys + 1] = rates.DENOMS[i].key end
+      print("try: " .. table.concat(keys, " "))
+      return
+    end
+    local qty = tonumber(b) or 1
+    local hw, err = cage_hw.new(CFG)
+    if not hw then print("HW FAIL: " .. err); return end
+    local have = vault.countItem(hw.vaultList(), d.item)
+    print(("vault holds %d %s"):format(have, d.label))
+    if have < qty then print(("need %d — seed the vault first"):format(qty)); return end
+
+    local per = {}
+    for i = 1, hw.nDroppers do per[i] = 0 end
+    vault.addLoad(per, qty, 1)
+    local loadedPer, loaded = hw.loadDroppers(d.item, per)
+    print(("loaded %d/%d across %d droppers"):format(loaded, qty, hw.nDroppers))
+    if loaded == 0 then
+      print("nothing loaded — check each dropper has its OWN wired modem (pushItems needs it)")
+      return
+    end
+
+    local loads, cycles = loadedPer, 0
+    while vault.anyLoaded(loads) do        -- same 2-high/4-low cadence play() uses
+      hw.pulseOn();  sleep(0.1)
+      hw.pulseOff(); loads = vault.pulseLoads(loads)   -- decrement on the FALLING edge
+      sleep(0.2)
+      cycles = cycles + 1
+    end
+    hw.pulseOff()
+    print(("pulsed %d cycles on side '%s'. NO $ debited."):format(cycles, CFG.side))
+    print("Ingots on the floor? -> the pulse works.")
+    print("Nothing dropped? -> dust not reaching the droppers, wrong `side`, or fronts blocked.")
+    return
+  end
+
+  print("=== cage test ===")
+  print("Attached peripherals:")
+  for _, n in ipairs(peripheral.getNames()) do
+    print(("  %s  (%s)"):format(n, table.concat({ peripheral.getType(n) }, ", ")))
+  end
+
+  print("Monitors (size @0.5 — the cage needs " .. MON_W .. "x" .. MON_H .. "):")
+  for _, n in ipairs(namesOfType("monitor")) do
+    local w, h = monSizeAt05(n)
+    print(("  %-22s %sx%s %s"):format(n, tostring(w), tostring(h),
+          (w == MON_W and h == MON_H) and "<- the cage's" or ""))
+  end
+
+  print("Resolved config:")
+  print(("  deposit  %-24s %s"):format(tostring(CFG.deposit), src("deposit")))
+  print(("  vault    %-24s %s"):format(tostring(CFG.vault),   src("vault")))
+  print(("  monitor  %-24s %s"):format(tostring(CFG.monitor), src("monitor")))
+  print(("  side     %-24s %s"):format(tostring(CFG.side),    "(redstone out)"))
+  print(("  droppers %-24s %s"):format(CFG.droppers and (#CFG.droppers .. " found") or "NONE",
+        src("droppers")))
+  if CFG.droppers then
+    for i = 1, #CFG.droppers do print("      " .. CFG.droppers[i]) end
+  end
+
+  local hw, err = cage_hw.new(CFG)
+  if not hw then
+    print("HW: FAIL -> " .. err)
+  else
+    local okD, dl = pcall(hw.depositList)
+    local okV, vl = pcall(hw.vaultList)
+    local function count(t) local n = 0 for _ in pairs(t or {}) do n = n + 1 end return n end
+    print(("HW: OK — deposit %s stacks, vault %s stacks, %d droppers"):format(
+          okD and count(dl) or "?", okV and count(vl) or "?", hw.nDroppers))
+    if okV then
+      for i = 1, #rates.DENOMS do
+        local d = rates.DENOMS[i]
+        print(("  vault %-8s %4d  ($%d each)"):format(d.label, vault.countItem(vl, d.item), d.value))
+      end
+    end
+  end
+  print("Next: `cage test drop iron 4` — showers real metal, debits nobody.")
+end
+
+if args[1] == "test" then testMode(args[2], args[3], args[4]); return end
 
 local mon = findMon(CFG.monitor)
 mon.setTextScale(0.5)
@@ -288,8 +512,12 @@ local cv  = subpixel.new(win)
 
 -- the hands: chests, droppers, the shared redstone line. A misconfigured cage must fail LOUDLY at
 -- startup, not pretend to be a kiosk and eat someone's card balance.
+if CFG.deposit and CFG.deposit == CFG.vault then
+  error(("deposit and vault are the same inventory (%s).\nThe cage would sweep a barrel into itself."
+         .. " Fix deposit=/vault= in cage.cfg; `cage test` shows what it found."):format(CFG.deposit), 0)
+end
 local hw, hwErr = cage_hw.new(CFG)
-if not hw then error(hwErr .. "\nRun `peripherals` and fix cage.cfg.", 0) end
+if not hw then error(hwErr .. "\nRun `cage test` to see what's attached, then fix cage.cfg.", 0) end
 
 -- capture the gradient slots' original palette so we can restore it on exit
 local gradOrig = {}
