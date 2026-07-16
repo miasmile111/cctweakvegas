@@ -1,0 +1,297 @@
+<title>Cage — live preview</title>
+<style>
+  :root{--bg:#0e1013;--panel:#16191e;--ink:#e6e8ea;--dim:#8b929c;--line:#272c33;--accent:#d9a441}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 ui-monospace,"Cascadia Code",Menlo,Consolas,monospace}
+  header{padding:14px 18px;border-bottom:1px solid var(--line)}
+  header h1{margin:0 0 3px;font-size:15px}
+  header .sub{color:var(--dim);font-size:12px}
+  main{display:flex;gap:22px;padding:20px;flex-wrap:wrap;align-items:flex-start}
+  .stage{display:flex;gap:22px;flex-wrap:wrap}
+  figure{margin:0;display:flex;flex-direction:column;gap:8px;align-items:center}
+  figcaption{color:var(--dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  canvas{background:#000;border:1px solid var(--line);image-rendering:pixelated;border-radius:4px;cursor:pointer}
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;min-width:250px;max-width:290px;display:flex;flex-direction:column;gap:14px}
+  .controls h2{margin:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .row{display:flex;flex-direction:column;gap:6px}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;background:#1d2128;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:7px 0;cursor:pointer;font:inherit}
+  .seg button[aria-pressed=true]{background:var(--accent);color:#111;border-color:var(--accent)}
+  label{color:var(--dim);font-size:11px}
+  input[type=number],input[type=text]{background:#1d2128;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px 8px;font:inherit;width:100%}
+  .chk{display:flex;gap:8px;align-items:center;cursor:pointer}
+  .note{color:var(--dim);font-size:11px;line-height:1.55;margin:0}
+  .note b{color:var(--ink)}
+  hr{border:0;border-top:1px solid var(--line);margin:2px 0}
+</style>
+
+<header>
+  <h1>Cage — live preview <span style="color:var(--dim);font-weight:400">(diegetic sink)</span></h1>
+  <div class="sub">72×72 subpixels · 36×24 cells @ scale 0.5 (2×2 monitor, exactly square) · left = code paints · right = monitor truth (encodeCell, 2 colours/cell) · native cell-text overlaid on top</div>
+</header>
+
+<main>
+  <div class="stage">
+    <figure><canvas id="paint" width="576" height="576"></canvas><figcaption>Paint — code draws</figcaption></figure>
+    <figure><canvas id="mon" width="576" height="576"></canvas><figcaption>Monitor — encodeCell truth</figcaption></figure>
+  </div>
+
+  <div class="controls">
+    <h2>Tap the screen ↑</h2>
+    <p class="note">The canvas is <b>live</b> — click a metal to withdraw (debits + showers), a qty to select, DEPOSIT to cash in. Same cell-space hit-testing as in-world.</p>
+    <hr>
+    <div class="row"><label>Balance ($)</label><input type="number" id="bal" value="12500" min="0" step="100"></div>
+    <div class="row"><label>Deposit chest is worth ($)</label><input type="number" id="depAmt" value="850" min="0" step="25"></div>
+    <div class="row"><label>Card / player id</label><input type="text" id="who" value="ALICE"></div>
+    <label class="chk"><input type="checkbox" id="hasCard" checked> card inserted</label>
+    <hr>
+    <div class="row"><label>Qty ladder</label>
+      <div class="seg" id="qtySeg">
+        <button data-i="0" aria-pressed="true">1x</button>
+        <button data-i="1" aria-pressed="false">5x</button>
+        <button data-i="2" aria-pressed="false">20x</button>
+      </div>
+    </div>
+    <div class="row"><label>Frame bars</label>
+      <div class="seg" id="barSeg">
+        <button data-b="red" aria-pressed="true">red</button>
+        <button data-b="gold" aria-pressed="false">gold</button>
+      </div>
+    </div>
+    <label class="chk"><input type="checkbox" id="animGrad" checked> animate gradient</label>
+    <label class="chk"><input type="checkbox" id="showGrid"> cell grid</label>
+    <hr>
+    <p class="note">Bands: header <b>1-2</b> · big <b>$</b> @2× <b>3-8</b> (bulb lanes cols 1 &amp; 36 frame the money) · bar <b>9-10</b> · metals <b>11-18</b> · qty <b>19-20</b> · bar <b>21-22</b> · DEPOSIT <b>23-24</b>. Bars flash while the droppers spit. Big number <b>counts up</b> on deposit, <b>down</b> as metal flies.</p>
+  </div>
+</main>
+
+<script>
+"use strict";
+// ---- palette (CC defaults; GRAD slots get repainted each frame) -------------
+const PAL={1:[240,240,240],2:[242,178,51],4:[229,127,216],8:[153,178,242],16:[222,222,108],32:[127,204,25],64:[242,178,204],128:[76,76,76],256:[153,153,153],512:[76,153,178],1024:[178,102,229],2048:[51,102,204],4096:[127,102,76],8192:[87,166,78],16384:[204,76,76],32768:[17,17,17]};
+const WHITE=1,ORANGE=2,LIGHTBLUE=8,YELLOW=16,GRAY=128,LIGHTGRAY=256,GREEN=8192,RED=16384,BLACK=32768;
+
+// The cage's gradient rides slots NOTHING else draws in — so the ingots keep their real colours.
+// (Slot uses [2048,512,8,1024,64]; we free 8/512 for diamond/steel and take 4/4096 instead.)
+const GRAD=[2048,1024,4,4096,64];
+const GRAD_DEEP=[0.00,0.28,0.10];   // deep casino-felt green
+const GRAD_GOLD=[0.62,0.46,0.06];   // money gold
+
+// ---- ingot sprites (8×9 subpx = 4×3 cells, the project's symbol size) -------
+// ONE colour per sprite on purpose: a sprite pixel + the panel fill = 2 colours, which is exactly
+// what a cell can hold. A highlight colour would be a 3rd and encodeCell would eat it.
+const SYM_W=8,SYM_H=9;
+function sprite(rows,color){const CM={_:0,"#":color};const px=[];for(let y=0;y<SYM_H;y++)for(let x=0;x<SYM_W;x++)px[y*SYM_W+x]=CM[rows[y][x]];return{w:SYM_W,h:SYM_H,px};}
+const INGOT=["________","__####__","_######_","########","########","########","_######_","________","________"];
+const GEM  =["________","__####__","_######_","########","_######_","__####__","___##___","________","________"];
+const SPRITES={
+  copper : sprite(INGOT,ORANGE),
+  iron   : sprite(INGOT,LIGHTGRAY),
+  gold   : sprite(INGOT,YELLOW),
+  diamond: sprite(GEM,LIGHTBLUE),
+};
+
+// ---- rates (mirrors src/cage/cage_rates.lua) --------------------------------
+const DENOMS=[
+  {key:"copper", label:"COPPER", value:25},
+  {key:"iron",   label:"IRON",   value:100},
+  {key:"gold",   label:"GOLD",   value:250},
+  {key:"diamond",label:"DIAMOND",value:1000},
+];
+const QTYS=[1,5,20];
+
+// ---- fonts (mirrors src/lib/pixelfont.lua) ---------------------------------
+const F_BIG={
+ "0":["####","#..#","#.##","##.#","#..#","####"],
+ "1":[".##.","..#.","..#.","..#.","..#.","..#."],
+ "2":["####","...#","####","#...","#...","####"],
+ "3":["####","...#",".###","...#","...#","####"],
+ "4":["#..#","#..#","####","...#","...#","...#"],
+ "5":["####","#...","####","...#","...#","####"],
+ "6":["####","#...","####","#..#","#..#","####"],
+ "7":["####","...#","..#.",".#..",".#..",".#.."],
+ "8":["####","#..#","####","#..#","#..#","####"],
+ "9":["####","#..#","####","...#","...#","####"],
+ "$":[".##.","###.",".##.","..##","###.",".##."],
+};
+function gW(f,ch){const g=f[ch];return g?g[0].length:0;}
+// scale multiplies glyph width; gap is RAW subpixels, NOT scaled (matches the Lua contract)
+function tW(f,str,gap,scale){gap=gap==null?1:gap;scale=scale||1;let w=0;for(const ch of str)w+=gW(f,ch)*scale+gap;return w-gap;}
+function drawGlyph(b,f,ch,x,y,color,scale){scale=scale||1;const g=f[ch];if(!g)return;for(let r=0;r<g.length;r++)for(let c=0;c<g[r].length;c++)if(g[r][c]==="#")for(let dy=0;dy<scale;dy++)for(let dx=0;dx<scale;dx++)setPx(b,x+c*scale+dx,y+r*scale+dy,color);}
+function drawText(b,f,str,x,y,color,gap,scale){gap=gap==null?1:gap;scale=scale||1;let cx=x;for(const ch of str){drawGlyph(b,f,ch,cx,y,color,scale);cx+=gW(f,ch)*scale+gap;}}
+function drawTextCentered(b,f,str,y,color,gap,scale){gap=gap==null?1:gap;scale=scale||1;drawText(b,f,str,Math.floor((CW-tW(f,str,gap,scale))/2),y,color,gap,scale);}
+
+// ---- canvas (72×72 subpx) --------------------------------------------------
+const CW=72,CH=72,COLS=36,ROWS=24,S=8;
+function newBuf(){const b=[];for(let y=0;y<CH;y++)b.push(new Array(CW).fill(BLACK));return b;}
+function setPx(b,x,y,c){x=Math.floor(x);y=Math.floor(y);if(x<0||y<0||x>=CW||y>=CH)return;if(c&&c!==0)b[y][x]=c;}
+function fillRect(b,x,y,w,h,c){for(let dy=0;dy<h;dy++)for(let dx=0;dx<w;dx++){const X=x+dx,Y=y+dy;if(X>=0&&Y>=0&&X<CW&&Y<CH)b[Y][X]=c;}}
+function drawSprite(b,x,y,sp){for(let dy=0;dy<sp.h;dy++)for(let dx=0;dx<sp.w;dx++){const col=sp.px[dy*sp.w+dx];if(col)setPx(b,x+dx,y+dy,col);}}
+
+// ---- layout — 0-indexed here; Lua's Rl(row)=(row-1)*3+1 is 1-indexed -------
+// (the classic port bug — see kb/monitor-ui-workflow.md step 4)
+function R(row){return (row-1)*3;}
+const DENOM_COL=[1,10,19,28], DENOM_WC=9;              // cell cols: 4 buttons × 9 cells = 36
+const QTY_COL=[1,13,25],      QTY_WC=[12,12,12];       // cell cols: 3 buttons × 12 cells
+function layout(){
+  return {
+    balY   : R(3)+1,                       // big $ — rows 3-8 (12 subpx tall @2×), nudged 1 down
+    topBarY: R(9),  topBarH:6,             // bar rows 9-10
+    denomY : R(11), denomH:(R(18)+2)-R(11)+1,  // metals rows 11-18
+    symY   : R(11)+2,                      // sprite sits rows 11-13ish
+    qtyY   : R(19), qtyH:6,                // qty rows 19-20
+    botBarY: R(21), botBarH:6,             // bar rows 21-22
+    depY   : R(23), depH:6,                // DEPOSIT rows 23-24
+    sideTop: R(3),  sideBot:R(8)+2,        // bulb lanes frame the MONEY (cols 1 & 36)
+  };
+}
+function bulb(b,x,y,seed,tick){fillRect(b,x,y,2,2,((seed+tick)%2===0)?YELLOW:GRAY);}
+
+// ---- frame -----------------------------------------------------------------
+function buildFrame(st){
+  const b=newBuf(), L=layout();
+  const bandH=Math.ceil(CH/GRAD.length);
+  for(let i=0;i<GRAD.length;i++)fillRect(b,0,i*bandH,CW,bandH,GRAD[i]);
+
+  // frame bars — flash while the droppers are spitting (the cash-machine moment)
+  const flashing = st.loads>0 && st.tick%2===0;
+  const base = (st.bar==="gold")?YELLOW:RED;
+  const barCol = flashing?YELLOW:base;
+  fillRect(b,0,L.topBarY,CW,L.topBarH,barCol);
+  fillRect(b,0,L.botBarY,CW,L.botBarH,barCol);
+  for(let x=6;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}
+  for(let y=L.sideTop;y<=L.sideBot;y+=4){bulb(b,0,y,Math.floor(y/4),st.tick);bulb(b,CW-2,y,Math.floor(y/4),st.tick);}
+
+  // metal buttons: panel fill; sprite centred; native label+price overlaid in frame()
+  for(let i=0;i<4;i++){
+    const x=(DENOM_COL[i]-1)*2;
+    fillRect(b,x+1,L.denomY,DENOM_WC*2-2,L.denomH,BLACK);
+    const sp=SPRITES[DENOMS[i].key];
+    drawSprite(b,x+Math.floor((DENOM_WC*2-SYM_W)/2),L.symY,sp);
+  }
+
+  // qty buttons: selected = yellow, others gray (the slot's stake idiom)
+  for(let i=0;i<3;i++)fillRect(b,(QTY_COL[i]-1)*2,L.qtyY,QTY_WC[i]*2,L.qtyH,i===st.qtyIdx?YELLOW:GRAY);
+
+  // DEPOSIT button
+  fillRect(b,0,L.depY,CW,L.depH,GREEN);
+
+  // the money — big $ @2×, white, riding the gradient
+  drawTextCentered(b,F_BIG,"$"+Math.round(st.dispBal),L.balY,WHITE,1,2);
+  return {b,L};
+}
+
+// ---- encodeCell (port of subpixel.lua) — which 2 colours survive per cell ---
+function encodeCell(c){const m=new Map();for(const v of c)m.set(v,(m.get(v)||0)+1);let bg=c[0],best=-1;for(const[col,n]of m){if(n>best){best=n;bg=col;}}let fg=bg;for(const v of c)if(v!==bg){fg=v;break;}return{bg,fg};}
+function paint(canvas,buf,collapse,grid){
+  const ctx=canvas.getContext("2d");
+  for(let cy=0;cy<ROWS;cy++)for(let cx=0;cx<COLS;cx++){
+    const py=cy*3,px=cx*2;
+    if(collapse){
+      const cell=[buf[py][px],buf[py][px+1],buf[py+1][px],buf[py+1][px+1],buf[py+2][px],buf[py+2][px+1]];
+      const {bg,fg}=encodeCell(cell);
+      for(let dy=0;dy<3;dy++)for(let dx=0;dx<2;dx++){const v=cell[dy*2+dx],col=(v===bg)?bg:fg;ctx.fillStyle=`rgb(${PAL[col]||[255,0,255]})`;ctx.fillRect((px+dx)*S,(py+dy)*S,S,S);}
+    } else {
+      for(let dy=0;dy<3;dy++)for(let dx=0;dx<2;dx++){const v=buf[py+dy][px+dx];ctx.fillStyle=`rgb(${PAL[v]||[255,0,255]})`;ctx.fillRect((px+dx)*S,(py+dy)*S,S,S);}
+    }
+  }
+  if(grid){ctx.strokeStyle="rgba(217,164,65,.28)";ctx.lineWidth=1;
+    for(let cx=0;cx<=COLS;cx++){ctx.beginPath();ctx.moveTo(cx*2*S,0);ctx.lineTo(cx*2*S,CH*S);ctx.stroke();}
+    for(let cy=0;cy<=ROWS;cy++){ctx.beginPath();ctx.moveTo(0,cy*3*S);ctx.lineTo(CW*S,cy*3*S);ctx.stroke();}}
+}
+// native cell-text overlay — like topWin.write: NOT subpixel, not subject to encodeCell
+function overlayNative(canvas,text,cellRow,col,color){
+  const ctx=canvas.getContext("2d"),cw=2*S,ch=3*S;
+  ctx.fillStyle=color||"#f0f0f0";ctx.font=`${Math.floor(ch*0.92)}px ui-monospace,monospace`;ctx.textBaseline="top";
+  if(col==null)col=Math.floor((COLS-text.length)/2)+1;
+  ctx.fillText(text,(col-1)*cw,cellRow*ch);
+}
+function overlayNativeIn(canvas,text,cellRow,colStart,widthCells,color){
+  overlayNative(canvas,text,cellRow,colStart+Math.floor((widthCells-text.length)/2),color);
+}
+
+// ---- state -----------------------------------------------------------------
+const st={bal:12500,dispBal:12500,qtyIdx:0,who:"ALICE",hasCard:true,msg:null,loads:0,tick:0,bar:"red",depAmt:850};
+let animGrad=true,showGrid=false;
+const N_DROPPERS=3;
+
+function updateGradient(p){for(let i=0;i<GRAD.length;i++){const a=0.5+0.5*Math.sin(p+i*0.9),mix=(d,t)=>Math.round(255*(d+(t-d)*a));PAL[GRAD[i]]=[mix(GRAD_DEEP[0],GRAD_GOLD[0]),mix(GRAD_DEEP[1],GRAD_GOLD[1]),mix(GRAD_DEEP[2],GRAD_GOLD[2])];}}
+
+// the count-up/count-down ease — same ~24-frame ramp as the slot's win count-up, but signed
+function easeToward(cur,target){
+  if(cur===target)return cur;
+  const step=Math.max(1,Math.ceil(Math.abs(target-cur)/24));
+  return (cur<target)?Math.min(target,cur+step):Math.max(target,cur-step);
+}
+
+// ---- actions (mirror cage.lua's play loop) ---------------------------------
+function withdraw(i){
+  if(!st.hasCard){st.msg="INSERT CARD";return;}
+  const d=DENOMS[i], qty=QTYS[st.qtyIdx], cost=d.value*qty;
+  if(st.bal<cost){st.msg="NEED $"+cost;return;}      // deny BEFORE any debit
+  st.bal-=cost; st.loads+=qty; st.msg=null;           // debit, then the metal flies
+  document.getElementById("bal").value=st.bal;
+}
+function deposit(){
+  if(!st.hasCard){st.msg="INSERT CARD";return;}
+  if(st.depAmt<=0){st.msg="NOTHING TO DEPOSIT";return;}
+  st.bal+=st.depAmt; st.msg="DEPOSITED $"+st.depAmt;
+  document.getElementById("bal").value=st.bal;
+}
+// hit test — cell space, band-first, exactly the shape cage.lua will use
+function hitTest(tx,ty){
+  if(ty>=23) return {kind:"deposit"};
+  if(ty>=19&&ty<=20){for(let i=0;i<3;i++)if(tx>=QTY_COL[i]&&tx<QTY_COL[i]+QTY_WC[i])return{kind:"qty",i};return null;}
+  if(ty>=11&&ty<=18){for(let i=0;i<4;i++)if(tx>=DENOM_COL[i]&&tx<DENOM_COL[i]+DENOM_WC)return{kind:"denom",i};return null;}
+  return null;
+}
+
+function frame(){
+  st.tick++;
+  if(animGrad)updateGradient(st.tick*0.05);
+  // the shower drains: one pulse per tick, every non-empty dropper spits one item
+  if(st.loads>0)st.loads=Math.max(0,st.loads-N_DROPPERS);
+  st.dispBal=easeToward(st.dispBal,st.bal);
+
+  const {b,L}=buildFrame(st);
+  const p=document.getElementById("paint"),m=document.getElementById("mon");
+  paint(p,b,false,showGrid); paint(m,b,true,showGrid);
+  for(const c of [p,m]){
+    // header row 2: who on the left, status on the right
+    overlayNative(c, st.hasCard?("cage1 "+st.who):"INSERT CARD", 1, 1);
+    const status = st.msg || (st.loads>0?("PAYING "+st.loads):"");
+    if(status) overlayNative(c, status, 1, COLS-status.length+1, st.msg&&st.msg.startsWith("NEED")?"#ff9d9d":"#f0f0f0");
+    // metal buttons: native label (row 15) + price (row 17)
+    for(let i=0;i<4;i++){
+      overlayNativeIn(c, DENOMS[i].label, 14, DENOM_COL[i], DENOM_WC);
+      overlayNativeIn(c, "$"+DENOMS[i].value, 16, DENOM_COL[i], DENOM_WC, "#d9d9d9");
+    }
+    // qty labels in the TOP cell of the button (row 19)
+    for(let i=0;i<3;i++)overlayNativeIn(c, QTYS[i]+"x", 18, QTY_COL[i], QTY_WC[i], i===st.qtyIdx?"#111":"#f0f0f0");
+    // DEPOSIT label (row 23)
+    overlayNative(c, "DEPOSIT", 22);
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---- wiring ----------------------------------------------------------------
+for(const id of ["paint","mon"]){
+  document.getElementById(id).addEventListener("click",e=>{
+    const r=e.currentTarget.getBoundingClientRect();
+    const tx=Math.floor((e.clientX-r.left)/(2*S))+1, ty=Math.floor((e.clientY-r.top)/(3*S))+1;
+    const hit=hitTest(tx,ty); if(!hit)return;
+    if(hit.kind==="deposit")deposit();
+    else if(hit.kind==="denom")withdraw(hit.i);
+    else if(hit.kind==="qty"){st.qtyIdx=hit.i;[...document.getElementById("qtySeg").children].forEach((x,j)=>x.setAttribute("aria-pressed",j===hit.i));}
+  });
+}
+document.getElementById("qtySeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.qtyIdx=+b.dataset.i;[...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));});
+document.getElementById("barSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.bar=b.dataset.b;[...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));});
+document.getElementById("bal").addEventListener("input",e=>{st.bal=+e.target.value||0;});
+document.getElementById("depAmt").addEventListener("input",e=>st.depAmt=+e.target.value||0);
+document.getElementById("who").addEventListener("input",e=>st.who=e.target.value);
+document.getElementById("hasCard").addEventListener("change",e=>{st.hasCard=e.target.checked;st.msg=null;});
+document.getElementById("animGrad").addEventListener("change",e=>animGrad=e.target.checked);
+document.getElementById("showGrid").addEventListener("change",e=>showGrid=e.target.checked);
+updateGradient(0); requestAnimationFrame(frame);
+</script>
