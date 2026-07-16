@@ -9,6 +9,7 @@ return {
     station = true,
     files = {
       { name = "subpixel",     path = "lib/subpixel.lua" },
+      { name = "pixelfont",    path = "lib/pixelfont.lua" },
       { name = "idle_logic",   path = "lib/idle_logic.lua" },
       { name = "idle_runner",  path = "lib/idle_runner.lua" },
       { name = "slot_logic",   path = "slot/slot_logic.lua" },
