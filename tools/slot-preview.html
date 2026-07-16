@@ -117,7 +117,7 @@ const SYMBOL_PX=SYM_H;   // 3 cells per symbol, snug
 function layout(){
   const xs=[2,10,18];                       // 3 reels, 4 cells (8 subpx) each, cols 2..13
   return {xs,
-    winLblY:R(4), amtY:R(6),                 // WIN: (rows 4-5), amount (rows 6-7)
+    winLblY:R(4), amtY:R(6)-1,               // WIN: (rows 4-5); amount nudged up 1 subpx (clears both)
     topBarY:R(8), topBarH:6,                  // top red bar rows 8-9
     reelTop:R(11), reelBot:R(19)+2,           // reel window rows 11-19 (3 symbols)
     midTop:R(14), midBot:R(16)+2, paylineY:R(14), // black middle band rows 14-16
