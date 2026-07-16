@@ -42,12 +42,15 @@ Built, deployed, verified in-world. Then generalized so every station inherits i
   `update <pkg>` just relabels from that run's packages. Harmless while self-contained (no
   collisions); revisit if recycling machines. Would need a hub `deregister` msg + a local `reset`.
 
-## Next session — options
+## Next up
 
+**→ Hub economy (member cards + scoring)** is the next build — see Option B below. New behavior →
+brainstorm first.
+
+Parked for later:
 - **Lua UI deepdive + workflow** — a patterns/toolkit pass on monitor UIs (the `lib/subpixel`
   canvas, layout, text, the advert screens) and a smoother build/iterate loop for them. Start from
   the cc-lua skill's monitor-ui kb.
-- **Hub economy (member cards + scoring)** — Option B below.
 
 ### Option B — Hub economy (member cards + scoring)
 
