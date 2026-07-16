@@ -75,8 +75,12 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
     RGB-editable palette; tagged cell-grid text regions; JSON+PNG export (JSON = Claude's source of
     truth → regenerate Lua). Spec + plan in `docs/superpowers/`. **Iterate loop:** user draws → exports
     JSON → Claude reads it → generates `subpixel.lua` draw code. NOT in the `src/` deploy loop.
-  - **NEXT here:** use the tool for real (user draws a slot screen), then formalise the read-back
-    (Claude → Lua) and apply to slot finishing. Confirm the slot's real `getSize()` in-world.
+  - **DONE — resolution formula exact.** Block→cell pulled from CC `ServerMonitor.rebuild`; slot
+    1×2 @0.5 = **15×24** (not 15×21). See `kb/monitor-resolution.md`. MB `$`→`MB` swap shipped (a05efce).
+  - **NEXT — build slot v3 from the owner's mockup.** Handoff: **`docs/slot-v3-mockup-handoff.md`**;
+    drawing: **`docs/mockups/slot-v3.json`**. Keep existing gradient+bulbs; header text no-bg; all text
+    white first pass. New: card header, big WIN amount, celebration zone, **3 selectable stakes**
+    ($10/$25/$100), banner. Open Qs: diegetic stake-select control; text-vs-gradient cell tradeoff.
 - **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
   economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
   balance/stake/win header layout; any deny/row-2 visual nits.
