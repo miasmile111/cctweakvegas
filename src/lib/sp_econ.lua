@@ -18,6 +18,7 @@ function M.new(cfg)
     denied  = false,
     round   = nil,   -- "staked" | "free" | nil : current round's bet outcome
     stakedId = nil,   -- id that was debited this round; settle credits THIS, not the live card
+    stakedStake = nil,   -- stake debited this round; settle evals payout against THIS
   }
 
   wallet.flush()     -- bank any wins queued while the hub was down, on entry
@@ -43,13 +44,15 @@ function M.new(cfg)
 
   -- called on the arm edge. "staked" = stake debited, run the round for real;
   -- "free" = anonymous, run the round but it pays nothing; "deny" = insufficient/offline, do NOT run.
-  function self.tryBet()
+  function self.tryBet(stake)
     self.denied = false
     if not self.player then self.round = "free"; return "free" end
-    local ok, bal = wallet.bet(self.player, self.pay.STAKE)
+    local st = stake or self.pay.STAKE
+    local ok, bal = wallet.bet(self.player, st)
     if ok then
       self.balance = bal; card.writeMirror(bal)
-      self.round = "staked"; self.stakedId = self.player; return "staked"
+      self.round = "staked"; self.stakedId = self.player; self.stakedStake = st
+      return "staked"
     end
     if bal ~= nil then self.balance = bal end   -- deny reply carries current balance
     self.denied = true; self.round = nil
@@ -60,7 +63,7 @@ function M.new(cfg)
   function self.settle(result)
     local won = 0
     if self.round == "staked" then
-      local payout = self.pay.eval(result)
+      local payout = self.pay.eval(result, self.stakedStake)
       if payout > 0 then
         local ok, bal = wallet.credit(self.stakedId, payout)
         if ok and bal then
