@@ -76,32 +76,34 @@ docs/intuition. It is the home for those findings so this skill stays a stable h
 
 ## Deploy / test loop (getting code onto the server to test)
 
-Canonical repo: **`miasmile111/cctweakvegas`** (public). Raw base for every program:
-`https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/`. You push; the user
-pulls in-game with the `update` program. **The in-game copy is a snapshot** — nothing reaches
-the server until it's pulled.
+Canonical repo: **`miasmile111/cctweakvegas`** (public, `gh` authed as `miasmile111`). Raw base:
+`https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/`. You push; the user pulls
+in-game with `update`. **The in-game copy is a snapshot** — nothing lands until pulled. Full
+design: `docs/superpowers/specs/2026-07-16-station-identity-and-deploy-design.md`.
 
-**Primary loop (`src/update.lua`):**
+**Loop:** edit `src/` → **`git push`** → in-game **`update <pkg>`** (e.g. `update slot`). One
+`update` run:
 
-1. Write/edit the program(s) in `src/`.
-2. `git push` (you do this — the user authed `gh` as `miasmile111`).
-3. In-game: the user runs **`update`**. It reads the computer's `install.list`, `http.get`s
-   each listed program from the raw base with a `?cb=<epoch>` cache-buster (defeats the ~5-min
-   raw.githubusercontent CDN cache), and overwrites the local files. No `wget`, no manual delete.
+1. **Self-updates** — re-pulls `update.lua`; if changed, relaunches the new copy with the same
+   args (one-run seamless). A stale master floppy self-heals on first use.
+2. **Pulls the package's files** — from `src/packages.lua` via `http.get` with a `?cb=<epoch>`
+   cache-buster (defeats raw.githubusercontent's ~5-min CDN cache), overwriting (no `wget`).
+3. **Registers with the hub** — rednet proto `ccvegas`, hub hosts hostname `hub` → assigns a
+   unique label (`slot2`, or `slot2+pong1`). Hub offline → loud fail, files still install.
+4. **Enables auto-run** (station packages) — writes a marked `startup` supervisor that boots the
+   game + self-heals; break out with a key at boot / Ctrl+T / a key in the 3s post-exit window.
 
-**Why not plain `wget`:** `wget <url> <name>` **errors if the file exists** ("File already
-exists") and doesn't cache-bust — hence a purpose-built updater. See `src/update.lua` header for
-the `install.list` format (`<localname> [repo-subpath]`, defaults to `<localname>.lua`).
+**Programs:** `update`, `hub` (v0 registrar — run on an always-loaded computer + modem),
+`mkinstaller` (mints installer floppies), plus the games. Packages defined in `src/packages.lua`.
 
-**One-time per fresh computer:**
-`wget https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/update.lua update`
-→ `edit install.list` (name its programs) → `update`.
+**Fresh station** = computer + **disk drive** + **wired modem**. Bootstrap with a master floppy
+(a floppy carrying `update` — make one with `mkinstaller` or `cp update /disk/update`): insert it,
+run `/disk/update slot`. Or `wget <raw base>/update.lua update` once.
 
-Per-station settings (side mappings, monitor names) still belong in an in-game `.cfg` the program
-reads at startup, so reconfiguring never needs a re-pull.
+**Why not plain `wget`:** it **refuses to overwrite** an existing file and doesn't cache-bust.
+Per-station settings (side maps, monitor names) still belong in an in-game `.cfg` read at startup.
 
-**Fallback (no repo access / quick throwaway):** paste to a gist → `wget <raw-url> <name>`, or
-pastebin → `pastebin get <code> <name>`.
+**Fallback (throwaway):** gist → `wget <raw-url> <name>`, or `pastebin get <code> <name>`.
 
 ## First-time / smoke test
 

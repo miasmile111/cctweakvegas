@@ -54,5 +54,7 @@ another facet of something already written. Keep this index's catalog in sync (o
   watchdog, fractional-coord `setPixel` crash, palette animation + dark-colours-read-as-black,
   no native clipping, window+`setVisible` flicker-free draw, multi-file re-import traps, analog
   lever input. *(A bundle — draw entries out of it as they're revisited.)*
-
-_No standalone entries yet beyond the monitor-ui bundle. Add them as we hit the real server._
+- [[deploy-and-identity]] — `deploy-and-identity.md` — code-delivery & station-identity facts:
+  `wget` won't overwrite, raw-CDN 5-min cache + `?cb=` bust, rednet DNS only sees online nodes
+  (→ hub is the registrar), `computerID` vs persistent label, `/disk/startup` override, chunk
+  unload = reboot-fresh, Ctrl+T/`pullEventRaw` break-out, self-update-via-relaunch.

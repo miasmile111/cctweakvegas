@@ -110,13 +110,15 @@ contraption**, or **hybrid**.
 
 ## Components & roadmap
 
-| Component            | Status  | Notes                                                        |
-| -------------------- | ------- | ------------------------------------------------------------ |
-| **Slot machine**     | v1 ✓    | Lever-armed, monitor-rendered reels. See `todo.md` / `src/`. |
-| **Hub server**       | next    | Canonical ledger + the rednet protocol above.                |
-| **Membership cards** | next    | Issue disks; card read/write at stations.                    |
-| **Scoreboards**      | planned | Rednet display subscribers around the floor.                 |
-| **More games**       | ongoing | 1–4 player; monitor / Create-contraption / hybrid.           |
+| Component              | Status  | Notes                                                             |
+| ---------------------- | ------- | ----------------------------------------------------------------- |
+| **Deploy / identity**  | ✓       | `update`/`hub`/`mkinstaller`: push→pull, auto-name, auto-run. Spec in `docs/`. |
+| **Slot machine**       | v1 ✓    | Lever-armed, monitor-rendered reels. See `todo.md` / `src/`.      |
+| **Hub server**         | v0 ✓    | Registrar built (assigns station labels). **Economy = next.**     |
+| **Idle / lag model**   | next    | Deep-sleep→attract→armed in each game; unblocks auto-run at scale. |
+| **Membership cards**   | next    | Issue disks; card read/write; credit/query economy on the hub.    |
+| **Scoreboards**        | planned | Rednet display subscribers around the floor.                      |
+| **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |
 
 Each component gets its own detail as it's built (its `src/` files, its `todo.md` section).
 
