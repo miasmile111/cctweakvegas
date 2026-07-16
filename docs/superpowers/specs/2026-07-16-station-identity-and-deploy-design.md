@@ -61,6 +61,9 @@ identity registration; infra like `hub` sets it false.
 
 `update <pkg> [<pkg> ...]`:
 
+0. **Self-update** — re-pull `update.lua` and drop a fresh copy onto this computer (non-fatal).
+   Bugfixes to the updater propagate for free, and running it straight off a master floppy
+   (`/disk/update slot`) plants a local `update`.
 1. Fetch `packages.lua` from the repo (cache-busted `?cb=<epoch>`), pull each requested
    package's files via `http.get`, overwrite locally (no `wget` delete dance).
 2. Record installed packages locally (`.installed` file).
@@ -97,17 +100,17 @@ A rednet service in an always-loaded chunk. The single arbiter of station identi
   - Reply: `{ kind = "assigned", package = "slot", instance = 2 }`.
 - This registry is the seed of the hub-authoritative economy: the hub now knows every station.
 
-### 4. `mkinstaller.lua` + installer floppy
+### 4. `mkinstaller.lua` + install floppies
 
-`mkinstaller <pkg>` (run on any computer with a floppy in the drive) writes onto the floppy:
+`update.lua` is fetched from the web **once** (here) and carried on a floppy thereafter. Two modes:
 
-- `update.lua` (copied),
-- a `pkg` file containing the package name(s),
-- a `/disk/startup` that: copies `update` to the host computer, reads `pkg`, runs
-  `update <pkg>`, prints "done — remove disk".
-
-New-station flow: computer + disk drive + modem, insert the labeled installer floppy, reboot →
-auto-install + auto-register + self-name → remove floppy → drive free for member cards.
+- **`mkinstaller`** (no args) → a **master tools floppy** (label `cctweak:tools`) carrying
+  `update`. On any new computer, run it straight off the disk: `/disk/update slot`. Self-update
+  (step 0) plants a current `update` locally. Reused forever; the one web fetch never repeats.
+- **`mkinstaller slot [pong]`** → an **auto-install floppy** (label `install:slot`): `update` +
+  a `pkg` file + a `/disk/startup` that copies `update` to the host, runs `update <pkgs>`, and
+  self-registers. New-station flow: computer + disk drive + modem, insert floppy, reboot →
+  auto-install + auto-name → remove floppy → drive free for member cards.
 
 ## rednet protocol (v0)
 

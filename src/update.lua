@@ -49,6 +49,20 @@ if not http then
   error("http API disabled — the pack must allow HTTP. Cannot update.", 0)
 end
 
+-- ------------------------------------------------------------- self-update ---
+-- Keep the updater itself current, and — when run straight off a master floppy
+-- (`/disk/update slot`) — drop a fresh copy onto this computer. Non-fatal.
+do
+  local body = fetch("update.lua")
+  if body and #body > 0 then
+    local cur
+    if fs.exists("update") then
+      local f = fs.open("update", "r"); cur = f.readAll(); f.close()
+    end
+    if body ~= cur then save("update", body); print("(updater refreshed)") end
+  end
+end
+
 -- --------------------------------------- work out which packages to install --
 local requested = { ... }
 if #requested == 0 and fs.exists(INSTALLED) then
