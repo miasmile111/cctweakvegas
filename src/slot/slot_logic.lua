@@ -1,31 +1,38 @@
 -- slot_logic.lua — pure reel/win logic (no CC globals; RNG injected). Testable under luajit.
--- A reel scrolls continuously (pos grows by speed each tick), then once past its stopTick it
--- DECELERATES and snaps to a stop with pos aligned to 0 — that ease-out sells the "reel slowing
--- down" look. The landed symbol is reel.final (unchanged by the animation); win eval uses it.
+-- A reel scrolls at a constant speed, then once past its stopTick it EASES (never snaps) into the
+-- nearest position AHEAD where reel.final lands on the payline. reel.final is centred exactly when
+-- pos is a multiple of NUM_SYMBOLS*symbolPx, so easing to that multiple lands cleanly with no
+-- rubber-band jump. reel.final is unchanged by the animation; win eval uses it.
 local L = {}
 L.NUM_SYMBOLS = 4
 
-local SPIN_SPEED0 = 4      -- initial scroll speed (subpixels per tick)
-local DECAY       = 0.75   -- speed multiplier each tick once past stopTick (ease-out)
-local MIN_SPEED   = 0.6    -- once speed drops below this, snap to a full stop
+local SPIN_SPEED = 4      -- constant scroll speed while spinning (subpixels per tick)
+local EASE       = 0.28   -- ease-out: fraction of the remaining distance covered per tick when landing
+local MIN_SPEED  = 0.6    -- minimum crawl so the reel always reaches its target
+local SNAP       = 0.75   -- within this many subpixels of the target -> land exactly on it (sub-pixel)
 
 function L.newReel(finalSymbol, stopTick)
-  return { final = finalSymbol, stopTick = stopTick, pos = 0, speed = SPIN_SPEED0, stopped = false }
+  return { final = finalSymbol, stopTick = stopTick, pos = 0, speed = SPIN_SPEED, stopped = false, target = nil }
 end
 
--- advance one tick; symbolPx = pixel height of one symbol slot (kept for the renderer's pos wrap)
+-- advance one tick; symbolPx = pixel height of one symbol slot (the renderer wraps pos by it)
 function L.stepReel(reel, tick, symbolPx)
   if reel.stopped then return true end
-  if tick >= reel.stopTick then
-    reel.speed = reel.speed * DECAY
-    if reel.speed < MIN_SPEED then
-      reel.pos = 0            -- align so the payline lands exactly on reel.final
-      reel.stopped = true
-    else
-      reel.pos = reel.pos + reel.speed
-    end
+  if tick < reel.stopTick then
+    reel.pos = reel.pos + reel.speed             -- constant-speed spin
+    return false
+  end
+  -- past the stop tick: pick an aligned target once, then ease into it (always moving forward)
+  if not reel.target then
+    local period = L.NUM_SYMBOLS * symbolPx       -- pos values a full symbol-cycle apart re-centre final
+    reel.target = math.ceil((reel.pos + symbolPx) / period) * period   -- next final-aligned stop, ahead
+  end
+  local dist = reel.target - reel.pos
+  if dist <= SNAP then
+    reel.pos = reel.target                        -- final now sits exactly on the payline
+    reel.stopped = true
   else
-    reel.pos = reel.pos + reel.speed
+    reel.pos = reel.pos + math.max(MIN_SPEED, dist * EASE)   -- ease-out toward the target
   end
   return reel.stopped
 end
