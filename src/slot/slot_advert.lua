@@ -4,7 +4,7 @@ local M = {}
 
 function M.draw(mon)
   local w, h = mon.getSize()
-  mon.setBackgroundColor(colors.blue)
+  mon.setBackgroundColor(colors.black)
   mon.clear()
   local function center(text, y, fg)
     mon.setTextColor(fg)

@@ -203,7 +203,7 @@ local function updateGradient(phase)
 end
 
 -- draw one full top-monitor frame (subpixel graphics + banner text overlay), flushed at once.
--- ACTIVE (player present) shows the reels only; the COME PLAY advert is the IDLE screen (drawIdleSign),
+-- ACTIVE (player present) shows the reels only; the COME PLAY advert is the IDLE screen (slot_advert.draw),
 -- not an overlay here. `attract` is accepted for call-site compatibility but no longer draws a banner.
 local function drawTopFrame(reels, bulbTick, result, attract)
   topWin.setVisible(false)
@@ -282,7 +282,7 @@ local function play(mon, pres)
         end
       else -- attract
         drawTopFrame(reels, tick, nil, true)
-        if pres.gone() then return "sleep" end  -- zone emptied while idle
+        if pres.gone() then restorePalette(); return "sleep" end  -- zone emptied: restore palette, sleep
       end
 
       timer = os.startTimer(TICK)
