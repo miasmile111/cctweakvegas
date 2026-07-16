@@ -66,8 +66,9 @@ Parked (each its own spec later):
 - **Lua UI deepdive + workflow** — monitor-UI patterns/toolkit pass (start from the cc-lua monitor-ui kb).
 
 Non-blocking follow-ups from the final review (see the SDD ledger F1/F2):
-- **F1** `wallet.request` is a blocking event pump (drops presence/disk/key during a ~1.5s hub-down
-  round-trip); doc note landed. Optional: re-broadcast presence after a round-trip.
+- ~~**F1** `wallet.request` blocking event pump~~ **FIXED (1a7d9d7)** — it swallowed slot.lua's tick
+  timer on a mid-session card hot-swap → frozen monitor. Now stashes + re-queues foreign events and
+  caches the hub id (keeps `rednet.lookup` out of the hot path). The under-rated review finding, made real in-world.
 - **F2** credit to an *unknown* id would be treated as acked (win silently lost). Unreachable in normal
   single-hub flow (ledger never deletes a just-debited id). Cheap fix: hub `credit_deny` reply.
 
