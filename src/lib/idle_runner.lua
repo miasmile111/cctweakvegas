@@ -4,9 +4,20 @@
 local idle = require("idle_logic")
 local PROTO = "ccvegas"
 
-local function findModem()
-  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
-  return wired or peripheral.find("modem")
+-- Open EVERY modem, never guess one. "Prefer wired" is wrong the moment a station's PERIPHERALS sit
+-- on a wired cable while its only link to the hub is an ENDER modem: rednet opened the cable, the hub
+-- was never on it, and the station reported "HUB OFFLINE" against a hub that was up the whole time.
+-- Safe by rednet's own design: send/broadcast already transmit on every open modem, and the rednet
+-- daemon de-duplicates by message ID (~9.5s), so a hub reachable on two networks is heard once.
+local function openAllModems()
+  local n = 0
+  for _, name in ipairs(peripheral.getNames()) do
+    if peripheral.hasType(name, "modem") then
+      if not rednet.isOpen(name) then rednet.open(name) end
+      n = n + 1
+    end
+  end
+  return n
 end
 
 -- cfg: { name, monitor, zone?, wake={side,level}?, play=function(mon, pres)->"sleep"|"quit" }
@@ -15,8 +26,7 @@ local function run(cfg)
   local mon    = cfg.monitor
   local advert = require(cfg.name .. "_advert")
 
-  local hasRednet = false
-  do local m = findModem(); if m then rednet.open(peripheral.getName(m)); hasRednet = true end end
+  local hasRednet = openAllModems() > 0
   local function queryPresence()
     if hasRednet then rednet.broadcast({ kind = "presence?", zone = zone }, PROTO) end
   end

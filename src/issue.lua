@@ -14,13 +14,20 @@ if not name then
   return
 end
 
-local m = peripheral.find("modem", function(_, mm) return not mm.isWireless() end)
-         or peripheral.find("modem")
-if not m then
-  print("issue needs a MODEM wired to the hub network.")
+-- Open EVERY modem, never guess one: "prefer wired" goes deaf to a hub that is only reachable by
+-- ENDER modem, and reports it as "hub offline". rednet transmits on all open modems and de-duplicates
+-- by message ID, so opening them all is both safe and the only way to find a hub wherever it lives.
+local nModems = 0
+for _, pname in ipairs(peripheral.getNames()) do   -- `pname`, not `name`: `name` is the card holder
+  if peripheral.hasType(pname, "modem") then
+    if not rednet.isOpen(pname) then rednet.open(pname) end
+    nModems = nModems + 1
+  end
+end
+if nModems == 0 then
+  print("issue needs a MODEM that can reach the hub (wired on the hub's cable, or an ender modem).")
   return
 end
-rednet.open(peripheral.getName(m))
 
 local id, err = wallet.mint(name, balance)
 if not id then

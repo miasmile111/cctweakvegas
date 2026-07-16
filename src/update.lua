@@ -33,10 +33,22 @@ local function save(name, body)
   local f = fs.open(name, "w"); f.write(body); f.close()
 end
 
-local function findModem()
-  -- prefer a wired modem (also carries the monitor + frees sides); accept wireless for testing.
-  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
-  return wired or peripheral.find("modem")
+-- Open EVERY modem, never guess one. This used to "prefer a wired modem", which is wrong the moment a
+-- station's PERIPHERALS sit on a wired cable while its only link to the hub is an ENDER modem: rednet
+-- opened the cable, the hub was never on it, and lookup came back empty — reported as "HUB OFFLINE"
+-- on a hub that was up the whole time. Opening all of them is safe and is how rednet is built to work:
+-- send/broadcast already transmit on every open modem, and rednet's own daemon de-duplicates by
+-- message ID (~9.5s window), so a hub reachable on two networks still receives each message once.
+-- Returns the number of modems opened.
+local function openAllModems()
+  local n = 0
+  for _, name in ipairs(peripheral.getNames()) do
+    if peripheral.hasType(name, "modem") then
+      if not rednet.isOpen(name) then rednet.open(name) end
+      n = n + 1
+    end
+  end
+  return n
 end
 
 local function loudBanner(title)
@@ -147,15 +159,15 @@ for _, pkg in ipairs(requested) do
 end
 
 -- ------------------------------------------ preflight: required hardware -----
-local modem = findModem()
+local nModems = openAllModems()            -- opens them all; the count is the preflight check
 local drive = peripheral.find("drive")
-if not modem or (needsDrive and not drive) then
-  if needsDrive then loudBanner("I need a disk drive and wired modem!")
-  else               loudBanner("I need a wired modem!") end
+if nModems == 0 or (needsDrive and not drive) then
+  if needsDrive then loudBanner("I need a disk drive and a modem!")
+  else               loudBanner("I need a modem!") end
   print("Missing on this station:")
-  if not modem then print("  - a MODEM (for rednet; a WIRED modem also carries the monitor)") end
+  if nModems == 0 then print("  - a MODEM (rednet to the hub; a WIRED modem also carries peripherals)") end
   if needsDrive and not drive then print("  - a DISK DRIVE  (for member cards)") end
-  print("Attach them (modem on a network cable), then re-run `update`.")
+  print("Attach them, then re-run `update`.")
   return                                   -- hard stop: not a valid station yet
 end
 
@@ -200,7 +212,7 @@ end
 
 -- ------------------------------------------- register identity with the hub --
 if #stations > 0 then
-  rednet.open(peripheral.getName(modem))
+  openAllModems()                          -- already open from preflight; idempotent, and explicit
   local hub = rednet.lookup(PROTO, "hub")
   if not hub then
     print("")

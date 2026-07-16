@@ -18,23 +18,35 @@ local POLL      = 0.3    -- seconds between detector polls (the hub's one foreve
 local idle      = require("idle_logic")
 local args      = { ... }
 
-local function findModem()
-  -- prefer a wired modem (floor network); accept wireless for testing.
-  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
-  return wired or peripheral.find("modem")
+-- Open EVERY modem, never guess one. THE HUB ESPECIALLY: it is the one machine every station must
+-- reach, and the floor is not one network — a cabled station talks over the wire while a distant one
+-- can only reach the hub by ENDER modem. "Prefer wired" made the hub listen on the cable alone and
+-- go deaf to every wireless station, which they report as "HUB OFFLINE" while the hub sits there
+-- running. Safe by rednet's design: send/broadcast transmit on all open modems and the rednet daemon
+-- de-duplicates by message ID (~9.5s), so a station reachable two ways is still heard once.
+local function openAllModems()
+  local names = {}
+  for _, name in ipairs(peripheral.getNames()) do
+    if peripheral.hasType(name, "modem") then
+      if not rednet.isOpen(name) then rednet.open(name) end
+      names[#names + 1] = name
+    end
+  end
+  return names
 end
 
-local modem = findModem()
-if not modem then
+local modems = openAllModems()
+if #modems == 0 then
   print("===========================")
   print(" HUB needs a MODEM to run!")
   print("===========================")
-  print("Attach a modem (wired on a network cable), then re-run `hub`.")
+  print("Attach a modem, then re-run `hub`. Wired reaches cabled stations; add an ENDER modem")
+  print("too if any station is off the cable network — the hub now listens on ALL of them.")
   return
 end
 
-rednet.open(peripheral.getName(modem))
 rednet.host(PROTO, "hub")
+print(("Rednet open on %d modem(s): %s"):format(#modems, table.concat(modems, ", ")))
 
 if args[1] == "test" then
   local det = peripheral.find("player_detector")
