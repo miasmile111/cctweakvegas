@@ -1,16 +1,16 @@
-# Economy system (M-Bucks) — reference
+# Economy system — reference
 
 The hub-authoritative score economy: a persisted `id → balance` ledger on the hub, membership-card
 floppies, and games that bet/pay through a shared gateway. Built 2026-07-16, in-world verified.
 Spec: `docs/superpowers/specs/2026-07-16-hub-economy-design.md`. This doc is the living reference —
 read it before touching or extending the economy.
 
-## Currency: **M-Bucks**
+## Currency: **`$`**
 
-The in-world money is **M-Bucks** (full: *Mia-Bucks*; abbreviate **MB**). It's the unit of every
-`balance`/`stake`/`payout` in the ledger. **Display it as `M-Bucks` / `MB` in games** (e.g.
-`Alice · 240 MB`), not `$`. (The current slot header still shows `$` — swap it to MB as a slot
-finishing touch.) One ledger, one currency, base-wide.
+The in-world money is displayed as **`$`** — the unit of every `balance`/`stake`/`payout` in the
+ledger. **Show it as `$<n>` in games** (e.g. `Alice: $240`). One ledger, one currency, base-wide.
+(The old `M-Bucks` / `MB` branding was dropped 2026-07-16 — a plain `$` reads better; if you find a
+stray `MB` anywhere, it's `$`.)
 
 ## Architecture — three layers
 
@@ -49,7 +49,7 @@ issue   → hub   mint   {name, bal}   → minted {id} | mint_deny {reason}
 ## Payout model (tunable)
 
 `slot_pay.lua`: `STAKE = 10`; triple only, per-symbol — **cherry 3× · bell 5× · bar 8× · seven 25× (jackpot)**.
-Starting card balance default **100 MB** (`issue`). Symbol indices: 1=seven 2=cherry 3=bell 4=bar.
+Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cherry 3=bell 4=bar.
 
 ## Hardware / setup
 
@@ -84,12 +84,12 @@ Starting card balance default **100 MB** (`issue`). Symbol indices: 1=seven 2=ch
 
 ## Future economy work (parked — each its own spec, after the vertical slice)
 
-- **Trading station** — a station where players **transfer M-Bucks between member cards**. Players may
+- **Trading station** — a station where players **transfer `$` between member cards**. Players may
   hold **multiple cards**; trading moves balance from one `id` to another. Hub-mediated (two id-scoped
   ledger writes: debit sender, credit receiver) so it's authoritative and atomic-ish. Diegetic input
   (buttons/levers to pick amount + confirm). Reuses the core (`ledger`/`card`/`wallet`); likely a new
   small gateway. Add once the basic vertical-slice pieces (scoreboards, sink) are in.
 - **Scoreboards** — display-only rednet subscribers rendering standings around the floor.
-- **Diegetic sink** — what M-Bucks are *for* (redstone payout: dispense item via AP Inventory Manager,
+- **Diegetic sink** — what `$` is *for* (redstone payout: dispense item via AP Inventory Manager,
   open a door, light a lamp). See `[[advanced-peripherals]]`.
 - **Multiplayer economy** (`mp_econ`) — multi-card pot / interactive wagers; core is already SP/MP-agnostic.

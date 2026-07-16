@@ -51,7 +51,7 @@
       </div>
     </div>
     <div class="row"><label>Win amount (payout)</label><input type="number" id="winAmt" value="250" min="0" step="5"></div>
-    <div class="row"><label>Header (id: balance)</label><input type="text" id="header" value="ALICE: 240 MB"></div>
+    <div class="row"><label>Header (id: balance)</label><input type="text" id="header" value="ALICE: $240"></div>
     <div class="row"><label>Reel scroll (spin phase)</label><input type="range" id="scroll" min="0" max="27" value="0"></div>
     <label class="chk"><input type="checkbox" id="animGrad" checked> animate gradient</label>
     <label class="chk"><input type="checkbox" id="showGrid"> cell grid</label>
@@ -192,7 +192,7 @@ function overlayNativeIn(canvas,text,cellRow,colStart,widthCells,color){
   overlayNative(canvas,text,cellRow,colStart+Math.floor((widthCells-text.length)/2),color);
 }
 
-const st={stakeIdx:0,result:"none",winAmt:250,dispAmt:250,tick:0,header:"ALICE: 240 MB",scroll:0,
+const st={stakeIdx:0,result:"none",winAmt:250,dispAmt:250,tick:0,header:"ALICE: $240",scroll:0,
   reels:[{final:4,pos:0},{final:3,pos:0},{final:1,pos:0}]};
 let animGrad=true,showGrid=false,countTick=0;
 

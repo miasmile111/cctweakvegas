@@ -98,7 +98,7 @@ function M.drawHeader(mon, s)
   if s.denied then
     mon.write("INSUFFICIENT")
   elseif s.player then
-    mon.write(("%s  %d MB  stake %d"):format(s.player, s.balance or 0, s.stake))
+    mon.write(("%s  $%d  stake %d"):format(s.player, s.balance or 0, s.stake))
   else
     mon.write("FREE PLAY - insert card to bet")
   end

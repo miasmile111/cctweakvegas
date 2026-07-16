@@ -200,10 +200,10 @@ local function drawTopFrame(reels, bulbTick, result, status, stakeIdx, dispAmt)
   local L = topLayout()
   topWin.setVisible(false)
   drawTop(topCv, reels, bulbTick, result, stakeIdx, dispAmt)
-  -- header (row 2): "<id>: <bal> MB", or INSUFFICIENT / FREE PLAY. bg = gradient slot so it rides it.
+  -- header (row 2): "<id>: $<bal>", or INSUFFICIENT / FREE PLAY. bg = gradient slot so it rides it.
   local hdr
   if status.denied then hdr = "INSUFFICIENT"
-  elseif status.player then hdr = ("%s: %d MB"):format(status.player, status.balance or 0)
+  elseif status.player then hdr = ("%s: $%d"):format(status.player, status.balance or 0)
   else hdr = "FREE PLAY" end
   topWin.setTextColor(WHITE); topWin.setBackgroundColor(GRAD[1])
   topWin.setCursorPos(math.max(1, math.floor((tw - #hdr) / 2) + 1), 2); topWin.write(hdr)

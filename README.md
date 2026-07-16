@@ -71,15 +71,15 @@ from an **installer floppy** (insert + reboot). See the deploy loop in `CLAUDE.m
 
 ## Membership card
 
-A **floppy disk** (CC item) each player owns; they pick a name at issue. The currency is
-**M-Bucks** (full *Mia-Bucks*, abbrev **MB**) — the unit of every balance/stake/payout. The economy
-is **built** (core loop verified in-world 2026-07-16); the full reference lives in **`kb/economy.md`**.
-Players may hold **multiple cards**.
+A **floppy disk** (CC item) each player owns; they pick a name at issue. The in-world money is
+displayed as **`$`** — the unit of every balance/stake/payout. The economy is **built** (core loop
+verified in-world 2026-07-16); the full reference lives in **`kb/economy.md`**. Players may hold
+**multiple cards**.
 
 | Field   | Role                                                                |
 | ------- | ------------------------------------------------------------------- |
 | `id`    | Player identity (chosen name). The key the hub credits against.     |
-| `score` | Cached mirror of the hub's canonical M-Bucks balance, local display only. |
+| `score` | Cached mirror of the hub's canonical `$` balance, local display only. |
 
 - **Authoritative score lives on the hub**, not the disk. The disk carries `id`; `score` on
   it is a convenience copy the hub keeps fresh. (Trust model: close friends — no anti-cheat,
