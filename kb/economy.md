@@ -78,6 +78,15 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
 
 ## Open follow-up
 
+- **Floppy-swap freeze STILL happens intermittently (open bug, 2026-07-16).** Owner reports the station
+  *sometimes* freezes (no crash — monitor stops, program still "running", reboot to clear) when
+  **switching out floppy disks**. The `1a7d9d7` fix (stash+re-queue foreign events, cache the hub id —
+  see lesson 3 above and `[[event-pump-reentrancy]]`) reduced but did **not** eliminate it. Likely a
+  remaining nested-`os.pullEvent` / blocking-call path reachable from the `disk`/`disk_eject` handler
+  (`sp_econ.onEvent` → `card.read` → `wallet.query`/`rednet.lookup`), or a `disk_eject` firing mid-`bet`
+  round-trip. **Next-session repro:** rapid insert/eject during attract vs during a spin's result
+  window; log every event the play loop sees around a swap; check whether `wallet.request`/`rednet`
+  round-trips can still be entered from `onEvent`. Fix so a swap never blocks the tick timer.
 - **F2 (latent):** a `credit` to an *unknown* id is treated as acked (hub replies `balance=nil`) →
   win silently dropped. Unreachable in normal single-hub flow (the ledger never deletes a just-debited
   id). Cheap fix if ever needed: a `credit_deny` reply kind, mirroring `bet_deny`.

@@ -102,6 +102,24 @@ This page bundles several findings; split any one out into its own `kb/` entry i
   ```
 - Add a `test` submode that prints live per-side analog levels so the user finds the right side.
 
+## A small sprite that straddles cell boundaries gets splintered by `encodeCell`
+
+- **Symptom:** a 2×2-subpixel dot (e.g. a bulb) renders as a **squashed 1-px sliver** instead of a
+  square — worst at the **canvas edge**. It looks "half there" / mis-shaped, and it moved when we
+  nudged it, but never looked right.
+- **Cause:** a cell is **2×3 subpixels and only 2 colours** (`encodeCell`). A 2×2 dot placed at an
+  **even x** (e.g. `x=2` → subx 2–3) straddles **two cell columns**, and if its y also crosses a cell
+  row it lands in **four cells**, one quarter each. Each cell keeps at most 2 colours, so quarters get
+  dropped/merged and the dot disintegrates. At the far-left/right column the surviving quarter reads as
+  a lone edge sliver. (This is the real cause of the slot's phantom "top-left corner bulb" — it was the
+  **red bar's leftmost bulb**, not the side-column lane.)
+- **Fixes:** (a) **don't place small sprites at the extreme edge columns** — start the row a cell or two
+  in (the slot's bar-bulb row now starts at `x=6`, not `x=2`); (b) if you need edge dots, **cell-align**
+  them — put a 2×2 at an **odd x** (subx `1–2`, `3–4`… = one cell column) and a **cell-row-aligned y**
+  (subpx `1–2` of a 3-row cell) so the dot lives inside a single cell and survives `encodeCell` whole.
+- **Catch it offline:** render the `encodeCell` (monitor-truth) layer to PNG, not just the raw buffer —
+  the raw buffer hides this because it isn't collapsed to 2 colours/cell. See [[monitor-ui-workflow]].
+
 ## Related
 
 - [[subpixel-drawing]] — the 2×3 teletext encoding this canvas is built on.

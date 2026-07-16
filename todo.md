@@ -108,9 +108,24 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       Lua → **offline PNG verify** → deploy loop is now the **golden standard** in
       `kb/monitor-ui-workflow.md` (+ SKILL pointer). SKILL's hard-rule reconciled: **`monitor_touch`
       IS diegetic** (physical in-world interaction), ban is keyboard/terminal-GUI only.
-    - Parked polish: celebration art beyond the bar flash; text colours (all white first pass).
-- **Slot finishing touches** — polish pass: header layout nits; any deny/row-2 visual tweaks; the
-  parked polish above. (MB `$`→`MB` swap already shipped a05efce; header now shows `id: bal MB`.)
+    - **Post-verify polish shipped:** reel-stop eased (no rubber-band); **currency reverted to `$`**
+      (M-Bucks/MB retired — header shows `id: $bal`); leftmost red-bar bulb removed (it straddled the
+      canvas-edge cells → `encodeCell` squashed it — see `kb/monitor-ui.md`); selected stake = **yellow**.
+    - Parked slot polish: celebration art beyond the bar flash; text colours; **advert screen** (see NEXT).
+
+## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
+
+1. **General multiplayer capabilities** — the core is already SP/MP-agnostic (`lib/ledger·card·wallet`).
+   Build `lib/mp_econ` (multi-card pot / interactive wagers) + a first 2–4-player game or MP mode. Own spec.
+2. **Economy bug — floppy-swap freeze (open).** Station *sometimes* freezes (no crash; reboot to clear)
+   when swapping floppy disks; the `1a7d9d7` fix helped but didn't eliminate it. Repro + root-cause per
+   `kb/economy.md` "Open follow-up" (likely a nested `os.pullEvent`/rednet path still reachable from
+   `sp_econ.onEvent`/`disk_eject`). See `[[event-pump-reentrancy]]`.
+3. **Slot advert-screen UI session** — the idle `slot_advert.lua` (COME PLAY / GET MONEY) is a plain
+   default-palette screen. Give it the full treatment via the golden-standard loop (`kb/monitor-ui-workflow.md`):
+   owner mockup → `tools/slot-preview.html`-style preview → subpixel art / `pixelfont` → deploy. It's the
+   station's face while idle, so it matters. Reuse `pixelfont` + the gradient/bulb kit.
+4. **More minigames** — 1–4 player, monitor / Create-contraption / hybrid. Each its own brainstorm→spec→build.
 
 Parked (each its own spec later):
 - **Trading station** — transfer **M-Bucks between member cards** (players may hold multiple cards);
