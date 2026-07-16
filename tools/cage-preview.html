@@ -390,7 +390,9 @@ function frame(){
     for(let i=0;i<4;i++){
       const lit=(st.pressIdx===i && st.tick<st.pressUntil);
       const ink=lit?"#111":"#f0f0f0";
-      overlayNativeIn(c, "Withdraw", 12, DENOM_COL[i], DENOM_WC, lit?"#111":"#d9d9d9");
+      // +1 is the MAXIMUM shift here: "Withdraw" is 8 chars in a 9-cell button, so it has exactly
+      // one cell of slack. +2 spills onto the next button — and off the canvas entirely on DIAMOND.
+      overlayNativeIn(c, "Withdraw", 12, DENOM_COL[i]+1, DENOM_WC, lit?"#111":"#d9d9d9");
       overlayNativeIn(c, DENOMS[i].label, 13, DENOM_COL[i]+1, DENOM_WC, ink);
       // iron/gold prices nudged a cell right: centring a 4-char price in 9 cells lands it a cell
       // left of the 3- and 5-char ones, so the column read ragged.
