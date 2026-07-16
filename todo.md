@@ -131,11 +131,36 @@ All 10 plan tasks landed; per-task + whole-branch review clean.
 **Tuning knobs:** `cage_rates.DENOMS` (denomination table — item, `$` value, label; **≤6 entries**,
 see the CEILING note in the file — a 7th collides with the idle advert's rate-table rows vs. the
 bottom bar); `cage_rates.QTYS = {1, 5, 20}` (the withdraw multiplier ladder, resets to 1x on wake);
-dropper count (`cage.cfg`, **any count ≥2**, all on one shared redstone line, never the modem's side
-— more droppers = faster shower drain; this build uses 8); shower cadence (tick-driven via
+dropper count (**any count ≥2**, all on one shared redstone line, never the modem's side — more
+droppers = faster shower drain; the first real build uses 4); shower cadence (tick-driven via
 `cage_vault.pulseLoads` on a **6-tick phase cycle** — 2 high, 4 low = 0.3s/item/dropper, pacing the
 dropper's 4-tick rising-edge cooldown. On/off MUST straddle a yield and it must never become a
 blocking `sleep()` loop — see `[[redstone-pulse-needs-a-yield]]`, `[[event-pump-reentrancy]]`).
+
+**Hardware is DISCOVERED, not configured (2026-07-17).** Network names are **not stable across
+identically-built cages** — CC hands out `<type>_<n>` from the lowest free index on that network and
+any attach/detach burns a number (the first real build's droppers came up **1-4, not 0-3**). So a
+cage finds its own kit by TYPE at boot: droppers = every `minecraft:dropper`; **deposit = the
+lowest-named non-dropper inventory** (attach the player-facing one first), vault = the next; monitor
+= the one that is **36×24 @0.5** (by SIZE, not `peripheral.find("monitor")` — a cage with two
+monitors attached was a coin flip). A standard build needs **no `cage.cfg` at all**.
+
+> **`cage.cfg` exists because `update cage` OVERWRITES `cage.lua`.** It is not in the package file
+> list, so it survives a push — it is the ONLY place per-station wiring belongs. Never put wiring in
+> `cage.lua`'s config block; the next `update` deletes it. cfg always wins over discovery. `side` is
+> the one thing that can't be discovered.
+
+**`cage test`** — the setup tool. `cage test` lists attached peripherals, every monitor's size, the
+resolved config **and where each value came from** (`(auto)` / `(cage.cfg)` / `(NOT FOUND)`), and the
+vault's contents; it runs *before* the boot hard-stops so it can diagnose a cage that won't start.
+`cage test drop <metal> [qty]` showers real metal **debiting nobody** — the one check only the server
+can answer. Fails loud (not a crash) on a grey modem, >2 non-dropper inventories (a hopper would
+otherwise sort ahead of the barrels and become the deposit box), or a wrong-sized `monitor=`.
+
+**Verified in-world setup (first real cage):** Sophisticated Storage barrels work — they expose
+`inventory`, so `list()`/`pushItems()` need no special handling. `barrel_0` = deposit, `barrel_1` =
+vault, `dropper_1..4`, modem on the **right** (kept reachable), redstone out on **back**, drive on
+the left, monitor `monitor_0`.
 
 **In-world verification: PENDING.** Post-merge+push checklist (per the plan's post-plan section):
 walk-up wake → card insert → mixed deposit incl. junk → withdraw each denom at 1x/5x/20x →
