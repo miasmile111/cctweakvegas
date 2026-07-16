@@ -61,7 +61,7 @@
     <label class="chk"><input type="checkbox" id="animGrad" checked> animate gradient</label>
     <label class="chk"><input type="checkbox" id="showGrid"> cell grid</label>
     <hr>
-    <p class="note">Bands: header <b>1-2</b> · big <b>$</b> @2× <b>3-8</b> (bulb lanes cols 1 &amp; 36 frame the money) · bar <b>9-10</b> · metals <b>11-18</b> · qty <b>19-20</b> · bar <b>21-22</b> · DEPOSIT <b>23-24</b>. Bars flash while the droppers spit. Big number <b>counts up</b> on deposit, <b>down</b> as metal flies.</p>
+    <p class="note">Bands: header <b>1-2</b> · big <b>$</b> <b>3-7</b> (bulb lanes cols 1 &amp; 36 frame the money) · bar <b>8-9</b> · metals <b>10-17</b> · qty <b>18-19</b> · bar <b>20-21</b> · <b>DEPOSIT 22-24</b> (3 cells, bevelled). Tapped metal <b>flashes green</b> — DEPOSIT's green, so "money moved" is one colour. Bars flash while the droppers spit. Big number <b>counts up</b> on deposit, <b>down</b> as metal flies. The <b>$</b> is the owner's 5×10 glyph at <b>1×</b> beside 2× digits.</p>
   </div>
 </main>
 
@@ -69,7 +69,7 @@
 "use strict";
 // ---- palette (CC defaults; GRAD slots get repainted each frame) -------------
 const PAL={1:[240,240,240],2:[242,178,51],4:[229,127,216],8:[153,178,242],16:[222,222,108],32:[127,204,25],64:[242,178,204],128:[76,76,76],256:[153,153,153],512:[76,153,178],1024:[178,102,229],2048:[51,102,204],4096:[127,102,76],8192:[87,166,78],16384:[204,76,76],32768:[17,17,17]};
-const WHITE=1,ORANGE=2,LIGHTBLUE=8,YELLOW=16,GRAY=128,LIGHTGRAY=256,GREEN=8192,RED=16384,BLACK=32768;
+const WHITE=1,ORANGE=2,LIGHTBLUE=8,YELLOW=16,LIME=32,GRAY=128,LIGHTGRAY=256,GREEN=8192,RED=16384,BLACK=32768;
 
 // The cage's gradient rides slots NOTHING else draws in — so the ingots keep their real colours.
 // (Slot uses [2048,512,8,1024,64]; we free 8/512 for diamond/steel and take 4/4096 instead.)
@@ -112,14 +112,30 @@ const F_BIG={
  "7":["####","...#","..#.",".#..",".#..",".#.."],
  "8":["####","#..#","####","#..#","#..#","####"],
  "9":["####","#..#","####","...#","...#","####"],
- "$":[".##.","###.",".##.","..##","###.",".##."],
 };
+// The owner's hand-drawn $ (mockup(3).json) — 5×10, S-curve with the stem running through.
+// It is NOT a BIG glyph: BIG digits are 4×6 drawn at 2× (8×12), and this at 2× would be 10×20 and
+// tower over them. So it rides at 1× beside 2× digits — 10 tall vs 12, which is how a real $ sits
+// against figures. Own table, own scale.
+const F_SIGN={
+ "$":["..#..",".###.","#.#.#","#.#..",".##..","..##.","..#.#","#.#.#",".###.","..#.."],
+};
+const SIGN_W=5, SIGN_H=10, BIG_H=12;   // BIG_H = 6 rows × 2× scale
 function gW(f,ch){const g=f[ch];return g?g[0].length:0;}
 // scale multiplies glyph width; gap is RAW subpixels, NOT scaled (matches the Lua contract)
 function tW(f,str,gap,scale){gap=gap==null?1:gap;scale=scale||1;let w=0;for(const ch of str)w+=gW(f,ch)*scale+gap;return w-gap;}
 function drawGlyph(b,f,ch,x,y,color,scale){scale=scale||1;const g=f[ch];if(!g)return;for(let r=0;r<g.length;r++)for(let c=0;c<g[r].length;c++)if(g[r][c]==="#")for(let dy=0;dy<scale;dy++)for(let dx=0;dx<scale;dx++)setPx(b,x+c*scale+dx,y+r*scale+dy,color);}
 function drawText(b,f,str,x,y,color,gap,scale){gap=gap==null?1:gap;scale=scale||1;let cx=x;for(const ch of str){drawGlyph(b,f,ch,cx,y,color,scale);cx+=gW(f,ch)*scale+gap;}}
 function drawTextCentered(b,f,str,y,color,gap,scale){gap=gap==null?1:gap;scale=scale||1;drawText(b,f,str,Math.floor((CW-tW(f,str,gap,scale))/2),y,color,gap,scale);}
+
+// the money: owner's $ at 1× + digits at 2×, one subpixel gap, whole thing centred as a unit.
+// The $ is nudged down (BIG_H-SIGN_H)/2 so it sits optically centred against the taller figures.
+function drawBalance(b,y,digits,color){
+  const dw=tW(F_BIG,digits,1,2), total=SIGN_W+1+dw;
+  const x=Math.floor((CW-total)/2);
+  drawGlyph(b,F_SIGN,"$",x,y+Math.floor((BIG_H-SIGN_H)/2),color,1);
+  drawText(b,F_BIG,digits,x+SIGN_W+1,y,color,1,2);
+}
 
 // ---- canvas (72×72 subpx) --------------------------------------------------
 const CW=72,CH=72,COLS=36,ROWS=24,S=8;
@@ -133,19 +149,30 @@ function drawSprite(b,x,y,sp){for(let dy=0;dy<sp.h;dy++)for(let dx=0;dx<sp.w;dx+
 function R(row){return (row-1)*3;}
 const DENOM_COL=[1,10,19,28], DENOM_WC=9;              // cell cols: 4 buttons × 9 cells = 36
 const QTY_COL=[1,13,25],      QTY_WC=[12,12,12];       // cell cols: 3 buttons × 12 cells
+// Everything from the top bar down shifted up one cell, so DEPOSIT gets 3 rows (22-24) instead of 2.
 function layout(){
   return {
-    balY   : R(3)+1,                       // big $ — rows 3-8 (12 subpx tall @2×), nudged 1 down
-    topBarY: R(9),  topBarH:6,             // bar rows 9-10
-    denomY : R(11), denomH:(R(18)+2)-R(11)+1,  // metals rows 11-18
-    symY   : R(11)+2,                      // sprite sits rows 11-13ish
-    qtyY   : R(19), qtyH:6,                // qty rows 19-20
-    botBarY: R(21), botBarH:6,             // bar rows 21-22
-    depY   : R(23), depH:6,                // DEPOSIT rows 23-24
-    sideTop: R(3),  sideBot:R(8)+2,        // bulb lanes frame the MONEY (cols 1 & 36)
+    balY   : R(3)+1,                       // big $ — rows 3-7 (12 subpx tall @2×), nudged 1 down
+    topBarY: R(8),  topBarH:6,             // bar rows 8-9
+    denomY : R(10), denomH:(R(17)+2)-R(10)+1,  // metals rows 10-17
+    symY   : R(10)+2,                      // sprite sits rows 10-13ish
+    qtyY   : R(18), qtyH:6,                // qty rows 18-19
+    botBarY: R(20), botBarH:6,             // bar rows 20-21
+    depY   : R(22), depH:9,                // DEPOSIT rows 22-24 — 3 cells tall, room for a bevel
+    sideTop: R(3),  sideBot:R(7)+2,        // bulb lanes frame the MONEY (cols 1 & 36)
   };
 }
 function bulb(b,x,y,seed,tick){fillRect(b,x,y,2,2,((seed+tick)%2===0)?YELLOW:GRAY);}
+
+// a bevelled button: 1-subpixel light/dark edges around a face. `down` swaps them (pushed in).
+function drawBevel(b,x,y,w,h,face,light,dark,down){
+  const tl = down?dark:light, br = down?light:dark;
+  fillRect(b,x,y,w,h,face);
+  fillRect(b,x,y,w,1,tl);            // top
+  fillRect(b,x,y,1,h,tl);            // left
+  fillRect(b,x,y+h-1,w,1,br);        // bottom
+  fillRect(b,x+w-1,y,1,h,br);        // right
+}
 
 // ---- frame -----------------------------------------------------------------
 function buildFrame(st){
@@ -162,10 +189,13 @@ function buildFrame(st){
   for(let x=6;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}
   for(let y=L.sideTop;y<=L.sideBot;y+=4){bulb(b,0,y,Math.floor(y/4),st.tick);bulb(b,CW-2,y,Math.floor(y/4),st.tick);}
 
-  // metal buttons: panel fill; sprite centred; native label+price overlaid in frame()
+  // metal buttons: panel fill; sprite centred; native label+price overlaid in frame().
+  // A tapped metal FLASHES green — the same green as DEPOSIT, so "money moved" reads as one colour
+  // across the whole kiosk.
   for(let i=0;i<4;i++){
     const x=(DENOM_COL[i]-1)*2;
-    fillRect(b,x+1,L.denomY,DENOM_WC*2-2,L.denomH,BLACK);
+    const lit = (st.pressIdx===i && st.tick<st.pressUntil);
+    fillRect(b,x+1,L.denomY,DENOM_WC*2-2,L.denomH,lit?GREEN:BLACK);
     const sp=SPRITES[DENOMS[i].key];
     drawSprite(b,x+Math.floor((DENOM_WC*2-SYM_W)/2),L.symY,sp);
   }
@@ -173,11 +203,15 @@ function buildFrame(st){
   // qty buttons: selected = yellow, others gray (the slot's stake idiom)
   for(let i=0;i<3;i++)fillRect(b,(QTY_COL[i]-1)*2,L.qtyY,QTY_WC[i]*2,L.qtyH,i===st.qtyIdx?YELLOW:GRAY);
 
-  // DEPOSIT button
-  fillRect(b,0,L.depY,CW,L.depH,GREEN);
+  // DEPOSIT — a bevelled physical button (the first slot prototype's look). Raised: light top/left,
+  // dark bottom/right. Pressed: the light and dark swap and the face shifts a subpixel down-right,
+  // so it reads as pushed in. 1-subpixel edges keep each cell to 2 colours; only the bottom-left and
+  // top-right CORNER cells see both edge colours at once, which encodeCell will squash — a 2-cell
+  // cost for a button that feels real.
+  drawBevel(b,0,L.depY,CW,L.depH,GREEN,LIME,BLACK,st.tick<st.depUntil);
 
-  // the money — big $ @2×, white, riding the gradient
-  drawTextCentered(b,F_BIG,"$"+Math.round(st.dispBal),L.balY,WHITE,1,2);
+  // the money — owner's $ at 1× + digits at 2×, white, riding the gradient
+  drawBalance(b,L.balY,String(Math.round(st.dispBal)),WHITE);
   return {b,L};
 }
 
@@ -211,9 +245,11 @@ function overlayNativeIn(canvas,text,cellRow,colStart,widthCells,color){
 }
 
 // ---- state -----------------------------------------------------------------
-const st={bal:12500,dispBal:12500,qtyIdx:0,who:"ALICE",hasCard:true,msg:null,loads:0,tick:0,bar:"red",depAmt:850};
+const st={bal:12500,dispBal:12500,qtyIdx:0,who:"ALICE",hasCard:true,msg:null,loads:0,tick:0,bar:"red",depAmt:850,
+          pressIdx:-1,pressUntil:0,depUntil:0};
 let animGrad=true,showGrid=false;
 const N_DROPPERS=3;
+const FLASH_TICKS=8;   // ~0.4s at the station's 0.05s tick
 
 function updateGradient(p){for(let i=0;i<GRAD.length;i++){const a=0.5+0.5*Math.sin(p+i*0.9),mix=(d,t)=>Math.round(255*(d+(t-d)*a));PAL[GRAD[i]]=[mix(GRAD_DEEP[0],GRAD_GOLD[0]),mix(GRAD_DEEP[1],GRAD_GOLD[1]),mix(GRAD_DEEP[2],GRAD_GOLD[2])];}}
 
@@ -228,11 +264,15 @@ function easeToward(cur,target){
 function withdraw(i){
   if(!st.hasCard){st.msg="INSERT CARD";return;}
   const d=DENOMS[i], qty=QTYS[st.qtyIdx], cost=d.value*qty;
-  if(st.bal<cost){st.msg="NEED $"+cost;return;}      // deny BEFORE any debit
+  if(st.bal<cost){st.msg="NEED $"+cost;return;}      // deny BEFORE any debit — no flash on a deny
   st.bal-=cost; st.loads+=qty; st.msg=null;           // debit, then the metal flies
+  st.pressIdx=i; st.pressUntil=st.tick+FLASH_TICKS;   // the button lights green: money moved
   document.getElementById("bal").value=st.bal;
 }
 function deposit(){
+  // monitor_touch has NO release event, so the pushed-in look is a timed flash, not a mouseup —
+  // same as it will have to be in Lua.
+  st.depUntil=st.tick+FLASH_TICKS;
   if(!st.hasCard){st.msg="INSERT CARD";return;}
   if(st.depAmt<=0){st.msg="NOTHING TO DEPOSIT";return;}
   st.bal+=st.depAmt; st.msg="DEPOSITED $"+st.depAmt;
@@ -240,9 +280,9 @@ function deposit(){
 }
 // hit test — cell space, band-first, exactly the shape cage.lua will use
 function hitTest(tx,ty){
-  if(ty>=23) return {kind:"deposit"};
-  if(ty>=19&&ty<=20){for(let i=0;i<3;i++)if(tx>=QTY_COL[i]&&tx<QTY_COL[i]+QTY_WC[i])return{kind:"qty",i};return null;}
-  if(ty>=11&&ty<=18){for(let i=0;i<4;i++)if(tx>=DENOM_COL[i]&&tx<DENOM_COL[i]+DENOM_WC)return{kind:"denom",i};return null;}
+  if(ty>=22) return {kind:"deposit"};                                    // rows 22-24
+  if(ty>=18&&ty<=19){for(let i=0;i<3;i++)if(tx>=QTY_COL[i]&&tx<QTY_COL[i]+QTY_WC[i])return{kind:"qty",i};return null;}
+  if(ty>=10&&ty<=17){for(let i=0;i<4;i++)if(tx>=DENOM_COL[i]&&tx<DENOM_COL[i]+DENOM_WC)return{kind:"denom",i};return null;}
   return null;
 }
 
@@ -261,14 +301,16 @@ function frame(){
     overlayNative(c, st.hasCard?("cage1 "+st.who):"INSERT CARD", 1, 1);
     const status = st.msg || (st.loads>0?("PAYING "+st.loads):"");
     if(status) overlayNative(c, status, 1, COLS-status.length+1, st.msg&&st.msg.startsWith("NEED")?"#ff9d9d":"#f0f0f0");
-    // metal buttons: native label (row 15) + price (row 17)
+    // metal buttons: native label (row 14) + price (row 16)
     for(let i=0;i<4;i++){
-      overlayNativeIn(c, DENOMS[i].label, 14, DENOM_COL[i], DENOM_WC);
-      overlayNativeIn(c, "$"+DENOMS[i].value, 16, DENOM_COL[i], DENOM_WC, "#d9d9d9");
+      const lit=(st.pressIdx===i && st.tick<st.pressUntil);
+      overlayNativeIn(c, DENOMS[i].label, 13, DENOM_COL[i], DENOM_WC, lit?"#111":"#f0f0f0");
+      overlayNativeIn(c, "$"+DENOMS[i].value, 15, DENOM_COL[i], DENOM_WC, lit?"#111":"#d9d9d9");
     }
-    // qty labels in the TOP cell of the button (row 19)
-    for(let i=0;i<3;i++)overlayNativeIn(c, QTYS[i]+"x", 18, QTY_COL[i], QTY_WC[i], i===st.qtyIdx?"#111":"#f0f0f0");
-    // DEPOSIT label (row 23)
+    // qty labels in the TOP cell of the button (row 18)
+    for(let i=0;i<3;i++)overlayNativeIn(c, QTYS[i]+"x", 17, QTY_COL[i], QTY_WC[i], i===st.qtyIdx?"#111":"#f0f0f0");
+    // DEPOSIT label — middle row of the 3-cell button (row 23). Native text is CELL-locked, so it
+    // cannot shift by a subpixel on press; the bevel swap alone carries the push.
     overlayNative(c, "DEPOSIT", 22);
   }
   requestAnimationFrame(frame);
