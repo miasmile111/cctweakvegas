@@ -13,8 +13,8 @@ local TOP_NAME   = "top"     -- the 1x2 portrait monitor (side name if touching,
 local TOP_SCALE  = 0.5
 local SPIN_SIDE  = "back"    -- computer side the lever's redstone feeds
 local SPIN_LEVEL = 13        -- spin when analog signal on SPIN_SIDE reaches this (lever ramps up to 15)
-local STAKE_SIDE  = "left"   -- computer side the stake-cycle BUTTON feeds (find via `slot test`)
-local STAKE_LEVEL = 13       -- rising-edge threshold for the cycle button (binary lever 0/15)
+-- Stake ($10/$25/$100) is selected by TAPPING the on-screen stake labels (monitor_touch) — the
+-- three labels you see are the buttons. No redstone wiring for stakes. Selection resets to $10 on wake.
 local ZONE = "all"  -- proximity zone this station answers to. "all" = any player in the hub's range.
                     -- (Per-station zones arrive with GPS; then set e.g. ZONE = "slot1".)
 -- ----------------------------------------------------------------------------
@@ -27,6 +27,7 @@ local logic    = require("slot_logic")
 local STAKES   = require("slot_pay").STAKES   -- {10, 25, 100} — single source of truth for the ladder
 
 local RED, YELLOW, GREEN, WHITE, BLACK, GREY = 16384, 16, 8192, 1, 32768, 128
+local MAGENTA, LIGHTGRAY = 4, 256   -- stake-row background art (purple-ish / gray), free palette slots
 local SYM_W, SYM_H = 8, 9
 local SYMBOL_PX = SYM_H + 2   -- one symbol slot's pixel height (sprite + gap between symbols)
 
@@ -47,8 +48,10 @@ end
 -- Layout: gradient fills the WHOLE canvas. A framed reel VIEWPORT sits in the lower-middle;
 -- symbols are clipped to it (they roll in/out behind the top & bottom frame bars). Bulbs frame
 -- all four sides. A banner row at the very bottom stays clear of bulbs for WIN/LOSE text.
--- Fixed 15x24 (30x72 subpixel) bands decoded from the owner's mockup (docs/mockups/slot-v3.json).
--- Cell row r -> top subpixel = (r-1)*3+1; the layout hardcodes the mockup's element rows.
+-- Fixed 15x24 (30x72 subpixel) bands from the owner's mockup (docs/mockups/slot-v3.json), with a
+-- BIG BLACK reel window (3 symbols tall) as the centrepiece per the owner's steer. Cell row r ->
+-- top subpixel = (r-1)*3+1. Elements top->bottom: header, WIN:+amount, red frame, black 3-symbol
+-- window (side bulbs), red bar, stake row (purple/gray art + tappable labels).
 local function topLayout(cv)
   local function R(row) return (row - 1) * 3 + 1 end   -- top subpixel of a cell row
   -- reels: 3 sprites (SYM_W wide) spread across cols 2..14 (subpx 3..28)
@@ -57,20 +60,21 @@ local function topLayout(cv)
   local startX = zoneX + math.floor((zoneW - (3 * SYM_W + 2 * gap)) / 2)
   local xs = {}
   for i = 1, 3 do xs[i] = startX + (i - 1) * (SYM_W + gap) end
+  local viewTop, viewBot = R(8), R(20) + 2               -- black window: cell rows 8..20 (subpx 22..60)
+  local paylineY = viewTop + math.floor(((viewBot - viewTop + 1) - SYM_H) / 2)  -- middle symbol row
   return {
     xs = xs,
-    headerY   = R(3),                        -- <id>: <bal> MB   (cell rows 2-4, centre line)
-    winLblY   = R(6),                        -- "WIN:"            (rows 6-7)
-    winAmtY   = R(8),                        -- win amount        (rows 8-9)
-    topBarY   = R(9),  topBarH = 6,          -- red frame bar     (rows 9-10)
-    bulbRowY  = R(11),                       -- full-width bulb row (row 11)
-    celebY    = R(11),                       -- celebration zone   (rows 11-12)
-    viewTop   = R(15), viewBot = R(17) + 2,  -- reel viewport      (rows 15-17, one symbol tall)
-    paylineY  = R(15),                       -- landed symbol sits at the viewport top
-    orangeBarY= R(21),                       -- orange bulb bar    (row 21)
-    redBarY   = R(22),                       -- red bar            (row 22)
+    headerY   = R(2),                        -- <id>: <bal> MB   (cell row 2)
+    winLblY   = R(4),                        -- "WIN:"           (row 4)
+    winAmtY   = R(5),                        -- win amount        (row 5)
+    topBarY   = R(6),  topBarH = 6,          -- red top frame bar (rows 6-7)
+    bulbRowY  = R(7),                        -- bulbs on the top bar (row 7)
+    viewTop   = viewTop, viewBot = viewBot,  -- BLACK reel window (rows 8-20, 3 symbols)
+    paylineY  = paylineY,
+    botBarY   = R(21), botBarH = 6,          -- red bottom bar    (rows 21-22)
+    orangeBarY= R(21),                       -- orange bulbs on the bottom bar (row 21)
     stakeY    = R(23),                        -- stake labels + banner (rows 23-24)
-    sideBulbTop = R(12), sideBulbBot = R(21), -- cols 1 & 15 vertical bulbs
+    sideBulbTop = viewTop, sideBulbBot = viewBot, -- cols 1 & 15 vertical bulbs alongside the window
   }
 end
 
@@ -114,27 +118,26 @@ local function drawTop(cv, reels, bulbTick, result)
   for b = 1, #GRAD do
     cv:fillRect(1, 1 + (b - 1) * bandH, cv.w, bandH, GRAD[b])
   end
-  -- reels in the single-symbol viewport (rows 15-17), clipped behind the frame bar
+  -- BLACK reel window (the "active" set) — a solid black slot window behind the reels
+  local viewH = L.viewBot - L.viewTop + 1
+  cv:fillRect(1, L.viewTop, cv.w, viewH, BLACK)
+  -- reels: 3 symbols per reel, clipped to the black window
   for i = 1, 3 do drawReel(cv, L.xs[i], reels[i], L) end
-  -- red top frame bar over the viewport's top edge (flash gold on a win)
+  -- red top & bottom frame bars (top flashes gold on a win)
   local barCol = (result == "win" and bulbTick % 2 == 0) and YELLOW or RED
   cv:fillRect(1, L.topBarY, cv.w, L.topBarH, barCol)
-  -- bottom bars: the bulb bar's base then the red bar
-  cv:fillRect(1, L.orangeBarY, cv.w, 3, RED)
-  cv:fillRect(1, L.redBarY,    cv.w, 3, RED)
-  -- full-width bulb row + the orange bulb bar
+  cv:fillRect(1, L.botBarY, cv.w, L.botBarH, RED)
+  -- stake-row background art: purple-ish (cols 1-5) + gray (cols 6-15), rows 23-24
+  cv:fillRect(1,  L.stakeY, 10, 6, MAGENTA)
+  cv:fillRect(11, L.stakeY, cv.w - 10, 6, LIGHTGRAY)
+  -- bulbs: a row on each frame bar + vertical lanes down cols 1 & 15 beside the window
   for x = 2, cv.w - 2, 4 do
     bulb(cv, x, L.bulbRowY,   math.floor(x / 4), bulbTick, result)
     bulb(cv, x, L.orangeBarY, math.floor(x / 4), bulbTick, result)
   end
-  -- vertical side bulbs down cols 1 and 15
   for y = L.sideBulbTop, L.sideBulbBot, 4 do
     bulb(cv, 1, y, math.floor(y / 4), bulbTick, result)
     bulb(cv, cv.w - 1, y, math.floor(y / 4), bulbTick, result)
-  end
-  -- celebration flash on a win (first pass: a simple gold band in the celebration zone)
-  if result == "win" and bulbTick % 2 == 0 then
-    cv:fillRect(3, L.celebY, cv.w - 4, 3, YELLOW)
   end
   cv:render()
 end
@@ -241,12 +244,14 @@ local function drawTopFrame(reels, bulbTick, result, attract, status, stakeIdx)
   centreWrite("WIN:", cellRow(L.winLblY))
   centreWrite(("%d"):format((status and status.lastWin) or 0), cellRow(L.winAmtY))
 
-  -- stake row: $10  $25  $100, the selected one inverted (white bg / black fg) for legibility
-  local stakeCols = { 2, 7, 12 }   -- mockup cols for the three labels
+  -- stake row: $10 (over purple, cols 2-4) $25 (7-9) $100 (12-14) — over the purple/gray art.
+  -- Selected one inverted (white bg / black fg); tap a label to select (monitor_touch in play()).
+  local stakeCols = { 2, 7, 12 }              -- left column of each label
+  local stakeBg   = { MAGENTA, LIGHTGRAY, LIGHTGRAY }   -- art colour behind each label
   local sy = cellRow(L.stakeY)
   for i = 1, #STAKES do
     local sel = (i == stakeIdx)
-    topWin.setBackgroundColor(sel and WHITE or bandSlot(sy))
+    topWin.setBackgroundColor(sel and WHITE or stakeBg[i])
     topWin.setTextColor(sel and BLACK or WHITE)
     topWin.setCursorPos(stakeCols[i], sy)
     topWin.write(("$%d"):format(STAKES[i]))
@@ -289,7 +294,7 @@ local function play(mon, pres)
   local reels = newSpin(); for _, r in ipairs(reels) do r.stopped = true end
   local tick, spinTick, resultAt, result = 0, 0, nil, nil
   local armed = true       -- rising-edge guard so a held lever doesn't auto-respin
-  local stakeIdx, armedStake = 1, true   -- selected stake ($10 first); resets each fresh play() = on wake
+  local stakeIdx = 1       -- selected stake ($10 first); resets each fresh play() = on wake. Tap to change.
 
   updateGradient(0)
   drawTopFrame(reels, 0, nil, true, econ.status(), stakeIdx)
@@ -300,14 +305,6 @@ local function play(mon, pres)
     if ev[1] == "timer" and ev[2] == timer then
       tick = tick + 1
       updateGradient(tick * 0.05)
-
-      -- stake-cycle button (rising edge): $10 -> $25 -> $100 -> $10; only while idle in attract
-      local slvl = redstone.getAnalogInput(STAKE_SIDE)
-      if state == "attract" and armedStake and slvl >= STAKE_LEVEL then
-        stakeIdx = stakeIdx % #STAKES + 1
-        armedStake = false
-      end
-      if slvl < STAKE_LEVEL then armedStake = true end
 
       local lvl = redstone.getAnalogInput(SPIN_SIDE)
       if state == "attract" and armed and lvl >= SPIN_LEVEL then
@@ -352,6 +349,15 @@ local function play(mon, pres)
       econ.onEvent(ev)
     elseif ev[1] == "disk" or ev[1] == "disk_eject" then
       econ.onEvent(ev)                          -- card inserted/removed: re-read balance
+    elseif ev[1] == "monitor_touch" then
+      -- tap the on-screen stake labels (rows 23-24) to pick $10/$25/$100; only while idle
+      local tx, ty = ev[3], ev[4]
+      if state == "attract" and ty and ty >= 23 then
+        if     tx <= 5  then stakeIdx = 1        -- $10 third (cols 1-5)
+        elseif tx <= 10 then stakeIdx = 2        -- $25 third (cols 6-10)
+        else                 stakeIdx = 3 end    -- $100 third (cols 11-15)
+        drawTopFrame(reels, tick, nil, true, econ.status(), stakeIdx)
+      end
     elseif ev[1] == "key" and ev[2] == keys.q then
       restorePalette()
       return "quit"
