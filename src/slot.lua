@@ -177,6 +177,7 @@ end
 math.randomseed(os.epoch("utc"))
 local rng = function() return math.random() end
 
+local PROTO = "ccvegas"
 local idle = require("idle_logic")
 
 -- open rednet so the hub can wake/sleep us (the wired modem also carries the monitor)
@@ -184,7 +185,16 @@ local function findModem()
   local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
   return wired or peripheral.find("modem")
 end
-do local m = findModem(); if m then rednet.open(peripheral.getName(m)) end end
+local hasRednet = false
+do local m = findModem(); if m then rednet.open(peripheral.getName(m)); hasRednet = true end end
+
+-- Ask the hub for current presence. Its reply is an ordinary presence message, handled by the
+-- deep-sleep / active event loops below. Syncs a freshly-woken station to reality: wakes one that
+-- booted while a player was already in range, and lets a lever-wake from outside the detector range
+-- sleep again after the round. Hub down -> no reply -> the station keeps its current assumption.
+local function queryPresence()
+  if hasRednet then rednet.broadcast({ kind = "presence?", zone = ZONE }, PROTO) end
+end
 
 local topMon = findMon(TOP_NAME); topMon.setTextScale(TOP_SCALE)
 local tw, th = topMon.getSize()
@@ -256,6 +266,7 @@ end
 -- Returns true to wake into ACTIVE, or false if the operator quit (Q).
 local function deepSleep()
   clearMonitor()
+  queryPresence()                       -- if a player is already in range, the hub's reply wakes us
   local prevLvl = redstone.getAnalogInput(SPIN_SIDE)
   while true do
     local ev = { os.pullEvent() }
@@ -284,6 +295,7 @@ local function runActive()
 
   updateGradient(0)
   drawTopFrame(reels, 0, nil, true)
+  queryPresence()                       -- confirm real presence; if nobody's actually here we'll sleep
   local timer = os.startTimer(TICK)
 
   while true do

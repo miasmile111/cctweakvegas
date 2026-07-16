@@ -33,4 +33,9 @@ t.ok(not I.leverRose(13, 15, 13), "already high -> no new edge")
 t.ok(not I.leverRose(0, 12, 13), "below threshold -> no edge")
 t.ok(not I.leverRose(15, 0, 13), "falling -> no edge")
 
+-- isPresenceQuery: identifies a station's presence request (vs a presence broadcast)
+t.ok(I.isPresenceQuery({ kind = "presence?" }), "presence? query recognized")
+t.ok(not I.isPresenceQuery({ kind = "presence", present = true }), "presence broadcast is not a query")
+t.ok(not I.isPresenceQuery("nope"), "non-table is not a query")
+
 t.done()

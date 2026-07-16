@@ -88,6 +88,9 @@ print("Hub v0 registrar online.")
 print(("  protocol '%s', hostname 'hub', computer ID %d"):format(PROTO, os.getComputerID()))
 print("Listening for station registrations (Ctrl+T to stop)...")
 
+-- shared occupancy: presenceLoop writes it each poll; registrar reads it to answer presence? queries
+local occupied = false
+
 local function registrar()
   while true do
     local sender, msg = rednet.receive(PROTO)
@@ -96,6 +99,8 @@ local function registrar()
       local n = assign(msg.computerID, msg.package)
       rednet.send(sender, { kind = "assigned", package = msg.package, instance = n }, PROTO)
       print(("  #%d  %s -> %s%d"):format(msg.computerID, msg.package, msg.package, n))
+    elseif idle.isPresenceQuery(msg) then
+      rednet.send(sender, { kind = "presence", zone = "all", present = occupied }, PROTO)
     end
   end
 end
@@ -107,17 +112,16 @@ local function presenceLoop()
     return
   end
   print(("Presence loop online: isPlayersInRange(%d) every %.2fs."):format(DET_RANGE, POLL))
-  local last = false
   local timer = os.startTimer(POLL)
   while true do
     local ev = { os.pullEvent() }
     if ev[1] == "timer" and ev[2] == timer then
       local occ = det.isPlayersInRange(DET_RANGE) and true or false
-      if idle.occupancyChanged(last, occ) then
+      if idle.occupancyChanged(occupied, occ) then
         rednet.broadcast({ kind = "presence", zone = "all", present = occ }, PROTO)
         print(occ and "[presence] occupied -> WAKE" or "[presence] empty -> SLEEP")
-        last = occ
       end
+      occupied = occ                    -- keep shared state current so registrar can answer queries
       timer = os.startTimer(POLL)
     end
   end

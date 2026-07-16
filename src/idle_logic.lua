@@ -27,4 +27,9 @@ function M.leverRose(prev, now, threshold)
   return prev < threshold and now >= threshold
 end
 
+-- Is this rednet value a station's presence query (asking the hub for current occupancy)?
+function M.isPresenceQuery(msg)
+  return type(msg) == "table" and msg.kind == "presence?"
+end
+
 return M
