@@ -58,6 +58,12 @@ another facet of something already written. Keep this index's catalog in sync (o
   watchdog, fractional-coord `setPixel` crash, palette animation + dark-colours-read-as-black,
   no native clipping, window+`setVisible` flicker-free draw, multi-file re-import traps, analog
   lever input. *(A bundle — draw entries out of it as they're revisited.)*
+- [[monitor-ui-workflow]] — `monitor-ui-workflow.md` — **the golden-standard loop for building any
+  monitor UI**: owner draws in `tools/monitor-mockup.html` → export JSON → decode (per-cell dominant
+  colour + raw-subpixel for fonts) → iterate in the live `tools/slot-preview.html` (renders the real
+  layout + `encodeCell` truth) → port to Lua (1-indexed!) → **verify offline by rendering `cv.buf` to
+  PNG** (luajit sim, no deploy) → ship. Plus the native-vs-subpixel-font decision and the "$ is width
+  not colour" rule. Read before starting UI work; skip the slow screenshot-per-change deploy loop.
 - [[deploy-and-identity]] — `deploy-and-identity.md` — code-delivery & station-identity facts:
   `wget` won't overwrite, raw-CDN 5-min cache + `?cb=` bust, rednet DNS only sees online nodes
   (→ hub is the registrar), `computerID` vs persistent label, `/disk/startup` override, chunk

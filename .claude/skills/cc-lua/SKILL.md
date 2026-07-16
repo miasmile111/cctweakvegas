@@ -18,7 +18,12 @@ Small **minigames rendered on in-world CC:Tweaked monitors**, controlled **diege
 
 ## HARD RULE — diegetic in-world input only
 
-**Game controls MUST be physical Minecraft blocks read via redstone. Never use keyboard, `key`/`char`, or `monitor_touch` as a gameplay control.** (A keyboard `Q` / Ctrl+T admin quit is fine — quitting isn't gameplay.)
+**Game controls MUST be physical, in-world interactions — never a keyboard/terminal GUI.** Physical
+blocks read via redstone (pressure plates / buttons / levers) are the default. **`monitor_touch` IS
+allowed** — right-clicking an in-world monitor is a physical-world interaction, not a terminal GUI, so
+it's diegetic (e.g. slot v3's tap-to-select stake buttons). The ban is on **keyboard / `key` / `char`
+gameplay**. (A keyboard `Q` / Ctrl+T admin quit is fine — quitting isn't gameplay.) See
+[[diegetic-input-preference]] and `kb/monitor-ui.md`.
 
 - Read the computer's **6 sides**: `redstone.getInput(side)` → boolean. `side` ∈ `"top" "bottom" "left" "right" "front" "back"`, relative to computer facing (`front` = screen direction). Up to 6 physical controls per computer.
 - **POLL every physics tick** — a player standing on a pressure plate holds the signal high with no new events, so read `getInput` inside the tick loop for continuous hold-to-move. The `redstone` event only fires on change; don't depend on it for held input.
@@ -62,6 +67,8 @@ docs/intuition. It is the home for those findings so this skill stays a stable h
 
 - **READ before building/debugging** monitor UI, peripherals, or redstone: skim `kb/index.md`
   and open any entry matching your `area`/tags. These are mistakes already made in-world.
+  **Building a monitor UI? Follow `kb/monitor-ui-workflow.md`** — the project's golden-standard loop
+  (owner mockup → live `tools/slot-preview.html` → Lua → verify offline by rendering to PNG → deploy).
 - **WRITE when you learn** a server-only or docs-vs-reality fact: add/update a `kb/` entry
   (see the format in `kb/index.md`) instead of inlining a one-off example here. Don't log
   things testable in plain Lua.
