@@ -62,6 +62,13 @@ Three roles on one **rednet** bus.
 - **Scoreboards** — display-only. Subscribe to hub broadcasts, render standings on monitors
   around the floor.
 
+**Station identity & setup.** Every station is **computer + disk drive + wired modem** (drive =
+member cards; modem = rednet + monitor over the network). Installing a game (`update slot`)
+auto-assigns the computer a unique, collision-free name (`slot2`) — the **hub is the registrar**,
+persisting `computerID → instance` so asleep stations never clash. A new station self-installs
+from an **installer floppy** (insert + reboot). See the deploy loop in `CLAUDE.md` and the spec in
+`docs/superpowers/specs/`.
+
 ## Membership card
 
 A **floppy disk** (CC item) each player owns; they pick a name at issue.

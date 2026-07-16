@@ -68,9 +68,14 @@ identity registration; infra like `hub` sets it false.
    instance number, accumulate into the label.
 4. `os.setComputerLabel(...)` — join instances with `+`, e.g. `slot2+pong1`.
 
-**Soft offline policy (approved):** if the hub isn't reachable on rednet, still install the
-files, skip labeling, and warn `unregistered — re-run near hub`. The game is runnable unnamed;
-the label lands on a later `update`.
+**Preflight (fail loudly):**
+- **Hardware = hard requirement.** No disk drive or no wired modem → print a loud banner
+  (`I need a disk drive and wired modem!`) listing what's missing, and **stop** — install nothing.
+  A station without them is not a valid station.
+- **Hub offline = soft (approved).** Hardware present but hub unreachable on rednet → still
+  install the files, skip labeling, print a loud `HUB OFFLINE — installed but UNREGISTERED (no
+  name); bring the hub online and re-run update`. The game is runnable unnamed; the label lands
+  on a later `update`.
 
 ### 3. Hub v0 — the registrar — `src/hub.lua`
 

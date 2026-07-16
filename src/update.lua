@@ -1,79 +1,159 @@
--- update.lua — pull this station's programs fresh from the canonical GitHub repo.
+-- update.lua — install/update this station's packages from the canonical repo, and
+-- auto-register its identity (a unique label like slot2) with the hub.
 --
--- WHY: `wget <url> <name>` refuses to overwrite an existing file, and
--- raw.githubusercontent.com caches ~5 min per IP — so a naive re-fetch can serve
--- STALE code right after a push. This uses http.get (overwrites freely) with a
--- per-fetch cache-buster (?cb=<epoch>) so `update` always lands the newest commit.
+-- Usage:  update <package> [<package> ...]     e.g.  update slot
+--         update                                (re-pull whatever is already installed)
 --
--- ONE-TIME INSTALL on a fresh computer:
+-- WHY http.get, not wget: `wget <url> <name>` REFUSES to overwrite an existing file, and
+-- raw.githubusercontent.com caches ~5 min per IP. We overwrite freely and cache-bust every
+-- fetch (?cb=<epoch>) so `update` always lands the newest commit.
+--
+-- ONE-TIME on a fresh computer (or use an installer floppy — see mkinstaller):
 --   wget https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/update.lua update
---   edit install.list      (list the programs THIS station needs — see format below)
---   update                 (pulls them, fresh, every time after)
+--   update slot
 --
--- ITERATE: on the PC, edit src/ + `git push`; in-game just run `update`.
---
--- install.list format (one program per line; blank lines and # comments ignored):
---   <localname> [repo-subpath]
--- localname  = the in-world file name (what you `run`/`require`), no .lua extension.
--- repo-subpath = path under src/ in the repo; defaults to "<localname>.lua".
--- Example install.list for the slot station:
---   subpixel   lib/subpixel.lua
---   slot_logic
---   slot_symbols
---   slot
---   update     update.lua      # keep the updater self-updating
+-- Requires (fails loudly if absent): a DISK DRIVE (member cards) + a WIRED MODEM (rednet).
+-- Hub offline -> installs anyway but leaves the station UNREGISTERED (no name) until re-run.
 
-local BASE = "https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/"
-local LIST = "install.list"
+local REPO      = "https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/"
+local PROTO     = "ccvegas"
+local INSTALLED = ".installed"   -- local record of which packages live on this computer
 
-if not http then
-  error("http API disabled — cannot update. (pack must allow HTTP)", 0)
-end
-
-if not fs.exists(LIST) then
-  print("No '" .. LIST .. "' on this computer.")
-  print("Create it with the programs this station needs, e.g.:")
-  print("  edit " .. LIST)
-  print("  subpixel   lib/subpixel.lua")
-  print("  slot_logic")
-  print("  slot_symbols")
-  print("  slot")
-  print("  update     update.lua")
-  return
-end
-
--- Parse install.list -> { {name=, path=}, ... }
-local jobs = {}
-for line in io.lines(LIST) do
-  line = line:gsub("#.*$", "")                 -- strip comments
-  local name, path = line:match("^%s*(%S+)%s+(%S+)%s*$")
-  if not name then name = line:match("^%s*(%S+)%s*$") end
-  if name then
-    jobs[#jobs + 1] = { name = name, path = path or (name .. ".lua") }
-  end
-end
-
-if #jobs == 0 then
-  print("'" .. LIST .. "' is empty — nothing to update.")
-  return
-end
-
-local ok, fail = 0, 0
-for _, job in ipairs(jobs) do
-  local url = BASE .. job.path .. "?cb=" .. os.epoch("utc")   -- cache-bust every fetch
+-- ---------------------------------------------------------------- helpers ----
+local function fetch(subpath)
+  local url = REPO .. subpath .. "?cb=" .. os.epoch("utc")   -- cache-bust every fetch
   local h, err = http.get(url)
-  if h then
-    local body = h.readAll()
-    h.close()
-    local f = fs.open(job.name, "w")           -- overwrites; no delete step needed
-    f.write(body)
-    f.close()
-    print("  ok  " .. job.name .. "  (" .. #body .. "b)")
-    ok = ok + 1
+  if not h then return nil, err end
+  local body = h.readAll(); h.close()
+  return body
+end
+
+local function save(name, body)
+  local f = fs.open(name, "w"); f.write(body); f.close()
+end
+
+local function findWiredModem()
+  return peripheral.find("modem", function(_, m) return not m.isWireless() end)
+end
+
+local function loudBanner(title)
+  local bar = ("="):rep(#title + 2)
+  print(bar); print(" " .. title); print(bar)
+end
+
+-- ---------------------------------------------------- preflight: http --------
+if not http then
+  error("http API disabled — the pack must allow HTTP. Cannot update.", 0)
+end
+
+-- ------------------------------------------ preflight: required hardware -----
+local drive = peripheral.find("drive")
+local modem = findWiredModem()
+if not drive or not modem then
+  loudBanner("I need a disk drive and wired modem!")
+  print("Missing on this station:")
+  if not drive then print("  - a DISK DRIVE  (for member cards)") end
+  if not modem then print("  - a WIRED MODEM (for the rednet network)") end
+  print("Attach them (modem on a network cable), then re-run `update`.")
+  return                                   -- hard stop: not a valid station yet
+end
+
+-- --------------------------------------- work out which packages to install --
+local requested = { ... }
+if #requested == 0 and fs.exists(INSTALLED) then
+  for line in io.lines(INSTALLED) do
+    line = line:match("^%s*(%S+)%s*$")
+    if line then requested[#requested + 1] = line end
+  end
+end
+if #requested == 0 then
+  print("Usage: update <package> [<package> ...]   e.g.  update slot")
+  print("(or run `update` with no args once packages are installed)")
+  return
+end
+
+-- ------------------------------------------------ fetch the package manifest --
+local manBody, manErr = fetch("packages.lua")
+if not manBody then error("Could not fetch package manifest: " .. tostring(manErr), 0) end
+save("packages", manBody)
+local ok, PACKAGES = pcall(dofile, "packages")
+if not ok or type(PACKAGES) ~= "table" then
+  error("Package manifest is invalid: " .. tostring(PACKAGES), 0)
+end
+
+-- -------------------------------------------------------- install the files --
+local installedNow, stations, failed = {}, {}, 0
+for _, pkg in ipairs(requested) do
+  local def = PACKAGES[pkg]
+  if not def then
+    print("FAIL  unknown package '" .. pkg .. "'")
+    failed = failed + 1
   else
-    print("FAIL  " .. job.name .. "  <- " .. job.path .. "  (" .. tostring(err) .. ")")
-    fail = fail + 1
+    print("Installing package '" .. pkg .. "':")
+    for _, file in ipairs(def.files) do
+      local path = file.path or (file.name .. ".lua")
+      local body, err = fetch(path)
+      if body then
+        save(file.name, body)
+        print(("  ok  %s  (%db)"):format(file.name, #body))
+      else
+        print(("FAIL  %s <- %s  (%s)"):format(file.name, path, tostring(err)))
+        failed = failed + 1
+      end
+    end
+    installedNow[pkg] = true
+    if def.station then stations[#stations + 1] = pkg end
   end
 end
 
-print(("update: %d ok, %d failed"):format(ok, fail))
+-- record installed packages (merge with any prior record)
+do
+  local set = {}
+  if fs.exists(INSTALLED) then
+    for line in io.lines(INSTALLED) do
+      line = line:match("^%s*(%S+)%s*$"); if line then set[line] = true end
+    end
+  end
+  for pkg in pairs(installedNow) do set[pkg] = true end
+  local names = {}; for pkg in pairs(set) do names[#names + 1] = pkg end
+  table.sort(names)
+  save(INSTALLED, table.concat(names, "\n") .. "\n")
+end
+
+-- ------------------------------------------- register identity with the hub --
+if #stations > 0 then
+  rednet.open(peripheral.getName(modem))
+  local hub = rednet.lookup(PROTO, "hub")
+  if not hub then
+    loudBanner("HUB OFFLINE")
+    print("Files installed, but this station is UNREGISTERED (no name).")
+    print("Bring the hub online, then re-run `update` here to get a label.")
+  else
+    local labelParts = {}
+    for _, pkg in ipairs(stations) do
+      rednet.send(hub, { kind = "register", computerID = os.getComputerID(), package = pkg }, PROTO)
+      local instance
+      local t0 = os.epoch("utc")
+      while os.epoch("utc") - t0 < 3000 do
+        local sender, msg = rednet.receive(PROTO, 3)
+        if sender == hub and type(msg) == "table"
+           and msg.kind == "assigned" and msg.package == pkg then
+          instance = msg.instance; break
+        end
+        if not sender then break end
+      end
+      if instance then
+        labelParts[#labelParts + 1] = pkg .. instance
+      else
+        print("WARN  no reply from hub for '" .. pkg .. "' — name deferred.")
+      end
+    end
+    if #labelParts > 0 then
+      local label = table.concat(labelParts, "+")
+      os.setComputerLabel(label)
+      print("Registered. This station is now: " .. label)
+    end
+  end
+end
+
+print(("update: done (%d file error%s)"):format(failed, failed == 1 and "" or "s"))
