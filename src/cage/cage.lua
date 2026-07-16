@@ -412,8 +412,11 @@ local function findMon(name)
     -- 36x24; on anything else subpixel silently clips every out-of-range fillRect and the kiosk
     -- renders as garbage. Without this, `monitor=` would "accept" a wrong monitor — i.e. the exact
     -- fix the no-monitor error below tells you to apply would quietly not work.
-    local w, h = monSizeAt05(name)
+    local w, h, old, probed = monSizeAt05(name)
     if w ~= MON_W or h ~= MON_H then
+      -- put it back before bailing: this monitor isn't ours, and refusing to boot is no reason to
+      -- leave someone else's screen rescaled.
+      if probed and old then pcall(probed.setTextScale, old) end
       error(("Monitor '%s' is %sx%s at scale 0.5 — the cage needs %dx%d (a 2x2 ADVANCED monitor).\n"
              .. "Run `cage test` to see every monitor's size."):format(
              name, tostring(w), tostring(h), MON_W, MON_H), 0)
@@ -681,6 +684,13 @@ local function play(_, pres)
   local loads = {}
   for i = 1, hw.nDroppers do loads[i] = 0 end
   local nextDropper = 1
+  local pulsed = false        -- is the line currently HIGH because WE raised it this cycle?
+
+  -- Never inherit a line left HIGH. CC persists redstone output when a program exits, and Ctrl+T, an
+  -- uncaught error and a chunk unload all skip the Q path's pulseOff (Ctrl+T doesn't reboot, so the
+  -- output survives). Starting high means the first pulseOn is no rising edge: the first cycle would
+  -- be debited and eject nothing. The tick loop's own os.pullEvent is the yield that flushes this.
+  hw.pulseOff()
 
   local function owed()
     local n = 0
@@ -783,13 +793,19 @@ local function play(_, pres)
       -- so the count-down tracks the metal on the floor. Taps ADD to `loads` mid-shower, so bursts
       -- overlap and spamming compounds. NO `sleep()` / nested `os.pullEvent` here — that would
       -- swallow the tick timer and touch events, the [[event-pump-reentrancy]] freeze.
+      -- `pulsed` is the whole point: NEVER decrement without having actually raised the line. A tap
+      -- fills `loads` at an arbitrary tick, so the very next tick can be phase 2 — and an unguarded
+      -- `elseif phase == 2` would then pulseOff+decrement having never pulsed ON. No rising edge, no
+      -- ingot, but the counter moves: the player pays, nothing drops, and the item stays stuck in the
+      -- dropper to fall out during someone ELSE's withdrawal (desyncing the count-down from the
+      -- floor). That was ~1 tap in 3. Waiting for the next phase 0 costs at most 5 ticks (0.25s).
       if vault.anyLoaded(loads) then
         local phase = tick % 6
         if phase == 0 then
-          hw.pulseOn()
-        elseif phase == 2 then
-          hw.pulseOff()
-          loads = vault.pulseLoads(loads)
+          hw.pulseOn(); pulsed = true
+        elseif phase == 2 and pulsed then
+          hw.pulseOff(); pulsed = false
+          loads = vault.pulseLoads(loads)     -- decrement ONLY after a real rising edge
         end
       end
 
