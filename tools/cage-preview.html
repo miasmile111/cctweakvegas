@@ -67,13 +67,7 @@
       </div>
       <p class="note" id="rampNote"></p>
     </div>
-    <div class="row"><label>Count-down tint (gold up / ? down)</label>
-      <div class="seg" id="tintSeg">
-        <button data-t="red" aria-pressed="true">red 114</button>
-        <button data-t="pink" aria-pressed="false">pink 200</button>
-      </div>
-      <p class="note">Gold band luminance is <b>~118</b>. Stock <b>red is 114</b> — on the gold half of the drift a falling number nearly <b>vanishes</b>. <b>Pink 200</b> still reads as "down" and stays legible on both ends. Cash out with each and watch the gradient. ⚠ Pink + the <b>red+</b> ramp collide: both want slot 64, and slots are global — pick <b>red+</b> and the pink tint becomes that ramp's salmon.</p>
-    </div>
+    <p class="note">Counter tints by direction: <b>gold up</b>, <b>pink down</b> (pink 200 — stock red 114 vanishes against the gold band's ~118), white at rest. Settled, so slot 64 is now content and no ramp may repaint it.</p>
     <label class="chk"><input type="checkbox" id="animGrad" checked> animate gradient</label>
     <label class="chk"><input type="checkbox" id="showGrid"> cell grid</label>
     <hr>
@@ -109,12 +103,15 @@ const GRAD_GOLD=[0.62,0.46,0.06];   // money gold
 //   steel : white 240 / lightGray 153 / gray 76 -> +87 / -77. The only true ramp in the palette.
 //   red+  : repaint 3 spare slots to a real red ramp — costs 3 of 16 slots, exactly what the
 //           gradient already does. Perfect control, and reusable as the floor's "fancy button".
+// PINK is now CONTENT — it's the count-down tint (owner's call) — so no ramp may claim slot 64.
+// redx therefore repaints only lime + brown and keeps stock RED as its face: light ~180 / red 114 /
+// dark ~40 = +66 / -74. Two slots instead of three, and the tint keeps its colour.
 const RAMPS={
   steel : {light:WHITE, face:LIGHTGRAY, dark:GRAY,  ink:"#111"},
   green : {light:LIME,  face:GREEN,     dark:BLACK, ink:"#111"},
   red   : {light:PINK,  face:RED,       dark:BROWN, ink:"#f0f0f0"},
-  redx  : {light:PINK,  face:LIME,      dark:BROWN, ink:"#f0f0f0",
-           repaint:{64:[255,150,138], 32:[201,66,52], 4096:[92,27,21]}},
+  redx  : {light:LIME,  face:RED,       dark:BROWN, ink:"#f0f0f0",
+           repaint:{32:[255,150,138], 4096:[92,27,21]}},
 };
 
 // ---- ingot sprites (8×9 subpx = 4×3 cells, the project's symbol size) -------
@@ -202,7 +199,7 @@ function layout(){
     balY   : R(3)+1,                       // big $ — rows 3-7 (12 subpx tall @2×), nudged 1 down
     topBarY: R(8),  topBarH:6,             // bar rows 8-9
     denomY : R(10), denomH:(R(17)+2)-R(10)+1,  // metals rows 10-17
-    symY   : R(10)+2,                      // sprite sits rows 10-13ish
+    symY   : R(10)+1,                      // sprite rows 10-12 (9 subpx), clearing row 13
     qtyY   : R(18), qtyH:6,                // qty rows 18-19
     botBarY: R(20), botBarH:6,             // bar rows 20-21
     depY   : R(22), depH:9,                // DEPOSIT rows 22-24 — 3 cells tall, room for a bevel
@@ -226,6 +223,17 @@ function buildFrame(st){
   const b=newBuf(), L=layout();
   const bandH=Math.ceil(CH/GRAD.length);
   for(let i=0;i<GRAD.length;i++)fillRect(b,0,i*bandH,CW,bandH,GRAD[i]);
+
+  // NO CARD -> this is not the kiosk. The controls don't exist yet: nothing here is spendable, so
+  // showing dead buttons would be a lie. Show the rates instead — the wait teaches the prices.
+  if(!st.hasCard){
+    const barCol=(st.bar==="gold")?YELLOW:RED;
+    fillRect(b,0,L.topBarY,CW,L.topBarH,barCol);
+    fillRect(b,0,L.botBarY,CW,L.botBarH,barCol);
+    for(let x=6;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}
+    for(let y=L.sideTop;y<=L.sideBot;y+=4){bulb(b,0,y,Math.floor(y/4),st.tick);bulb(b,CW-2,y,Math.floor(y/4),st.tick);}
+    return {b,L};   // no big $ — there is no balance to show yet, and "$0" would read as "you're broke"
+  }
 
   // frame bars — flash while the droppers are spitting (the cash-machine moment)
   const flashing = st.loads>0 && st.tick%2===0;
@@ -260,6 +268,14 @@ function buildFrame(st){
 
   // the money — owner's $ at 1× + digits at 2×, riding the gradient, TINTED BY DIRECTION
   drawBalance(b,L.balY,String(Math.round(st.dispBal)),tintFor(st.dispBal,st.bal));
+
+  // toast — a 2s panel over the metals when DEPOSIT was tapped with an empty box. It covers the
+  // buttons on purpose: the answer to "why did nothing happen" should be the only thing on screen.
+  if(st.tick<st.toastUntil){
+    fillRect(b,2,R(12),CW-4,R(16)+2-R(12)+1,BLACK);
+    fillRect(b,2,R(12),CW-4,1,WHITE); fillRect(b,2,R(16)+2,CW-4,1,WHITE);
+    fillRect(b,2,R(12),1,R(16)+2-R(12)+1,WHITE); fillRect(b,CW-3,R(12),1,R(16)+2-R(12)+1,WHITE);
+  }
   return {b,L};
 }
 
@@ -294,10 +310,11 @@ function overlayNativeIn(canvas,text,cellRow,colStart,widthCells,color){
 
 // ---- state -----------------------------------------------------------------
 const st={bal:12500,dispBal:12500,qtyIdx:0,who:"ALICE",hasCard:true,msg:null,loads:0,tick:0,bar:"red",depAmt:850,
-          pressIdx:-1,pressUntil:0,depUntil:0,ramp:"steel",downTint:"red"};
+          pressIdx:-1,pressUntil:0,depUntil:0,toastUntil:0,ramp:"steel"};
 let animGrad=true,showGrid=false;
 const N_DROPPERS=3;
-const FLASH_TICKS=8;   // ~0.4s at the station's 0.05s tick
+const FLASH_TICKS=8;    // ~0.4s at the station's 0.05s tick
+const TOAST_TICKS=40;   // 2s
 
 function updateGradient(p){for(let i=0;i<GRAD.length;i++){const a=0.5+0.5*Math.sin(p+i*0.9),mix=(d,t)=>Math.round(255*(d+(t-d)*a));PAL[GRAD[i]]=[mix(GRAD_DEEP[0],GRAD_GOLD[0]),mix(GRAD_DEEP[1],GRAD_GOLD[1]),mix(GRAD_DEEP[2],GRAD_GOLD[2])];}}
 
@@ -314,14 +331,14 @@ function applyRamp(){
 // feedback — you read "I'm being paid" / "I'm spending" before you read the digits.
 //
 // Watch the ground it sits on. Luminance: yellow 209 vs the gradient's gold band ~118 -> +91, reads
-// clean. But stock RED is 114 against that same ~118 — a red number would go INVISIBLE on the gold
-// half of the drift, and a cell holds 2 colours so there's no outline to save it. PINK (200) is the
-// escape: still unmistakably "down", but +82 against gold. Toggle below to judge.
-const DOWN_TINTS={red:RED, pink:PINK};
+// clean. But stock RED is 114 against that same ~118 — a red number goes INVISIBLE on the gold half
+// of the drift, and a cell holds 2 colours so there's no outline to save it. So DOWN IS PINK (200):
+// still unmistakably "down", but +82 against gold. Owner's call, settled — and it makes slot 64
+// content, which is why no bevel ramp may repaint it.
 function tintFor(disp,target){
-  if(disp<target)return YELLOW;              // climbing: gold
-  if(disp>target)return DOWN_TINTS[st.downTint];  // falling: red
-  return WHITE;                              // at rest
+  if(disp<target)return YELLOW;   // climbing: gold
+  if(disp>target)return PINK;     // falling: red (pink 200, the legible red)
+  return WHITE;                   // at rest
 }
 
 // the count-up/count-down ease — same ~24-frame ramp as the slot's win count-up, but signed
@@ -344,8 +361,10 @@ function deposit(){
   // monitor_touch has NO release event, so the pushed-in look is a timed flash, not a mouseup —
   // same as it will have to be in Lua.
   st.depUntil=st.tick+FLASH_TICKS;
-  if(!st.hasCard){st.msg="INSERT CARD";return;}
-  if(st.depAmt<=0){st.msg="NOTHING TO DEPOSIT";return;}
+  if(!st.hasCard)return;
+  // Nothing of value in the box is the ONE case where the player needs teaching, not an error.
+  // Say where the items go; don't say "invalid".
+  if(st.depAmt<=0){st.toastUntil=st.tick+TOAST_TICKS; st.msg=null; return;}
   st.bal+=st.depAmt; st.msg="DEPOSITED $"+st.depAmt;
   document.getElementById("bal").value=st.bal;
 }
@@ -369,14 +388,24 @@ function frame(){
   const p=document.getElementById("paint"),m=document.getElementById("mon");
   paint(p,b,false,showGrid); paint(m,b,true,showGrid);
   for(const c of [p,m]){
+    if(!st.hasCard){
+      overlayNative(c, "cage1", 1, 1);
+      overlayNative(c, "INSERT YOUR CARD", 4);        // in the money band — where the money will be
+      overlayNative(c, "METAL IN - CASH OUT", 11);
+      for(let i=0;i<4;i++)                             // the wait teaches the rates
+        overlayNative(c, DENOMS[i].label.padEnd(9," ")+("$"+DENOMS[i].value).padStart(5," "), 13+i, 12, "#d9d9d9");
+      continue;
+    }
     // header row 2: who on the left, status on the right
-    overlayNative(c, st.hasCard?("cage1 "+st.who):"INSERT CARD", 1, 1);
+    overlayNative(c, "cage1 "+st.who, 1, 1);
     const status = st.msg || (st.loads>0?("PAYING "+st.loads):"");
     if(status) overlayNative(c, status, 1, COLS-status.length+1, st.msg&&st.msg.startsWith("NEED")?"#ff9d9d":"#f0f0f0");
-    // metal buttons: native label (row 14) + price (row 16)
+    // WITHDRAW — one header spanning all four buttons, in the row directly above the metal names
+    overlayNative(c, "WITHDRAW", 12);
+    // metal buttons: native name (row 14, nudged 1 cell right) + price (row 16)
     for(let i=0;i<4;i++){
       const lit=(st.pressIdx===i && st.tick<st.pressUntil);
-      overlayNativeIn(c, DENOMS[i].label, 13, DENOM_COL[i], DENOM_WC, lit?"#111":"#f0f0f0");
+      overlayNativeIn(c, DENOMS[i].label, 13, DENOM_COL[i]+1, DENOM_WC, lit?"#111":"#f0f0f0");
       overlayNativeIn(c, "$"+DENOMS[i].value, 15, DENOM_COL[i], DENOM_WC, lit?"#111":"#d9d9d9");
     }
     // qty labels in the TOP cell of the button (row 18)
@@ -384,6 +413,11 @@ function frame(){
     // DEPOSIT label — middle row of the 3-cell button (row 23). Native text is CELL-locked, so it
     // cannot shift by a subpixel on press; the bevel swap alone carries the push.
     overlayNative(c, "DEPOSIT", 22, null, RAMPS[st.ramp].ink);
+    // toast text, over everything
+    if(st.tick<st.toastUntil){
+      overlayNative(c, "PLACE YOUR DEPOSIT", 12);
+      overlayNative(c, "IN THE DEPOSIT BOX", 14);
+    }
   }
   requestAnimationFrame(frame);
 }
@@ -405,12 +439,11 @@ const RAMP_NOTES={
   steel:"white 240 / lightGray 153 / gray 76 — <b>+87 / −77</b>. The only true ramp in the stock palette. Costs no slots. Reads as a machined button.",
   green:"lime 161 / green 132 / black 17 — <b>+29 / −115</b>. The highlight barely exists; the shadow is a hole. This is the one you flagged.",
   red:"pink 200 / red 114 / brown 106 — <b>+86 / −8</b>. Reds are plentiful by count, but red and brown are 8 points apart: <b>no shadow at all</b>.",
-  redx:"3 spare slots repainted to a real red ramp — <b>even steps, any hue</b>. Costs 3 of 16 slots (the gradient already spends 4). The reusable “fancy button”.",
+  redx:"lime+brown repainted around a stock red face — light ~180 / red 114 / dark ~40 = <b>+66 / −74</b>. Costs <b>2</b> of 16 slots (the gradient spends 4), and leaves pink alone for the count-down tint. The reusable “fancy button”.",
 };
 function setRampNote(){document.getElementById("rampNote").innerHTML=RAMP_NOTES[st.ramp];}
 document.getElementById("rampSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.ramp=b.dataset.r;[...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));setRampNote();});
 setRampNote();
-document.getElementById("tintSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.downTint=b.dataset.t;[...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));});
 document.getElementById("bal").addEventListener("input",e=>{st.bal=+e.target.value||0;});
 document.getElementById("depAmt").addEventListener("input",e=>st.depAmt=+e.target.value||0);
 document.getElementById("who").addEventListener("input",e=>st.who=e.target.value);
