@@ -1,0 +1,306 @@
+<title>Slot v3 — live preview</title>
+<style>
+  :root{
+    --bg:#0e1013; --panel:#16191e; --ink:#e6e8ea; --dim:#8b929c; --line:#272c33;
+    --accent:#e57fd8; --accent2:#57c2d6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.5 ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  header h1{margin:0;font-size:15px;letter-spacing:.02em}
+  header .sub{color:var(--dim)}
+  main{display:flex;gap:22px;padding:20px;flex-wrap:wrap;align-items:flex-start}
+  .stage{display:flex;gap:22px;flex-wrap:wrap}
+  figure{margin:0;display:flex;flex-direction:column;gap:8px;align-items:center}
+  figcaption{color:var(--dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  canvas{background:#000;border:1px solid var(--line);image-rendering:pixelated;border-radius:4px}
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;
+    min-width:230px;display:flex;flex-direction:column;gap:16px}
+  .controls h2{margin:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .row{display:flex;flex-direction:column;gap:6px}
+  .seg{display:flex;gap:6px}
+  .seg button{flex:1;background:#1d2128;color:var(--ink);border:1px solid var(--line);border-radius:5px;
+    padding:7px 0;cursor:pointer;font:inherit}
+  .seg button[aria-pressed=true]{background:var(--accent);color:#111;border-color:var(--accent)}
+  label{color:var(--dim);font-size:11px;letter-spacing:.04em}
+  input[type=number],input[type=text]{background:#1d2128;color:var(--ink);border:1px solid var(--line);
+    border-radius:5px;padding:6px 8px;font:inherit;width:100%}
+  .chk{display:flex;gap:8px;align-items:center;color:var(--ink);cursor:pointer}
+  .note{color:var(--dim);font-size:11px;line-height:1.55}
+  .note b{color:var(--ink)}
+  input[type=range]{width:100%}
+</style>
+
+<header>
+  <h1>Slot v3 — live preview</h1>
+  <span class="sub">30×72 subpixels · 15×24 cells @ scale 0.5 · left = what the code paints · right = what the monitor actually shows (encodeCell, 2 colours/cell)</span>
+</header>
+
+<main>
+  <div class="stage">
+    <figure>
+      <canvas id="paint" width="360" height="864"></canvas>
+      <figcaption>Paint — code draws</figcaption>
+    </figure>
+    <figure>
+      <canvas id="mon" width="360" height="864"></canvas>
+      <figcaption>Monitor — encodeCell truth</figcaption>
+    </figure>
+  </div>
+
+  <div class="controls">
+    <h2>Stake (tap the buttons)</h2>
+    <div class="seg" id="stakeSeg">
+      <button data-i="0" aria-pressed="true">10</button>
+      <button data-i="1" aria-pressed="false">25</button>
+      <button data-i="2" aria-pressed="false">100</button>
+    </div>
+
+    <div class="row">
+      <label>Result</label>
+      <div class="seg" id="resSeg">
+        <button data-r="none" aria-pressed="true">idle</button>
+        <button data-r="win" aria-pressed="false">win</button>
+        <button data-r="lose" aria-pressed="false">lose</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Win amount shown</label>
+      <input type="number" id="winAmt" value="0" min="0" step="5">
+    </div>
+
+    <div class="row">
+      <label>Header (id: balance)</label>
+      <input type="text" id="header" value="ALICE: 240 MB">
+    </div>
+
+    <div class="row">
+      <label>Reel scroll (spin phase)</label>
+      <input type="range" id="scroll" min="0" max="27" value="0">
+    </div>
+
+    <label class="chk"><input type="checkbox" id="animGrad" checked> animate gradient</label>
+    <label class="chk"><input type="checkbox" id="showGrid"> cell grid</label>
+
+    <p class="note">Reel window: <b>9 cells</b> = 3 symbols (each 4×3 cells). Top &amp; bottom rows ride the <b>gradient</b>; only the middle (payline) row is <b>black</b>. Stakes: selected = <b>solid magenta</b>, others = <b>gray</b>. WIN: / amount / stake numbers use the <b>subpixel font</b>; header uses native cell text.</p>
+  </div>
+</main>
+
+<script>
+"use strict";
+// ---- palette (CC default colours; gradient slots overwritten live) --------
+const PAL = {
+  1:[240,240,240], 2:[242,178,51], 4:[229,127,216], 8:[153,178,242], 16:[222,222,108],
+  32:[127,204,25], 64:[242,178,204], 128:[76,76,76], 256:[153,153,153], 512:[76,153,178],
+  1024:[178,102,229], 2048:[51,102,204], 4096:[127,102,76], 8192:[87,166,78],
+  16384:[204,76,76], 32768:[17,17,17]
+};
+const RED=16384,YELLOW=16,GREEN=8192,WHITE=1,BLACK=32768,GREY=128,MAGENTA=4,GRAY=128;
+const GRAD=[2048,512,8,1024,64];               // gradient palette slots
+const GRAD_DEEP=[0.00,0.10,0.65], GRAD_TEAL=[0.00,0.75,0.65];
+
+// ---- symbol sprites (ported from slot_symbols.lua) -----------------------
+const SYM_W=8, SYM_H=9;
+const CMAP={_:0, r:RED, y:YELLOW, o:2, l:32, g:GREEN, k:BLACK, w:WHITE};
+function sprite(rows){const px=[];for(let y=0;y<SYM_H;y++){for(let x=0;x<SYM_W;x++){px[y*SYM_W+x]=CMAP[rows[y][x]];}}return{w:SYM_W,h:SYM_H,px};}
+const SYMBOLS=[
+  sprite(["rrrrrrrr","rrrrrrrr","______rr","_____rr_","____rr__","___rr___","__rr____","__rr____","__rr____"]), // 1 seven
+  sprite(["_____gg_","____gg__","_g__g___","rrr_rrr_","rrrrrrrr","rrrrrrrr","_rrr_rr_","__r___r_","________"]), // 2 cherry
+  sprite(["___yy___","__yyyy__","__yyyy__","_yyyyyy_","_yyyyyy_","yyyyyyyy","yyyyyyyy","___kk___","___kk___"]), // 3 bell
+  sprite(["kkkkkkkk","kwwwwwwk","kw_ww_wk","kw_ww_wk","kwwwwwwk","kw_ww_wk","kw_ww_wk","kwwwwwwk","kkkkkkkk"]), // 4 bar
+];
+const NUM_SYMBOLS=4;
+
+// ---- subpixel font: small digits (3x5) + letters W I N + colon + $ -------
+const F_SM={
+ "0":["###","#.#","#.#","#.#","###"], "1":["#.","#.","#.","#.","#."],
+ "2":["###","..#","###","#..","###"], "3":["###","..#",".##","..#","###"],
+ "4":["#.#","#.#","###","..#","..#"], "5":["###","#..","###","..#","###"],
+ "6":["###","#..","###","#.#","###"], "7":["###","..#","..#","..#","..#"],
+ "8":["###","#.#","###","#.#","###"], "9":["###","#.#","###","..#","###"],
+ "W":["#.#","#.#","#.#","###","#.#"], "I":["###",".#.",".#.",".#.","###"],
+ "N":["#.#","###","###","###","#.#"], ":":[".","#",".","#","."],
+ "$":[".#.","###","#..",".##","###"], " ":["...","...","...","...","..."]
+};
+// large digits (5x7) for the win amount
+const F_LG={
+ "0":["#####","#...#","#...#","#...#","#...#","#...#","#####"],
+ "1":["..#..",".##..","..#..","..#..","..#..","..#..","..#.."],
+ "2":["#####","....#","....#","#####","#....","#....","#####"],
+ "3":["#####","....#","....#",".####","....#","....#","#####"],
+ "4":["#...#","#...#","#...#","#####","....#","....#","....#"],
+ "5":["#####","#....","#....","#####","....#","....#","#####"],
+ "6":["#####","#....","#....","#####","#...#","#...#","#####"],
+ "7":["#####","....#","...#.","..#..",".#...",".#...",".#..."],
+ "8":["#####","#...#","#...#","#####","#...#","#...#","#####"],
+ "9":["#####","#...#","#...#","#####","....#","....#","#####"],
+ " ":["     ","     ","     ","     ","     ","     ","     "],
+};
+function glyphW(font,ch){const g=font[ch]; return g?g[0].length:3;}
+function textW(font,str){let w=0;for(const ch of str){w+=glyphW(font,ch)+1;}return w-1;}
+
+// ---- subpixel canvas (30x72) --------------------------------------------
+const CW=30, CH=72;
+function newBuf(){const b=[];for(let y=0;y<CH;y++){b.push(new Array(CW).fill(BLACK));}return b;}
+function setPx(b,x,y,c){x=Math.floor(x);y=Math.floor(y);if(x<0||y<0||x>=CW||y>=CH)return;if(c&&c!==0)b[y][x]=c;}
+function fillRect(b,x,y,w,h,c){for(let dy=0;dy<h;dy++)for(let dx=0;dx<w;dx++){const X=x+dx,Y=y+dy;if(X>=0&&Y>=0&&X<CW&&Y<CH)b[Y][X]=c;}}
+function drawSpriteClipped(b,x,y,sp,yMin,yMax){y=Math.floor(y);for(let dy=0;dy<sp.h;dy++){const py=y+dy;if(py>=yMin&&py<=yMax){for(let dx=0;dx<sp.w;dx++){const col=sp.px[dy*sp.w+dx];if(col)setPx(b,x+dx,py,col);}}}}
+function drawGlyph(b,font,ch,x,y,color){const g=font[ch]||font[" "];for(let r=0;r<g.length;r++){for(let cx=0;cx<g[r].length;cx++){if(g[r][cx]==="#")setPx(b,x+cx,y+r,color);}}}
+function textWg(font,str,gap){let w=0;for(const ch of str){w+=glyphW(font,ch)+gap;}return w-gap;}
+function drawText(b,font,str,x,y,color,gap){gap=gap==null?1:gap;let cx=x;for(const ch of str){drawGlyph(b,font,ch,cx,y,color);cx+=glyphW(font,ch)+gap;}}
+function drawTextCentered(b,font,str,y,color){const w=textW(font,str);drawText(b,font,str,Math.round((CW-w)/2),y,color);}
+
+// ---- layout (mirrors the planned Lua) -----------------------------------
+function R(row){return (row-1)*3;}    // top subpixel of a cell row (0-indexed here)
+const SYMBOL_PX=SYM_H;                 // snug: 3 cells per symbol, no gap
+function layout(){
+  // reels: 3 sprites across cols 2..14 (subpx 2..28)
+  const zoneX=2, zoneW=26, gap=Math.floor((zoneW-3*SYM_W)/2);
+  const startX=zoneX+Math.floor((zoneW-(3*SYM_W+2*Math.max(gap,0)))/2);
+  const xs=[]; for(let i=0;i<3;i++)xs[i]=startX+i*(SYM_W+Math.max(gap,0));
+  const winTop=R(8), winBot=R(16)+2;                    // window rows 8..16 (27 subpx = 3 symbols)
+  const midTop=R(11), midBot=R(13)+2;                   // black middle band rows 11..13 (payline)
+  const paylineY=R(11);                                 // middle symbol top
+  return {xs, winTop, winBot, midTop, midBot, paylineY,
+    headerY:0, winLblY:R(2), amtY:8, topBarY:R(6), topBarH:6,
+    botBarY:R(21), botBarH:6, stakeY:R(23),
+    sideTop:winTop, sideBot:winBot};
+}
+
+// ---- draw the whole frame into a subpixel buffer -------------------------
+function bulb(b,x,y,seed,tick,res){const on = res==="win" ? (tick%2===0) : ((seed+tick)%2===0);fillRect(b,x,y,2,2,on?YELLOW:(res==="win"?RED:GREY));}
+const STAKES=[10,25,100];
+function buildFrame(st){
+  const b=newBuf(); const L=layout();
+  // gradient bands over everything
+  const bandH=Math.ceil(CH/GRAD.length);
+  for(let i=0;i<GRAD.length;i++)fillRect(b,0,i*bandH,CW,bandH,GRAD[i]);
+  // reel window: ONLY the middle band is black; top & bottom keep the gradient
+  fillRect(b,0,L.midTop,CW,(L.midBot-L.midTop+1),BLACK);
+  // reels: 3 symbols, clipped to the whole window
+  const reels=st.reels;
+  for(let i=0;i<3;i++){
+    const base=Math.floor(reels[i].pos/SYMBOL_PX);
+    for(let k=base-1;k<=base+2;k++){
+      const idx=((reels[i].final-1+k)%NUM_SYMBOLS+NUM_SYMBOLS)%NUM_SYMBOLS;
+      drawSpriteClipped(b,L.xs[i],L.paylineY+reels[i].pos-k*SYMBOL_PX,SYMBOLS[idx],L.winTop,L.winBot);
+    }
+  }
+  // red frame bars
+  const barCol=(st.result==="win"&&st.tick%2===0)?YELLOW:RED;
+  fillRect(b,0,L.topBarY,CW,L.topBarH,barCol);
+  fillRect(b,0,L.botBarY,CW,L.botBarH,RED);
+  // stake row background: three buttons — selected magenta, others gray
+  const bw=10, gapc=0;                        // each button 5 cells wide
+  const bx=[0,10,20];
+  for(let i=0;i<3;i++)fillRect(b,bx[i],L.stakeY,10,6,i===st.stakeIdx?MAGENTA:GRAY);
+  // bulbs: on both frame bars + side lanes
+  for(let x=2;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick,st.result);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick,st.result);}
+  for(let y=L.sideTop;y<=L.sideBot;y+=4){bulb(b,0,y,Math.floor(y/4),st.tick,st.result);bulb(b,CW-2,y,Math.floor(y/4),st.tick,st.result);}
+  // subpixel-font text: WIN: label, big amount, stake numbers
+  drawTextCentered(b,F_SM,"WIN:",L.winLblY,WHITE);
+  drawTextCentered(b,F_LG,String(st.winAmt),L.amtY,WHITE);
+  for(let i=0;i<3;i++){
+    const num=String(STAKES[i]), w=textWg(F_SM,num,1);   // "100" = 2+3+3 + 2 gaps = 10 (fits button)
+    const cx=bx[i]+Math.round((10-w)/2);
+    drawText(b,F_SM,num,cx,L.stakeY+1,i===st.stakeIdx?BLACK:WHITE,1);
+  }
+  return {b,L};
+}
+
+// ---- encodeCell (port of subpixel.lua) ----------------------------------
+function encodeCell(c){ // c = [tl,tr,ml,mr,bl,br] colour numbers -> {bg,fg,mask}
+  const counts=new Map();for(const v of c)counts.set(v,(counts.get(v)||0)+1);
+  let bg=c[0],best=-1;for(const[col,n]of counts){if(n>best){best=n;bg=col;}}
+  let fg=bg;for(const v of c){if(v!==bg){fg=v;break;}}
+  return {bg,fg};   // for preview we only need which 2 colours survive per cell
+}
+// render buffer -> canvas, optionally collapsing to encodeCell 2-colour truth
+function paint(canvas,buf,collapse,showGrid){
+  const ctx=canvas.getContext("2d"); const s=12;
+  for(let cy=0;cy<24;cy++)for(let cx=0;cx<15;cx++){
+    const py=cy*3, px=cx*2;
+    if(collapse){
+      const cell=[buf[py][px],buf[py][px+1],buf[py+1][px],buf[py+1][px+1],buf[py+2][px],buf[py+2][px+1]];
+      const {bg,fg}=encodeCell(cell);
+      // paint each subpixel as fg if it differs from bg else bg (2-colour truth)
+      for(let dy=0;dy<3;dy++)for(let dx=0;dx<2;dx++){
+        const v=cell[dy*2+dx]; const col=(v===bg)?bg:fg;
+        ctx.fillStyle=`rgb(${PAL[col]||[255,0,255]})`;
+        ctx.fillRect((px+dx)*s,(py+dy)*s,s,s);
+      }
+    } else {
+      for(let dy=0;dy<3;dy++)for(let dx=0;dx<2;dx++){
+        const v=buf[py+dy][px+dx];
+        ctx.fillStyle=`rgb(${PAL[v]||[255,0,255]})`;
+        ctx.fillRect((px+dx)*s,(py+dy)*s,s,s);
+      }
+    }
+  }
+  if(showGrid){ctx.strokeStyle="rgba(229,127,216,.25)";ctx.lineWidth=1;
+    for(let cx=0;cx<=15;cx++){ctx.beginPath();ctx.moveTo(cx*2*s,0);ctx.lineTo(cx*2*s,24*3*s);ctx.stroke();}
+    for(let cy=0;cy<=24;cy++){ctx.beginPath();ctx.moveTo(0,cy*3*s);ctx.lineTo(15*2*s,cy*3*s);ctx.stroke();}}
+}
+
+// native-text overlay (header, FREE PLAY / INSUFFICIENT) — cell-aligned, like topWin.write
+function overlayNative(canvas,text,cellRow,align){
+  const ctx=canvas.getContext("2d"); const s=12, cellW=2*s, cellH=3*s;
+  ctx.fillStyle="#f0f0f0"; ctx.font=`${Math.floor(cellH*0.9)}px ui-monospace,monospace`;
+  ctx.textBaseline="top";
+  let col=1;
+  if(align==="center")col=Math.floor((15-text.length)/2)+1;
+  ctx.fillText(text, (col-1)*cellW, cellRow*cellH*1.0);
+}
+
+// ---- state + loop --------------------------------------------------------
+const st={stakeIdx:0,result:"none",winAmt:0,tick:0,header:"ALICE: 240 MB",scroll:0,
+  reels:[{final:4,pos:0},{final:3,pos:0},{final:1,pos:0}]};
+let animGrad=true, showGrid=false;
+
+function updateGradient(phase){
+  for(let i=0;i<GRAD.length;i++){
+    const a=0.5+0.5*Math.sin(phase+i*0.9);
+    const mix=(d,t)=>Math.round(255*(d+(t-d)*a));
+    PAL[GRAD[i]]=[mix(GRAD_DEEP[0],GRAD_TEAL[0]),mix(GRAD_DEEP[1],GRAD_TEAL[1]),mix(GRAD_DEEP[2],GRAD_TEAL[2])];
+  }
+}
+function frame(){
+  st.tick++;
+  if(animGrad)updateGradient(st.tick*0.05);
+  // reels: scroll phase from slider (idle = final resting; >0 = mid-spin blur)
+  for(let i=0;i<3;i++)st.reels[i].pos=st.scroll;
+  const {b}=buildFrame(st);
+  const paintC=document.getElementById("paint"), monC=document.getElementById("mon");
+  paint(paintC,b,false,showGrid);
+  paint(monC,b,true,showGrid);
+  // native overlays on BOTH panels (native text isn't subpixel/encodeCell)
+  for(const c of [paintC,monC]){
+    overlayNative(c, st.header, 0, "center");   // native cell text, top row
+    if(st.result==="win")overlayNative(c,"WIN!",22,"center");
+    else if(st.result==="lose")overlayNative(c,"LOSE",22,"center");
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---- wire controls -------------------------------------------------------
+document.getElementById("stakeSeg").addEventListener("click",e=>{
+  const btn=e.target.closest("button"); if(!btn)return;
+  st.stakeIdx=+btn.dataset.i;
+  [...e.currentTarget.children].forEach(b=>b.setAttribute("aria-pressed", b===btn));
+});
+document.getElementById("resSeg").addEventListener("click",e=>{
+  const btn=e.target.closest("button"); if(!btn)return;
+  st.result=btn.dataset.r;
+  [...e.currentTarget.children].forEach(b=>b.setAttribute("aria-pressed", b===btn));
+});
+document.getElementById("winAmt").addEventListener("input",e=>st.winAmt=+e.target.value||0);
+document.getElementById("header").addEventListener("input",e=>st.header=e.target.value);
+document.getElementById("scroll").addEventListener("input",e=>st.scroll=+e.target.value);
+document.getElementById("animGrad").addEventListener("change",e=>animGrad=e.target.checked);
+document.getElementById("showGrid").addEventListener("change",e=>showGrid=e.target.checked);
+
+updateGradient(0);
+requestAnimationFrame(frame);
+</script>
