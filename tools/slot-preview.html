@@ -91,8 +91,8 @@ const F_LG={
  "8":["####","#..#","####","#..#","#..#","####"],
  "9":["####","#..#","####","...#","...#","####"],
 };
-// small digits (3x5, "1" is 2-wide) for the stake buttons — kept tiny so "100" fits a 4-cell button
-const F_DIG={"0":["###","#.#","#.#","#.#","###"],"1":["#.","#.","#.","#.","#."],"2":["###","..#","###","#..","###"],"3":["###","..#",".##","..#","###"],"4":["#.#","#.#","###","..#","..#"],"5":["###","#..","###","..#","###"],"6":["###","#..","###","#.#","###"],"7":["###","..#","..#","..#","..#"],"8":["###","#.#","###","#.#","###"],"9":["###","#.#","###","..#","###"]};
+// small digits (3x5) + "$" for the stake buttons. "1" is 1-wide so "$100" ($+1+0+0) fits a 5-cell button.
+const F_DIG={"0":["###","#.#","#.#","#.#","###"],"1":["#","#","#","#","#"],"2":["###","..#","###","#..","###"],"3":["###","..#",".##","..#","###"],"4":["#.#","#.#","###","..#","..#"],"5":["###","#..","###","..#","###"],"6":["###","#..","###","#.#","###"],"7":["###","..#","..#","..#","..#"],"8":["###","#.#","###","#.#","###"],"9":["###","#.#","###","..#","###"],"$":[".#.","###","##.",".##","###"]};
 function gW(f,ch){const g=f[ch];return g?g[0].length:3;}
 function tW(f,str,gap){let w=0;for(const ch of str)w+=gW(f,ch)+gap;return w-gap;}
 
@@ -124,7 +124,7 @@ function layout(){
 }
 
 const STAKES=[10,25,100];
-const STAKE_X=[0,10,22], STAKE_W=[8,10,8];    // button regions (subpx): $10 c1-4, $25 c6-10, $100 c12-15
+const STAKE_X=[0,10,20], STAKE_W=[10,10,10];  // 3 full-width buttons (5 cells each) so "$100" fits
 function bulb(b,x,y,seed,tick){const on=((seed+tick)%2===0);fillRect(b,x,y,2,2,on?YELLOW:GREY);}
 
 function buildFrame(st){
@@ -140,15 +140,16 @@ function buildFrame(st){
       drawSpriteClipped(b,L.xs[i],L.paylineY+st.reels[i].pos-k*SYMBOL_PX,SYMBOLS[idx],L.reelTop,L.reelBot);
     }
   }
-  // red frame bars
-  fillRect(b,0,L.topBarY,CW,L.topBarH,RED);
-  fillRect(b,0,L.botBarY,CW,L.botBarH,RED);
-  // stake buttons: full region magenta when selected, else gray; number centered (subpixel, gap 0)
+  // red frame bars — flash yellow on a win (BARS ONLY, not the symbols)
+  const barCol=(st.result==="win" && st.tick%2===0)?YELLOW:RED;
+  fillRect(b,0,L.topBarY,CW,L.topBarH,barCol);
+  fillRect(b,0,L.botBarY,CW,L.botBarH,barCol);
+  // stake buttons: full region magenta when selected, else gray; "$<n>" centered (subpixel, gap 1)
   for(let i=0;i<3;i++){
     const sel=i===st.stakeIdx;
     fillRect(b,STAKE_X[i],L.stakeY,STAKE_W[i],6,sel?MAGENTA:GRAY);
-    const num=String(STAKES[i]), w=tW(F_DIG,num,0);
-    drawText(b,F_DIG,num,STAKE_X[i]+Math.round((STAKE_W[i]-w)/2),L.stakeY+1,sel?BLACK:WHITE,0);
+    const lbl="$"+STAKES[i], w=tW(F_DIG,lbl,0);
+    drawText(b,F_DIG,lbl,STAKE_X[i]+Math.round((STAKE_W[i]-w)/2),L.stakeY+1,sel?BLACK:WHITE,0);
   }
   // bulbs on both bars + side lanes
   for(let x=2;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}
@@ -156,9 +157,6 @@ function buildFrame(st){
   // WIN: label + big count-up amount (custom fonts)
   drawTextCentered(b,F_SM,"WIN:",L.winLblY,WHITE);
   drawTextCentered(b,F_LG,String(st.dispAmt),L.amtY,WHITE,1);
-  // stake numbers (native text) are drawn as overlay in frame(); here just the buttons
-  // win celebration: flash every red pixel yellow on alternate frames
-  if(st.result==="win" && st.tick%2===0) flashRed(b);
   // outcome overlay: cover the stake row, green(win)/red(lose); text drawn native in frame()
   if(st.result==="win"||st.result==="lose"){
     fillRect(b,0,L.stakeY,CW,6,st.result==="win"?GREEN:RED);
