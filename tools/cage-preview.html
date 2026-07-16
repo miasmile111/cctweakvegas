@@ -67,6 +67,13 @@
       </div>
       <p class="note" id="rampNote"></p>
     </div>
+    <div class="row"><label>Count-down tint (gold up / ? down)</label>
+      <div class="seg" id="tintSeg">
+        <button data-t="red" aria-pressed="true">red 114</button>
+        <button data-t="pink" aria-pressed="false">pink 200</button>
+      </div>
+      <p class="note">Gold band luminance is <b>~118</b>. Stock <b>red is 114</b> — on the gold half of the drift a falling number nearly <b>vanishes</b>. <b>Pink 200</b> still reads as "down" and stays legible on both ends. Cash out with each and watch the gradient. ⚠ Pink + the <b>red+</b> ramp collide: both want slot 64, and slots are global — pick <b>red+</b> and the pink tint becomes that ramp's salmon.</p>
+    </div>
     <label class="chk"><input type="checkbox" id="animGrad" checked> animate gradient</label>
     <label class="chk"><input type="checkbox" id="showGrid"> cell grid</label>
     <hr>
@@ -251,8 +258,8 @@ function buildFrame(st){
   const rm=RAMPS[st.ramp];
   drawBevel(b,0,L.depY,CW,L.depH,rm.face,rm.light,rm.dark,st.tick<st.depUntil);
 
-  // the money — owner's $ at 1× + digits at 2×, white, riding the gradient
-  drawBalance(b,L.balY,String(Math.round(st.dispBal)),WHITE);
+  // the money — owner's $ at 1× + digits at 2×, riding the gradient, TINTED BY DIRECTION
+  drawBalance(b,L.balY,String(Math.round(st.dispBal)),tintFor(st.dispBal,st.bal));
   return {b,L};
 }
 
@@ -287,7 +294,7 @@ function overlayNativeIn(canvas,text,cellRow,colStart,widthCells,color){
 
 // ---- state -----------------------------------------------------------------
 const st={bal:12500,dispBal:12500,qtyIdx:0,who:"ALICE",hasCard:true,msg:null,loads:0,tick:0,bar:"red",depAmt:850,
-          pressIdx:-1,pressUntil:0,depUntil:0,ramp:"steel"};
+          pressIdx:-1,pressUntil:0,depUntil:0,ramp:"steel",downTint:"red"};
 let animGrad=true,showGrid=false;
 const N_DROPPERS=3;
 const FLASH_TICKS=8;   // ~0.4s at the station's 0.05s tick
@@ -300,6 +307,21 @@ function applyRamp(){
   for(const slot of [LIME,PINK,BROWN]) PAL[slot]=DEFAULT_PAL[slot].slice();
   const rp=RAMPS[st.ramp].repaint;
   if(rp) for(const slot in rp) PAL[slot]=rp[slot].slice();
+}
+
+// ---- the delta-tinted counter (a reusable UI pattern) -----------------------
+// A rolling number tints by DIRECTION: gold climbing, red falling, white at rest. The tint IS the
+// feedback — you read "I'm being paid" / "I'm spending" before you read the digits.
+//
+// Watch the ground it sits on. Luminance: yellow 209 vs the gradient's gold band ~118 -> +91, reads
+// clean. But stock RED is 114 against that same ~118 — a red number would go INVISIBLE on the gold
+// half of the drift, and a cell holds 2 colours so there's no outline to save it. PINK (200) is the
+// escape: still unmistakably "down", but +82 against gold. Toggle below to judge.
+const DOWN_TINTS={red:RED, pink:PINK};
+function tintFor(disp,target){
+  if(disp<target)return YELLOW;              // climbing: gold
+  if(disp>target)return DOWN_TINTS[st.downTint];  // falling: red
+  return WHITE;                              // at rest
 }
 
 // the count-up/count-down ease — same ~24-frame ramp as the slot's win count-up, but signed
@@ -388,6 +410,7 @@ const RAMP_NOTES={
 function setRampNote(){document.getElementById("rampNote").innerHTML=RAMP_NOTES[st.ramp];}
 document.getElementById("rampSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.ramp=b.dataset.r;[...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));setRampNote();});
 setRampNote();
+document.getElementById("tintSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;st.downTint=b.dataset.t;[...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));});
 document.getElementById("bal").addEventListener("input",e=>{st.bal=+e.target.value||0;});
 document.getElementById("depAmt").addEventListener("input",e=>st.depAmt=+e.target.value||0);
 document.getElementById("who").addEventListener("input",e=>st.who=e.target.value);
