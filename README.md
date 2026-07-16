@@ -113,11 +113,12 @@ contraption**, or **hybrid**.
 | Component              | Status  | Notes                                                             |
 | ---------------------- | ------- | ----------------------------------------------------------------- |
 | **Deploy / identity**  | ✓       | `update`/`hub`/`mkinstaller`: push→pull, auto-name, auto-run. Spec in `docs/`. |
-| **Slot machine**       | v1 ✓    | Lever-armed, monitor-rendered reels. See `todo.md` / `src/`.      |
-| **Hub server**         | v0 ✓    | Registrar built (assigns station labels). **Economy = next.**     |
+| **Slot machine**       | v2 ✓    | Lever-armed reels; now bets a stake + pays a per-symbol paytable via the economy. |
+| **Hub server**         | v1 ✓    | Registrar + score ledger (`bet/credit/query/mint`, persisted, sole writer). |
 | **Idle / lag model**   | ✓       | 3-tier idle; shared `lib/idle_runner` every station reuses. See `docs/`. |
-| **Membership cards**   | next    | Issue disks; card read/write; credit/query economy on the hub.    |
-| **Scoreboards**        | planned | Rednet display subscribers around the floor.                      |
+| **Membership cards / economy** | core ✓ (in-world pending) | `lib/ledger·card·wallet·sp_econ` + `issue`; bet-and-pay slot. Layered SP/MP-agnostic. Spec in `docs/`. |
+| **Scoreboards**        | planned | Rednet display subscribers around the floor (own spec).           |
+| **Multiplayer economy**| planned | `lib/mp_econ`: multi-card pot / wagers; core already supports it (own spec). |
 | **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |
 
 Each component gets its own detail as it's built (its `src/` files, its `todo.md` section).

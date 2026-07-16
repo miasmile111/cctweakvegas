@@ -14,6 +14,10 @@ return {
       { name = "slot_logic",   path = "slot/slot_logic.lua" },
       { name = "slot_symbols", path = "slot/slot_symbols.lua" },
       { name = "slot_advert",  path = "slot/slot_advert.lua" },
+      { name = "card",     path = "lib/card.lua" },
+      { name = "wallet",   path = "lib/wallet.lua" },
+      { name = "sp_econ",  path = "lib/sp_econ.lua" },
+      { name = "slot_pay", path = "slot/slot_pay.lua" },
       { name = "slot",         path = "slot/slot.lua" },
     },
   },
@@ -33,7 +37,18 @@ return {
     station = false,
     files = {
       { name = "idle_logic", path = "lib/idle_logic.lua" },
+      { name = "ledger",     path = "lib/ledger.lua" },
       { name = "hub",        path = "hub/hub.lua" },
+    },
+  },
+
+  -- Admin tool, not a player station.
+  issue = {
+    station = false,
+    files = {
+      { name = "card",   path = "lib/card.lua" },
+      { name = "wallet", path = "lib/wallet.lua" },
+      { name = "issue",  path = "issue.lua" },
     },
   },
 }
