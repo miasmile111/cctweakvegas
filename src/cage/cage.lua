@@ -10,21 +10,26 @@
 -- Wiring (all names/sides live in `cage.cfg` — rewire without re-importing; see below):
 --   * Computer + ADVANCED MONITOR 2x2 @ text scale 0.5 (= 36x24 cells, exactly square).
 --   * DISK DRIVE beside the computer — the member card goes in it. No card, no kiosk.
---   * WIRED MODEM on the computer — carries rednet to the hub AND the peripheral network below.
+--   * WIRED MODEM on the RIGHT of the computer — carries rednet to the hub AND the peripheral
+--     network below. Right, by convention: it stays reachable for players/admin to right-click.
 --   * DEPOSIT CHEST on the wired network. Player-facing. Junk left in it is never touched.
 --   * VAULT CHEST on the wired network. Deposits flow in, withdrawals flow out. Admin seeds it;
 --     an empty vault denies withdrawals (diegetically correct for a cage).
---   * 2-3 DROPPERS, each with its OWN wired modem (pushItems only crosses the wired network) AND
---     redstone dust from ONE computer output side (`side`). All droppers share that single line, so
---     one pulse fires them all: ~1 item per non-empty dropper per pulse. Aim them at the floor.
+--   * 2 OR MORE DROPPERS (any count — the shower round-robins across them; this build uses 8), each
+--     with its OWN wired modem (pushItems only crosses the wired network) AND redstone dust from
+--     ONE computer output side (`side`, default BACK). All droppers share that single line, so one
+--     rising edge fires them all: ~1 item per non-empty dropper per 0.3s cycle. Aim them at the floor.
+--   * THE REDSTONE LINE MUST NOT BE ON THE MODEM'S SIDE. `setOutput` would drive the modem block
+--     instead of dust and no dropper would ever fire — which looks EXACTLY like a dead pulse.
+--     Default `side=back` + modem on the right don't collide; keep them apart if you rewire.
 --   * Every peripheral must be ATTACHED to the modem network (right-click each modem until it's red).
 --     Run `peripherals` on the computer to list the network names, then fill in cage.cfg.
 --
 -- cage.cfg (optional, sits next to this program; `key=value`, `#` comments, droppers comma-separated):
 --   deposit=minecraft:chest_0
 --   vault=minecraft:chest_1
---   droppers=minecraft:dropper_0,minecraft:dropper_1,minecraft:dropper_2
---   side=back
+--   droppers=minecraft:dropper_0,minecraft:dropper_1,minecraft:dropper_2   # any length; 8 is fine
+--   side=back                # computer output side for the shared line — NEVER the modem's side
 --   monitor=monitor_0        # omit to auto-find the first attached monitor
 --   zone=all
 
@@ -463,7 +468,9 @@ local function play(_, pres)
     local total, moves = vault.valueListing(hw.depositList(), rates)
     if total == 0 then                       -- an empty box is the ONE case that needs TEACHING,
       toastUntil = tick + TOAST_TICKS        -- not an error. Say where the items go.
-      econ.msg = nil
+      -- Clear BOTH, cage_econ's idiom: a stale `denied` from an earlier deny would tint the next
+      -- non-deny status ("PAYING n") pink.
+      econ.denied, econ.msg = false, nil
       return
     end
     hw.sweepToVault(moves)
@@ -481,12 +488,33 @@ local function play(_, pres)
       tick = tick + 1
       updateGradient(tick * 0.05)
 
-      -- the shower drains: ONE pulse per tick, every non-empty dropper spits one item. Taps ADD to
-      -- `loads` mid-shower, so bursts overlap and spamming compounds. A blocking `for ... sleep()`
-      -- here would swallow the tick timer and touch events — the [[event-pump-reentrancy]] freeze.
+      -- THE SHOWER — and the two reasons it is shaped exactly like this. Do not "simplify" it.
+      --
+      -- 1. A pulse NEEDS A YIELD between on and off. `redstone.setOutput` only writes CC's
+      --    *internal* state + a dirty flag; the world is synced afterwards, on the computer tick,
+      --    by diffing external-vs-internal per side. `setOutput(true); setOutput(false)` in one
+      --    tick therefore leaves internal exactly as it was = no diff = NO block update = the
+      --    droppers never fire. That is why on/off are split across ticks of this loop: the yield
+      --    at `os.pullEvent` is the flush boundary. It shipped as a same-tick toggle once and made
+      --    a money shredder — every withdrawal debited the card and dropped nothing.
+      -- 2. A dropper ejects on the RISING EDGE only and then has a 4-game-tick (0.2s) cooldown;
+      --    the `triggered` blockstate blocks re-trigger until the line falls. So: 6 ticks per item
+      --    (2 high, 4 low = 0.3s) — a 50% margin over the cooldown so server lag can't swallow an
+      --    edge. Pulsing every tick would run 4x the droppers' physical rate and strand most of
+      --    the paid-for metal inside them forever.
+      --
+      -- `loads` decrements on the FALLING edge: one completed cycle = one item actually ejected,
+      -- so the count-down tracks the metal on the floor. Taps ADD to `loads` mid-shower, so bursts
+      -- overlap and spamming compounds. NO `sleep()` / nested `os.pullEvent` here — that would
+      -- swallow the tick timer and touch events, the [[event-pump-reentrancy]] freeze.
       if vault.anyLoaded(loads) then
-        loads = vault.pulseLoads(loads)
-        hw.pulse()
+        local phase = tick % 6
+        if phase == 0 then
+          hw.pulseOn()
+        elseif phase == 2 then
+          hw.pulseOff()
+          loads = vault.pulseLoads(loads)
+        end
       end
 
       if econ.player ~= lastPlayer then      -- a fresh card starts its count-up from zero

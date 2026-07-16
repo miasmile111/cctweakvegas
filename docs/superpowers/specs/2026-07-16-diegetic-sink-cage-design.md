@@ -50,9 +50,12 @@ which by picking the denomination — the machine never decides for them.
 - **Vault chest** — on the wired network. Deposits flow in, withdrawals flow out. Self-balancing:
   the metal players cash in *is* the metal others cash out. Admin seeds it; a Create farm could
   feed it later. Vault empty ⇒ withdrawals deny (diegetically correct for a cage).
-- **2–3 droppers** — each needs a wired modem (to receive `pushItems`) **and** redstone dust from
-  one computer output side. All droppers fire on the **same** line: one pulse = one item from each
-  = ~3 items/pulse. Items land on the floor. This is the cash-machine-overflow moment.
+- **2 or more droppers** (any count — the shower round-robins across them; this build uses **8**) —
+  each needs a wired modem (to receive `pushItems`) **and** redstone dust from one computer output
+  side. That side must **not** be the modem's side (the modem is on the computer's right; the
+  redstone line defaults to `back`). All droppers fire on the **same** line: one **rising edge** =
+  one item from each = ~N items per 0.3s cycle. Items land on the floor. The cash-machine-overflow
+  moment.
 - Peripheral names + sides live in a `cage.cfg` (project convention: no re-import to rewire).
 
 ## Architecture
@@ -116,13 +119,25 @@ Recorded so the `mp_econ` brainstorm starts here instead of rediscovering it:
 
 ## The shower — a tick-driven queue, never a blocking loop
 
-`pending` is a count of items owed to the floor. Each tick, `cage_vault` round-robins the next few
-items into the droppers and `cage_hw` pulses the line once. Taps **push onto `pending` while it
-drains**, so bursts overlap and spamming compounds instead of being swallowed.
+`pending` is a count of items owed to the floor. `cage_vault` round-robins the items into the
+droppers, and the line is raised and dropped on a **6-tick phase cycle** off the play loop's own
+tick counter — 2 ticks high, 4 low = **0.3s per item per dropper** — decrementing `pending` on the
+falling edge, when the item has actually flown. Taps **push onto `pending` while it drains**, so
+bursts overlap and spamming compounds instead of being swallowed.
 
-This is not just feel — a blocking `for i=1,n do pulse(); sleep(0.05) end` would hold `os.pullEvent`
-and swallow the tick timer and touch events, which is exactly the `[[event-pump-reentrancy]]`
-failure that froze the slot on a card swap. The queue keeps the pump free.
+Two hard constraints set that cadence, and neither is negotiable:
+
+1. **A pulse needs a yield.** `redstone.setOutput` only marks CC's *internal* state dirty; the world
+   is synced on the computer tick. `setOutput(true); setOutput(false)` with no yield between is a
+   **silent no-op** — the world never sees an edge. On and off must be on different ticks. See
+   `[[redstone-pulse-needs-a-yield]]`.
+2. **A dropper's rate is 4 game ticks.** It ejects on the **rising edge** only, then the `triggered`
+   blockstate blocks re-trigger for 0.2s. One pulse per 0.05s tick is 4× that — the counter would
+   outrun the metal and strand it. 6 ticks keeps a 50% margin against server lag.
+
+The queue is also what keeps the event pump free: a blocking `for i=1,n do pulse(); sleep(0.05) end`
+would hold `os.pullEvent` and swallow the tick timer and touch events — exactly the
+`[[event-pump-reentrancy]]` failure that froze the slot on a card swap.
 
 ## Screen — 36×24 cells (72×72 subpx, exactly square)
 

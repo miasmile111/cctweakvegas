@@ -850,7 +850,7 @@ git commit -m "feat(cage): cage_econ gateway — card session + hub debit/credit
   - `self.vaultList() -> table` — the vault's `list()`.
   - `self.sweepToVault(moves) -> moved:number` — push each `{slot, count}` from the deposit chest to the vault; returns items actually moved.
   - `self.loadDroppers(item, perDropper) -> loadedPer:table, total:number` — push `perDropper[i]` of `item` from the vault into dropper `i`. Returns the **per-dropper counts actually loaded** (parallel to `perDropper`) and their total. Both **may be less than asked** if the vault ran dry or a dropper filled — the caller refunds the difference and must track the shower from `loadedPer`, not from what it hoped for.
-  - `self.pulse()` — one redstone pulse on `cfg.side`: all droppers fire together.
+  - `self.pulseOn()` / `self.pulseOff()` — raise / drop the shared line on `cfg.side`. **Two calls, not one `pulse()`**, because they must land on *different* computer ticks — see the note under the code below. The caller drives them off its existing tick loop; all droppers fire together on the rising edge.
 
 **No unit test:** pure peripheral I/O, verified in-world. All the math it drives is already tested in `cage_vault`.
 
@@ -924,17 +924,30 @@ function M.new(cfg)
     return loadedPer, total
   end
 
-  -- one pulse on the shared line: every non-empty dropper spits one item onto the floor.
-  function self.pulse()
-    redstone.setOutput(cfg.side, true)
-    redstone.setOutput(cfg.side, false)
-  end
+  -- The shared line, as TWO half-calls — and they MUST land on different computer ticks.
+  -- NEVER fold these into one `pulse()` that sets true then false: `setOutput` only writes CC's
+  -- *internal* redstone state + a dirty flag; the world is synced later, in `updateOutput()` on
+  -- the computer tick, which diffs external-vs-internal per side. Toggle both ways inside one
+  -- tick and internal ends where it started — no diff, no block update, no dropper fires.
+  -- `getOutput` reads the internal value, so Lua cannot see the bug. The caller drives these off
+  -- its 0.05s tick loop, whose yield IS the flush boundary.
+  function self.pulseOn()  redstone.setOutput(cfg.side, true)  end
+  function self.pulseOff() redstone.setOutput(cfg.side, false) end
 
   return self
 end
 
 return M
 ```
+
+> **Why not a single `self.pulse()`.** An earlier draft of this plan mandated
+> `setOutput(side,true); setOutput(side,false)` in one function. It is a **silent no-op** — see the
+> comment above — and it shipped, making a money shredder: every withdrawal debited the card and
+> dropped zero ingots. Verified against CC:Tweaked's `RedstoneState` source (*"Whenever a computer
+> sets a redstone output, the 'internal' state is updated, and a dirty flag is set. When the computer
+> is ticked, `updateOutput()` should be called, to copy the internal state to the external state."*).
+> A pulse **requires a yield** between on and off. Recorded project-wide in
+> `[[redstone-pulse-needs-a-yield]]`.
 
 - [ ] **Step 2: Syntax check**
 
@@ -1199,12 +1212,33 @@ This file is deliberately slot.lua's sibling: same `Rl(row)` band helper, same `
    Drawn as `drawBalance(cv, L.balY, tostring(math.floor(dispBal)), tintFor(dispBal, econ.balance or 0))`.
 7. **The shower** — tick-driven, never blocking:
    ```lua
-   -- loads[i] = items dropper i still owes the floor. Each tick: one pulse, every non-empty
-   -- dropper spits one item. Taps ADD to loads mid-shower, so bursts overlap and spamming
-   -- compounds. A blocking `for ... sleep()` here would swallow the tick timer and touch
-   -- events — the exact freeze from [[event-pump-reentrancy]].
+   -- loads[i] = items dropper i still owes the floor; every non-empty dropper spits one item per
+   -- 6-tick cycle. Taps ADD to loads mid-shower, so bursts overlap and spamming compounds.
+   -- A blocking `for ... sleep()` here would swallow the tick timer and touch events — the exact
+   -- freeze from [[event-pump-reentrancy]].
    ```
-   Per tick: `if vault.anyLoaded(loads) then loads = vault.pulseLoads(loads); hw.pulse() end`
+   The cadence is **6 ticks per item — 2 high, 4 low (0.3s)** — driven off the phase of the existing
+   tick counter, never `sleep()`:
+   ```lua
+   if vault.anyLoaded(loads) then
+     local phase = tick % 6
+     if phase == 0 then
+       hw.pulseOn()
+     elseif phase == 2 then
+       hw.pulseOff()
+       loads = vault.pulseLoads(loads)   -- decrement on the FALLING edge: one cycle = one item
+     end
+   end
+   ```
+   **Why not one pulse per tick** (as an earlier draft of this plan said): (a) on and off must be on
+   *different* ticks or the world never sees the edge at all — `[[redstone-pulse-needs-a-yield]]`;
+   (b) a dropper ejects only on the **rising edge** and then has a **4-game-tick (0.2s) cooldown**
+   (the `triggered` blockstate blocks re-trigger until the line falls), so one pulse per 0.05s tick
+   is **4× its physical rate** — `loads` would drain 4× faster than metal ejects and strand the
+   paid-for ingots inside the droppers. 6 ticks leaves a 50% margin over the cooldown so server lag
+   cannot swallow an edge. `cage_vault.pulseLoads` is unchanged — just called once per *completed
+   cycle* instead of once per tick, so `loads` still strictly decreases and the deep-sleep guard
+   still terminates.
    The bars flash yellow while `vault.anyLoaded(loads)` — that is the cash-machine moment.
 8. **Withdraw (a material tap)** — the ordering invariant, in this exact order:
    ```lua

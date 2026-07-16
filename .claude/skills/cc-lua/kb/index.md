@@ -68,6 +68,12 @@ another facet of something already written. Keep this index's catalog in sync (o
   `wget` won't overwrite, raw-CDN 5-min cache + `?cb=` bust, rednet DNS only sees online nodes
   (→ hub is the registrar), `computerID` vs persistent label, `/disk/startup` override, chunk
   unload = reboot-fresh, Ctrl+T/`pullEventRaw` break-out, self-update-via-relaunch.
+- [[redstone-pulse-needs-a-yield]] — `redstone-pulse-needs-a-yield.md` — `setOutput(side,true)` then
+  `(side,false)` with **no yield between** is a **silent no-op**: `setOutput` only marks CC's internal
+  state dirty, the world syncs on the computer tick by diffing external-vs-internal, and `getOutput`
+  reads the internal value so Lua can't see it. Split into `pulseOn`/`pulseOff` driven off the play
+  loop's tick phase. Plus: a dropper needs **≥4 game ticks** between rising edges (cage uses 6), and
+  the line must never share a side with the wired modem. Cost the cage a full build cycle.
 - [[event-pump-reentrancy]] — `event-pump-reentrancy.md` — a nested `os.pullEvent` loop (rednet
   round-trip, `rednet.lookup`, `sleep`, `parallel`) called from inside a play loop **eats the outer
   loop's own tick timer** → silent freeze (program "running", reboot to clear). One event queue per

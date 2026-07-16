@@ -131,9 +131,11 @@ All 10 plan tasks landed; per-task + whole-branch review clean.
 **Tuning knobs:** `cage_rates.DENOMS` (denomination table — item, `$` value, label; **≤6 entries**,
 see the CEILING note in the file — a 7th collides with the idle advert's rate-table rows vs. the
 bottom bar); `cage_rates.QTYS = {1, 5, 20}` (the withdraw multiplier ladder, resets to 1x on wake);
-dropper count (`cage.cfg`, 2–3, all on one shared redstone line — more droppers = faster shower
-drain per tick); tick rate (the shower is tick-driven via `cage_vault.pulseLoads`, one pulse per
-tick, never a blocking `sleep()` loop — see `[[event-pump-reentrancy]]`).
+dropper count (`cage.cfg`, **any count ≥2**, all on one shared redstone line, never the modem's side
+— more droppers = faster shower drain; this build uses 8); shower cadence (tick-driven via
+`cage_vault.pulseLoads` on a **6-tick phase cycle** — 2 high, 4 low = 0.3s/item/dropper, pacing the
+dropper's 4-tick rising-edge cooldown. On/off MUST straddle a yield and it must never become a
+blocking `sleep()` loop — see `[[redstone-pulse-needs-a-yield]]`, `[[event-pump-reentrancy]]`).
 
 **In-world verification: PENDING.** Post-merge+push checklist (per the plan's post-plan section):
 walk-up wake → card insert → mixed deposit incl. junk → withdraw each denom at 1x/5x/20x →

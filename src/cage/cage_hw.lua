@@ -3,7 +3,8 @@
 --
 -- Wiring: deposit chest, vault chest and EVERY dropper need a wired modem (pushItems only works
 -- across the wired network). All droppers additionally share ONE redstone line from `cfg.side` —
--- a single pulse fires all of them, so a pulse ejects one item per non-empty dropper.
+-- one rising edge on that line fires all of them, ejecting one item per non-empty dropper.
+-- `cfg.side` must NEVER be the modem's side (setOutput would drive the modem block, not dust).
 local M = {}
 
 function M.new(cfg)
@@ -63,11 +64,17 @@ function M.new(cfg)
     return loadedPer, total
   end
 
-  -- one pulse on the shared line: every non-empty dropper spits one item onto the floor.
-  function self.pulse()
-    redstone.setOutput(cfg.side, true)
-    redstone.setOutput(cfg.side, false)
-  end
+  -- The shared line, as TWO half-calls — and they MUST land on different computer ticks.
+  -- NEVER fold these back into one `pulse()` that sets true then false: `setOutput` only writes
+  -- CC's *internal* redstone state + a dirty flag; the world is synced later, in `updateOutput()`
+  -- on the computer tick, which diffs external-vs-internal per side. Toggle both ways inside one
+  -- tick and internal ends where it started — nothing differs, no block update ever leaves the
+  -- computer, and every dropper stays silent. `getOutput` reads the internal value, so Lua cannot
+  -- see the bug: it reports the pulse it never sent. (This shipped once; see
+  -- [[redstone-pulse-needs-a-yield]].) The caller drives these off its 0.05s tick loop, whose
+  -- yield IS the flush boundary.
+  function self.pulseOn()  redstone.setOutput(cfg.side, true)  end
+  function self.pulseOff() redstone.setOutput(cfg.side, false) end
 
   return self
 end
