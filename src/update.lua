@@ -95,8 +95,12 @@ if not http then
 end
 
 -- ------------------------------------------------------------- self-update ---
--- Keep the updater itself current, and — when run straight off a master floppy
--- (`/disk/update slot`) — drop a fresh copy onto this computer. Non-fatal.
+-- Keep the updater itself current. Each run re-pulls update.lua onto this computer;
+-- if it changed, we RELAUNCH the new copy immediately (with the same args) so the newest
+-- code takes effect in a single run — no "run it twice" lag. Running straight off a master
+-- floppy (`/disk/update slot`) therefore lands a current local `update` and uses it at once.
+-- The relaunch is self-terminating: the new run re-downloads the same bytes, sees no change,
+-- and proceeds normally. Non-fatal if the fetch fails (offline -> just use what's here).
 do
   local body = fetch("update.lua")
   if body and #body > 0 then
@@ -104,7 +108,11 @@ do
     if fs.exists("update") then
       local f = fs.open("update", "r"); cur = f.readAll(); f.close()
     end
-    if body ~= cur then save("update", body); print("(updater refreshed)") end
+    if body ~= cur then
+      save("update", body)
+      print("(updater self-updated -> relaunching newest version...)")
+      return shell.run("update", ...)          -- re-run with new code + same args, then stop
+    end
   end
 end
 

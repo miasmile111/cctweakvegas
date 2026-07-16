@@ -61,9 +61,11 @@ identity registration; infra like `hub` sets it false.
 
 `update <pkg> [<pkg> ...]`:
 
-0. **Self-update** — re-pull `update.lua` and drop a fresh copy onto this computer (non-fatal).
-   Bugfixes to the updater propagate for free, and running it straight off a master floppy
-   (`/disk/update slot`) plants a local `update`.
+0. **Self-update** — re-pull `update.lua` onto this computer; if it changed, **relaunch the new
+   copy immediately** with the same args (self-terminating: the relaunched run sees no change and
+   proceeds). Updater bugfixes apply in a single run. A stale master floppy self-heals on first
+   run — a new computer's `/disk/update slot` downloads current code and relaunches into it, so
+   the floppy never needs manual refreshing.
 1. Fetch `packages.lua` from the repo (cache-busted `?cb=<epoch>`), pull each requested
    package's files via `http.get`, overwrite locally (no `wget` delete dance).
 2. Record installed packages locally (`.installed` file).
