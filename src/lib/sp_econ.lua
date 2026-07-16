@@ -17,6 +17,7 @@ function M.new(cfg)
     lastWin = 0,
     denied  = false,
     round   = nil,   -- "staked" | "free" | nil : current round's bet outcome
+    stakedId = nil,   -- id that was debited this round; settle credits THIS, not the live card
   }
 
   wallet.flush()     -- bank any wins queued while the hub was down, on entry
@@ -48,7 +49,7 @@ function M.new(cfg)
     local ok, bal = wallet.bet(self.player, self.pay.STAKE)
     if ok then
       self.balance = bal; card.writeMirror(bal)
-      self.round = "staked"; return "staked"
+      self.round = "staked"; self.stakedId = self.player; return "staked"
     end
     if bal ~= nil then self.balance = bal end   -- deny reply carries current balance
     self.denied = true; self.round = nil
@@ -61,7 +62,7 @@ function M.new(cfg)
     if self.round == "staked" then
       local payout = self.pay.eval(result)
       if payout > 0 then
-        local ok, bal = wallet.credit(self.player, payout)
+        local ok, bal = wallet.credit(self.stakedId, payout)
         if ok and bal then
           self.balance = bal; card.writeMirror(bal)
         else
