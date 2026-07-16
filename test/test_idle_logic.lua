@@ -38,4 +38,20 @@ t.ok(I.isPresenceQuery({ kind = "presence?" }), "presence? query recognized")
 t.ok(not I.isPresenceQuery({ kind = "presence", present = true }), "presence broadcast is not a query")
 t.ok(not I.isPresenceQuery("nope"), "non-table is not a query")
 
+-- newPresence: a handle that tracks presence from incoming rednet events
+do
+  local pr = I.newPresence("slot1")
+  t.ok(pr.present, "newPresence starts present")
+  t.ok(not pr.gone(), "not gone initially")
+  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "all", present = false }, "ccvegas" })
+  t.ok(not pr.present, "present=false msg -> not present")
+  t.ok(pr.gone(), "gone() true after leave")
+  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "all", present = true }, "ccvegas" })
+  t.ok(pr.present, "present=true msg -> present again")
+  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "slot2", present = false }, "ccvegas" })
+  t.ok(pr.present, "other-zone msg ignored")
+  pr.fromEvent({ "timer", 1 })
+  t.ok(pr.present, "non-presence event ignored")
+end
+
 t.done()

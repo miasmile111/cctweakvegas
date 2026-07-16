@@ -32,4 +32,19 @@ function M.isPresenceQuery(msg)
   return type(msg) == "table" and msg.kind == "presence?"
 end
 
+-- Build a presence handle for a station's active loop. `present` starts true (we entered ACTIVE
+-- because someone is here); fromEvent(ev) folds a matching presence message into `present`.
+function M.newPresence(zone)
+  local p = { present = true }
+  function p.fromEvent(ev)
+    if type(ev) == "table" and ev[1] == "rednet_message" then
+      local v = M.presenceFor(ev[3], zone)
+      if v ~= nil then p.present = v end
+    end
+    return p.present
+  end
+  function p.gone() return not p.present end
+  return p
+end
+
 return M
