@@ -305,7 +305,7 @@
       ctx.fillStyle=state.palette[v].hex;
       ctx.fillRect((sx-1)*u,(sy-1)*u,u+0.5,u+0.5);
     }}
-    drawOverlays(ctx,u,true);
+    drawOverlays(ctx,u);
     drawTextRegions(ctx,u);
     drawPending(ctx,u);
     lastGeom={cv:cv,u:u};
@@ -326,36 +326,39 @@
         ctx.fillRect((px-1)*u,(py-1)*u,u+0.5,u+0.5);
       }
     }}
-    if (state.overlays.cell) drawOverlays(ctx,u,false,true);
+    drawOverlays(ctx,u);   // same overlays on the preview (cell grid, seams, etc.)
   }
-  function drawOverlays(ctx,u,full,cellOnly){
-    var o=state.overlays;
-    if (o.real && !cellOnly && u>=6){
+  function drawOverlays(ctx,u){
+    var o=state.overlays, W=state.subW*u, H=state.subH*u;
+    if (o.real && u>=6){
       ctx.strokeStyle=tok("--grid"); ctx.lineWidth=1; ctx.globalAlpha=.4;
       var r=u/3;
-      for (var x=0;x<=state.subW*3;x++){ var X=x*r; line(ctx,X,0,X,state.subH*u); }
-      for (var y=0;y<=state.subH*3;y++){ var Y=y*r; line(ctx,0,Y,state.subW*u,Y); }
+      for (var x=0;x<=state.subW*3;x++){ var X=x*r; line(ctx,X,0,X,H); }
+      for (var y=0;y<=state.subH*3;y++){ var Y=y*r; line(ctx,0,Y,W,Y); }
       ctx.globalAlpha=1;
     }
-    if (o.sub && !cellOnly){
+    if (o.sub){
       ctx.strokeStyle=tok("--grid"); ctx.lineWidth=1; ctx.globalAlpha=.6;
-      for (var sx=0;sx<=state.subW;sx++){ var Xs=sx*u; line(ctx,Xs,0,Xs,state.subH*u); }
-      for (var sy=0;sy<=state.subH;sy++){ var Ys=sy*u; line(ctx,0,Ys,state.subW*u,Ys); }
+      for (var sx=0;sx<=state.subW;sx++){ var Xs=sx*u; line(ctx,Xs,0,Xs,H); }
+      for (var sy=0;sy<=state.subH;sy++){ var Ys=sy*u; line(ctx,0,Ys,W,Ys); }
       ctx.globalAlpha=1;
     }
-    if (o.cell || cellOnly){
+    if (o.cell){
       ctx.strokeStyle=tok("--blue"); ctx.lineWidth=1.5; ctx.globalAlpha=.55;
-      for (var cx=0;cx<=state.cols;cx++){ var Xc=cx*2*u; line(ctx,Xc,0,Xc,state.subH*u); }
-      for (var cy=0;cy<=state.rows;cy++){ var Yc=cy*3*u; line(ctx,0,Yc,state.subW*u,Yc); }
+      for (var cx=0;cx<=state.cols;cx++){ var Xc=cx*2*u; line(ctx,Xc,0,Xc,H); }
+      for (var cy=0;cy<=state.rows;cy++){ var Yc=cy*3*u; line(ctx,0,Yc,W,Yc); }
       ctx.globalAlpha=1;
     }
-    if (o.seam && full){
-      ctx.strokeStyle=tok("--amber"); ctx.lineWidth=2; ctx.globalAlpha=.85; ctx.setLineDash([6,4]);
-      for (var b=1;b<state.blocks.w;b++){ var Xb=(state.subW*u)*(b/state.blocks.w); line(ctx,Xb,0,Xb,state.subH*u); }
-      for (var bb=1;bb<state.blocks.h;bb++){ var Yb=(state.subH*u)*(bb/state.blocks.h); line(ctx,0,Yb,state.subW*u,Yb); }
+    if (o.seam){
+      // block boundaries INCLUDING the outer frame, so it always shows something (even 1x1) and
+      // responds visibly to blocks W/H. Approximate: even divisions of the canvas — verify in-world.
+      ctx.strokeStyle=tok("--amber"); ctx.lineWidth=2.5; ctx.globalAlpha=.95; ctx.setLineDash([7,4]);
+      for (var b=0;b<=state.blocks.w;b++){ var Xb=edge(W*(b/state.blocks.w),W); line(ctx,Xb,0,Xb,H); }
+      for (var bb=0;bb<=state.blocks.h;bb++){ var Yb=edge(H*(bb/state.blocks.h),H); line(ctx,0,Yb,W,Yb); }
       ctx.setLineDash([]); ctx.globalAlpha=1;
     }
   }
+  function edge(v,max){ return v<=0?1:(v>=max?max-1:v); }   // inset outer lines so they aren't clipped
   function line(ctx,x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
 
   function drawTextRegions(ctx,u){
@@ -598,8 +601,9 @@
     if (lose && !window.confirm("Shrinking will discard out-of-range pixels. Continue?")) return;
     alloc(cols,rows,true); state.history=[]; state.hist=-1; pushHistory(); repaint();
   });
-  document.getElementById("cfg-bw").addEventListener("input",function(e){ state.blocks.w=clamp(+e.target.value,1,20); repaint(); });
-  document.getElementById("cfg-bh").addEventListener("input",function(e){ state.blocks.h=clamp(+e.target.value,1,20); repaint(); });
+  function bumpSeam(){ if(!state.overlays.seam){ state.overlays.seam=true; document.getElementById("ov-seam").checked=true; } }
+  document.getElementById("cfg-bw").addEventListener("input",function(e){ state.blocks.w=clamp(+e.target.value,1,20); bumpSeam(); repaint(); });
+  document.getElementById("cfg-bh").addEventListener("input",function(e){ state.blocks.h=clamp(+e.target.value,1,20); bumpSeam(); repaint(); });
   document.querySelectorAll("[data-preset]").forEach(function(b){ b.addEventListener("click",function(){
     var a=b.dataset.preset.split(",").map(Number);
     document.getElementById("cfg-cols").value=a[0]; document.getElementById("cfg-rows").value=a[1];
