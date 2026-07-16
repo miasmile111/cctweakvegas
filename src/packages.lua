@@ -21,7 +21,10 @@ return {
   pong = {
     station = true,
     files = {
-      { name = "pong", path = "pong/pong.lua" },
+      { name = "idle_logic",  path = "lib/idle_logic.lua" },
+      { name = "idle_runner", path = "lib/idle_runner.lua" },
+      { name = "pong_advert", path = "pong/pong_advert.lua" },
+      { name = "pong",        path = "pong/pong.lua" },
     },
   },
 

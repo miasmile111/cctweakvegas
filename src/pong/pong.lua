@@ -141,20 +141,30 @@ local function physics()
   if bx > W then ls = ls + 1; resetBall(-1) end
 end
 
-resetBall(math.random() < 0.5 and -1 or 1)
-local timer = os.startTimer(TICK)
-draw()
+-- ACTIVE session: pong's physics loop, run by idle_runner while a player is present. Resets the
+-- game each entry (fresh scores/ball). Returns "sleep" when the zone empties (no round to finish),
+-- or "quit" on the operator's Q.
+local function play(mon, pres)
+  ls, rs = 0, 0
+  lp = math.floor((H - PADDLE_H) / 2) + 1
+  rp = lp
+  resetBall(math.random() < 0.5 and -1 or 1)
+  local timer = os.startTimer(TICK)
+  draw()
 
-while true do
-  local ev = { os.pullEvent() }
-  if ev[1] == "timer" and ev[2] == timer then
-    physics()
-    draw()
-    timer = os.startTimer(TICK)
-  elseif ev[1] == "key" and ev[2] == keys.q then
-    break                       -- admin quit (Ctrl+T also terminates)
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1] == "timer" and ev[2] == timer then
+      physics()
+      draw()
+      if pres.gone() then return "sleep" end   -- zone empty: stop (no round to finish)
+      timer = os.startTimer(TICK)
+    elseif ev[1] == "rednet_message" then
+      pres.fromEvent(ev)
+    elseif ev[1] == "key" and ev[2] == keys.q then
+      return "quit"
+    end
   end
 end
 
-mon.setBackgroundColor(colors.black); mon.clear(); mon.setCursorPos(1, 1); mon.setTextScale(1)
-print("Thanks for playing Pong!")
+require("idle_runner").run{ name = "pong", monitor = mon, zone = "all", play = play }
