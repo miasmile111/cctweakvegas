@@ -71,14 +71,24 @@ identity registration; infra like `hub` sets it false.
    instance number, accumulate into the label.
 4. `os.setComputerLabel(...)` — join instances with `+`, e.g. `slot2+pong1`.
 
+4. **Enable auto-run** (station packages) — write a `startup` on the computer (marked, won't
+   clobber a foreign one) + a `.station` file naming the program. On every boot it launches the
+   game under a **supervisor** that self-heals (relaunch on crash/terminate/chunk-reload) with
+   three admin escape hatches: hold a key ~2s at boot, Ctrl+T during the game, or a key in the
+   3s post-exit window → drops to shell. Runs whether or not registration succeeded.
+
+   **Lag dependency:** auto-run is only safe at scale once each game honors the README idle
+   model (deep-sleep on `os.pullEvent`, wake on a proximity plate). `slot.lua` currently
+   animates continuously — implement idle-sleep before mass-deploying auto-run.
+
 **Preflight (fail loudly):**
 - **Hardware = hard requirement.** No disk drive or no wired modem → print a loud banner
   (`I need a disk drive and wired modem!`) listing what's missing, and **stop** — install nothing.
   A station without them is not a valid station.
-- **Hub offline = soft (approved).** Hardware present but hub unreachable on rednet → still
-  install the files, skip labeling, print a loud `HUB OFFLINE — installed but UNREGISTERED (no
-  name); bring the hub online and re-run update`. The game is runnable unnamed; the label lands
-  on a later `update`.
+- **Hub offline = install-soft, warn-loud.** Hardware present but hub unreachable → still install
+  the files and enable auto-run, but print a prominent `REGISTRATION FAILED — HUB OFFLINE` banner:
+  the station has NO NAME and won't be tracked until the hub is up and `update` is re-run. Files
+  install so the game is playable unnamed; only the identity step fails, and it fails loudly.
 
 ### 3. Hub v0 — the registrar — `src/hub.lua`
 

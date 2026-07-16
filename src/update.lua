@@ -44,6 +44,51 @@ local function loudBanner(title)
   print(bar); print(" " .. title); print(bar)
 end
 
+-- Supervisor written to the station's own `startup`: auto-runs the assigned game on every
+-- boot (chunk reload, server restart, break-a-block-and-replace), self-heals on exit, and
+-- gives admin escape hatches (hold a key at boot, or Ctrl+T then a key). Reads `.station`
+-- for the program name so this body stays generic.
+local STARTUP_MARK = "-- cctweak station startup (auto-generated)"
+local SUPERVISOR = [[
+local prog = "slot"
+if fs.exists(".station") then
+  local f = fs.open(".station", "r"); prog = (f.readAll():gsub("%s+$", "")); f.close()
+end
+print("cctweak station: '" .. prog .. "'. Hold a key ~2s for shell (admin)...")
+local bid = os.startTimer(2)
+while true do
+  local e, p = os.pullEventRaw()
+  if e == "timer" and p == bid then break
+  elseif e == "key" or e == "char" then print("Shell (admin). Reboot to resume auto-run."); return
+  elseif e == "terminate" then return end
+end
+while true do
+  if not fs.exists(prog) then print("Missing '" .. prog .. "' — run: update"); return end
+  shell.run(prog)
+  print("['" .. prog .. "'] stopped. Press a key within 3s for shell, else restarting...")
+  local t, drop = os.startTimer(3), false
+  while true do
+    local e, p = os.pullEventRaw()
+    if e == "timer" and p == t then break
+    elseif e == "key" or e == "char" or e == "terminate" then drop = true; break end
+  end
+  if drop then print("Shell (admin). Type '" .. prog .. "' or reboot to resume."); return end
+end
+]]
+
+local function enableAutorun(prog)
+  if fs.exists("startup") then
+    local f = fs.open("startup", "r"); local head = f.readLine() or ""; f.close()
+    if not head:find("cctweak station startup", 1, true) then
+      print("NOTE: existing 'startup' kept (not ours) — auto-run NOT enabled.")
+      return
+    end
+  end
+  save(".station", prog)
+  save("startup", STARTUP_MARK .. "\n" .. SUPERVISOR)
+  print("Auto-run ON: boots into '" .. prog .. "' + self-heals. Hold a key at boot for shell.")
+end
+
 -- ---------------------------------------------------- preflight: http --------
 if not http then
   error("http API disabled — the pack must allow HTTP. Cannot update.", 0)
@@ -150,9 +195,12 @@ if #stations > 0 then
   rednet.open(peripheral.getName(modem))
   local hub = rednet.lookup(PROTO, "hub")
   if not hub then
-    loudBanner("HUB OFFLINE")
-    print("Files installed, but this station is UNREGISTERED (no name).")
-    print("Bring the hub online, then re-run `update` here to get a label.")
+    print("")
+    loudBanner("!!!  REGISTRATION FAILED — HUB OFFLINE  !!!")
+    print("Files are installed, but this station has NO NAME (unregistered)")
+    print("and will NOT be tracked by the hub.")
+    print("FIX: start the hub, then re-run  update  on this station.")
+    print("")
   else
     local labelParts = {}
     for _, pkg in ipairs(stations) do
@@ -178,6 +226,14 @@ if #stations > 0 then
       os.setComputerLabel(label)
       print("Registered. This station is now: " .. label)
     end
+  end
+
+  -- auto-run this station's game on boot + self-heal (runs whether or not registration
+  -- succeeded — the game is playable unnamed). Uses the first station package installed.
+  enableAutorun(stations[1])
+  if #stations > 1 then
+    print("NOTE: multiple station packages — auto-running '" .. stations[1] ..
+          "'. Edit .station to change.")
   end
 end
 
