@@ -205,9 +205,23 @@ end
 -- draw one full top-monitor frame (subpixel graphics + banner text overlay), flushed at once.
 -- ACTIVE (player present) shows the reels only; the COME PLAY advert is the IDLE screen (slot_advert.draw),
 -- not an overlay here. `attract` is accepted for call-site compatibility but no longer draws a banner.
-local function drawTopFrame(reels, bulbTick, result, attract)
+local function drawTopFrame(reels, bulbTick, result, attract, status)
   topWin.setVisible(false)
   drawTop(topCv, reels, bulbTick, result)
+  -- economy header in the reserved top rows (plain text over the gradient)
+  if status then
+    topWin.setTextColor(WHITE); topWin.setBackgroundColor(BLACK)
+    topWin.setCursorPos(1, 1)
+    if status.denied then
+      topWin.write("INSUFFICIENT")
+    elseif status.player then
+      topWin.write(("%s $%d"):format(status.player, status.balance or 0))
+      topWin.setCursorPos(1, 2); topWin.write(("stake %d  win %d"):format(status.stake, status.lastWin))
+    else
+      topWin.setCursorPos(1, 1); topWin.write("FREE PLAY")
+      topWin.setCursorPos(1, 2); topWin.write("insert card to bet")
+    end
+  end
   if result == "win" or result == "lose" then
     local label = (result == "win") and "WIN!" or "LOSE"
     topWin.setTextColor(WHITE)
@@ -240,12 +254,13 @@ end
 -- or "quit" on the operator's Q.
 local function play(mon, pres)
   local state = "attract"
+  local econ = require("sp_econ").new{ zone = ZONE, pay = require("slot_pay") }
   local reels = newSpin(); for _, r in ipairs(reels) do r.stopped = true end
   local tick, spinTick, resultAt, result = 0, 0, nil, nil
   local armed = true       -- rising-edge guard so a held lever doesn't auto-respin
 
   updateGradient(0)
-  drawTopFrame(reels, 0, nil, true)
+  drawTopFrame(reels, 0, nil, true, econ.status())
   local timer = os.startTimer(TICK)
 
   while true do
@@ -256,8 +271,13 @@ local function play(mon, pres)
 
       local lvl = redstone.getAnalogInput(SPIN_SIDE)
       if state == "attract" and armed and lvl >= SPIN_LEVEL then
-        reels = newSpin()
-        state, spinTick, armed = "spinning", 0, false
+        local mode = econ.tryBet()               -- "staked" | "free" | "deny"
+        if mode == "deny" then
+          armed = false                          -- consume the pull; header shows INSUFFICIENT
+        else
+          reels = newSpin()
+          state, spinTick, armed = "spinning", 0, false
+        end
       end
       if lvl < SPIN_LEVEL then armed = true end
 
@@ -267,27 +287,31 @@ local function play(mon, pres)
         for _, r in ipairs(reels) do
           if not logic.stepReel(r, spinTick, SYMBOL_PX) then allStopped = false end
         end
-        drawTopFrame(reels, tick, nil, false)
+        drawTopFrame(reels, tick, nil, false, econ.status())
         if allStopped then
           result = logic.isWin(reels[1].final, reels[2].final, reels[3].final) and "win" or "lose"
-          drawTopFrame(reels, tick, result, false)
+          econ.settle({ reels[1].final, reels[2].final, reels[3].final })
+          drawTopFrame(reels, tick, result, false, econ.status())
           state, resultAt = "result", tick
         end
       elseif state == "result" then
-        drawTopFrame(reels, tick, result, false)
+        drawTopFrame(reels, tick, result, false, econ.status())
         if tick - resultAt > 40 then           -- ~2s banner, then back to attract
           result = nil
           state = "attract"
-          drawTopFrame(reels, tick, nil, true)
+          drawTopFrame(reels, tick, nil, true, econ.status())
         end
       else -- attract
-        drawTopFrame(reels, tick, nil, true)
+        drawTopFrame(reels, tick, nil, true, econ.status())
         if pres.gone() then restorePalette(); return "sleep" end  -- zone emptied: restore palette, sleep
       end
 
       timer = os.startTimer(TICK)
     elseif ev[1] == "rednet_message" then
       pres.fromEvent(ev)                        -- update presence; sleep decision happens in attract
+      econ.onEvent(ev)
+    elseif ev[1] == "disk" or ev[1] == "disk_eject" then
+      econ.onEvent(ev)                          -- card inserted/removed: re-read balance
     elseif ev[1] == "key" and ev[2] == keys.q then
       restorePalette()
       return "quit"
