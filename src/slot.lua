@@ -13,6 +13,8 @@ local TOP_NAME   = "top"     -- the 1x2 portrait monitor (side name if touching,
 local TOP_SCALE  = 0.5
 local SPIN_SIDE  = "back"    -- computer side the lever's redstone feeds
 local SPIN_LEVEL = 13        -- spin when analog signal on SPIN_SIDE reaches this (lever ramps up to 15)
+local ZONE = "all"  -- proximity zone this station answers to. "all" = any player in the hub's range.
+                    -- (Per-station zones arrive with GPS; then set e.g. ZONE = "slot1".)
 -- ----------------------------------------------------------------------------
 
 local args = { ... }
@@ -175,6 +177,15 @@ end
 math.randomseed(os.epoch("utc"))
 local rng = function() return math.random() end
 
+local idle = require("idle_logic")
+
+-- open rednet so the hub can wake/sleep us (the wired modem also carries the monitor)
+local function findModem()
+  local wired = peripheral.find("modem", function(_, m) return not m.isWireless() end)
+  return wired or peripheral.find("modem")
+end
+do local m = findModem(); if m then rednet.open(peripheral.getName(m)) end end
+
 local topMon = findMon(TOP_NAME); topMon.setTextScale(TOP_SCALE)
 local tw, th = topMon.getSize()
 local topWin = window.create(topMon, 1, 1, tw, th, true)   -- offscreen buffer -> no flicker
@@ -200,13 +211,19 @@ local function updateGradient(phase)
 end
 
 -- draw one full top-monitor frame (subpixel graphics + banner text overlay), flushed at once
-local function drawTopFrame(reels, bulbTick, result)
+local function drawTopFrame(reels, bulbTick, result, attract)
   topWin.setVisible(false)
   drawTop(topCv, reels, bulbTick, result)
   if result == "win" or result == "lose" then
     local label = (result == "win") and "WIN!" or "LOSE"
     topWin.setTextColor(WHITE)
     topWin.setBackgroundColor(result == "win" and GREEN or RED)
+    topWin.setCursorPos(math.floor((tw - #label) / 2) + 1, th)
+    topWin.write(label)
+  elseif attract then
+    local label = "COME PLAY"
+    topWin.setTextColor(YELLOW)
+    topWin.setBackgroundColor(BLACK)
     topWin.setCursorPos(math.floor((tw - #label) / 2) + 1, th)
     topWin.write(label)
   end
@@ -222,63 +239,107 @@ local function newSpin()
   }
 end
 
-local state = "idle"        -- idle | spinning | result
-local reels = newSpin()
-for _, r in ipairs(reels) do r.stopped = true end
-local tick, spinTick, resultAt, result = 0, 0, nil, nil
-local armed = true          -- rising-edge guard: only spin when the lever crosses UP to SPIN_LEVEL
-
-updateGradient(0)
-drawTopFrame(reels, 0, nil)
-local timer = os.startTimer(TICK)
-
-while true do
-  local ev = { os.pullEvent() }
-  if ev[1] == "timer" and ev[2] == timer then
-    tick = tick + 1
-    updateGradient(tick * 0.05)   -- slow blue<->teal drift, every state
-
-    -- read the physical lever (poll every tick — a held signal fires no event)
-    local lvl = redstone.getAnalogInput(SPIN_SIDE)
-    if state == "idle" and armed and lvl >= SPIN_LEVEL then
-      reels = newSpin()
-      state, spinTick, armed = "spinning", 0, false
-    end
-    if lvl < SPIN_LEVEL then armed = true end   -- re-arm once the lever drops back
-
-    if state == "spinning" then
-      spinTick = spinTick + 1
-      local allStopped = true
-      for _, r in ipairs(reels) do
-        if not logic.stepReel(r, spinTick, SYMBOL_PX) then allStopped = false end
-      end
-      drawTopFrame(reels, tick, nil)
-      if allStopped then
-        result = logic.isWin(reels[1].final, reels[2].final, reels[3].final) and "win" or "lose"
-        drawTopFrame(reels, tick, result)
-        state, resultAt = "result", tick
-      end
-    elseif state == "result" then
-      drawTopFrame(reels, tick, result)         -- keep the win flash / banner animating
-      if tick - resultAt > 40 then              -- ~2s banner, then back to attract
-        result = nil
-        state = "idle"
-        drawTopFrame(reels, tick, nil)
-      end
-    else -- idle: keep the attract bulbs alive
-      drawTopFrame(reels, tick, nil)
-    end
-
-    timer = os.startTimer(TICK)
-  elseif ev[1] == "key" and ev[2] == keys.q then
-    break
+-- Monitor helpers ------------------------------------------------------------
+local function restorePalette()
+  for i = 1, #GRAD do
+    local o = gradOrig[i]
+    topMon.setPaletteColour(GRAD[i], o[1], o[2], o[3])
   end
 end
 
--- cleanup: restore the gradient slots to their original palette, then clear
-for i = 1, #GRAD do
-  local o = gradOrig[i]
-  topMon.setPaletteColour(GRAD[i], o[1], o[2], o[3])
+local function clearMonitor()
+  restorePalette()
+  topMon.setBackgroundColor(colors.black); topMon.clear()
 end
-topMon.setBackgroundColor(colors.black); topMon.clear(); topMon.setCursorPos(1, 1); topMon.setTextScale(1)
+
+-- DEEP SLEEP: no timer. Block until a player is present (hub) or the lever is pulled cold.
+-- Returns true to wake into ACTIVE, or false if the operator quit (Q).
+local function deepSleep()
+  clearMonitor()
+  local prevLvl = redstone.getAnalogInput(SPIN_SIDE)
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1] == "rednet_message" then
+      local p = idle.presenceFor(ev[3], ZONE)   -- ev = { "rednet_message", sender, message, protocol }
+      if p == true then return true end
+      -- p == false or nil: still empty, keep sleeping
+    elseif ev[1] == "redstone" then
+      local lvl = redstone.getAnalogInput(SPIN_SIDE)
+      if idle.leverRose(prevLvl, lvl, SPIN_LEVEL) then return true end
+      prevLvl = lvl
+    elseif ev[1] == "key" and ev[2] == keys.q then
+      return false
+    end
+  end
+end
+
+-- ACTIVE: the 0.05s timer loop (attract -> spinning -> result). Returns true when the zone
+-- empties and we should sleep, or false if the operator quit (Q).
+local function runActive()
+  local state = "attract"
+  local reels = newSpin(); for _, r in ipairs(reels) do r.stopped = true end
+  local tick, spinTick, resultAt, result = 0, 0, nil, nil
+  local armed = true       -- rising-edge guard so a held lever doesn't auto-respin
+  local present = true     -- we entered ACTIVE because someone is here
+
+  updateGradient(0)
+  drawTopFrame(reels, 0, nil, true)
+  local timer = os.startTimer(TICK)
+
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1] == "timer" and ev[2] == timer then
+      tick = tick + 1
+      updateGradient(tick * 0.05)
+
+      local lvl = redstone.getAnalogInput(SPIN_SIDE)
+      if state == "attract" and armed and lvl >= SPIN_LEVEL then
+        reels = newSpin()
+        state, spinTick, armed = "spinning", 0, false
+      end
+      if lvl < SPIN_LEVEL then armed = true end
+
+      if state == "spinning" then
+        spinTick = spinTick + 1
+        local allStopped = true
+        for _, r in ipairs(reels) do
+          if not logic.stepReel(r, spinTick, SYMBOL_PX) then allStopped = false end
+        end
+        drawTopFrame(reels, tick, nil, false)
+        if allStopped then
+          result = logic.isWin(reels[1].final, reels[2].final, reels[3].final) and "win" or "lose"
+          drawTopFrame(reels, tick, result, false)
+          state, resultAt = "result", tick
+        end
+      elseif state == "result" then
+        drawTopFrame(reels, tick, result, false)
+        if tick - resultAt > 40 then           -- ~2s banner, then back to attract
+          result = nil
+          state = "attract"
+          drawTopFrame(reels, tick, nil, true)
+        end
+      else -- attract
+        drawTopFrame(reels, tick, nil, true)
+        if idle.shouldSleep(present, state) then return true end   -- zone emptied while idle
+      end
+
+      timer = os.startTimer(TICK)
+    elseif ev[1] == "rednet_message" then
+      local p = idle.presenceFor(ev[3], ZONE)
+      if p ~= nil then present = p end          -- update presence; sleep decision happens in attract
+    elseif ev[1] == "key" and ev[2] == keys.q then
+      return false
+    end
+  end
+end
+
+-- Top-level: sleep <-> active until the operator quits.
+while true do
+  local woke = deepSleep()
+  if not woke then break end
+  local alive = runActive()
+  if not alive then break end
+end
+
+clearMonitor(); topMon.setCursorPos(1, 1); topMon.setTextScale(1)
 print("Thanks for playing Slots!")

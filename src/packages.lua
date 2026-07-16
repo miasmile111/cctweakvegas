@@ -9,6 +9,7 @@ return {
     station = true,
     files = {
       { name = "subpixel", path = "lib/subpixel.lua" },
+      { name = "idle_logic" },
       { name = "slot_logic" },
       { name = "slot_symbols" },
       { name = "slot" },
