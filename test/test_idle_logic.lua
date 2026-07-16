@@ -1,4 +1,4 @@
-package.path = "src/?.lua;test/?.lua;" .. package.path
+package.path = "src/lib/?.lua;src/slot/?.lua;src/pong/?.lua;test/?.lua;" .. package.path
 local t = require("runner")
 local I = require("idle_logic")
 

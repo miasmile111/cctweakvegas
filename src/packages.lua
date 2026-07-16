@@ -8,18 +8,18 @@ return {
   slot = {
     station = true,
     files = {
-      { name = "subpixel", path = "lib/subpixel.lua" },
-      { name = "idle_logic" },
-      { name = "slot_logic" },
-      { name = "slot_symbols" },
-      { name = "slot" },
+      { name = "subpixel",     path = "lib/subpixel.lua" },
+      { name = "idle_logic",   path = "lib/idle_logic.lua" },
+      { name = "slot_logic",   path = "slot/slot_logic.lua" },
+      { name = "slot_symbols", path = "slot/slot_symbols.lua" },
+      { name = "slot",         path = "slot/slot.lua" },
     },
   },
 
   pong = {
     station = true,
     files = {
-      { name = "pong" },
+      { name = "pong", path = "pong/pong.lua" },
     },
   },
 
@@ -27,8 +27,8 @@ return {
   hub = {
     station = false,
     files = {
-      { name = "idle_logic" },
-      { name = "hub" },
+      { name = "idle_logic", path = "lib/idle_logic.lua" },
+      { name = "hub",        path = "hub/hub.lua" },
     },
   },
 }
