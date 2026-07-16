@@ -42,31 +42,34 @@ Built, deployed, verified in-world. Then generalized so every station inherits i
   `update <pkg>` just relabels from that run's packages. Harmless while self-contained (no
   collisions); revisit if recycling machines. Would need a hub `deregister` msg + a local `reset`.
 
-## Next up
+## Hub economy — core loop BUILT + reviewed (2026-07-16), in-world pending
 
-**→ Hub economy (member cards + scoring)** is the next build — see Option B below. New behavior →
-brainstorm first.
+Branch `feat/hub-economy`. Spec: `docs/superpowers/specs/2026-07-16-hub-economy-design.md`;
+plan: `docs/superpowers/plans/2026-07-16-hub-economy.md`. Bet-and-risk slot on a hub-authoritative
+ledger, layered so a 2nd game reuses it: **core** (`lib/ledger` pure · `lib/card` · `lib/wallet`
++outbox) → **SP gateway** (`lib/sp_econ`) → tiny per-game payout (`slot/slot_pay`). All 8 code tasks
+passed per-task review + a whole-branch review (deploy/package completeness + protocol end-to-end PASS).
 
-Parked for later:
-- **Lua UI deepdive + workflow** — a patterns/toolkit pass on monitor UIs (the `lib/subpixel`
-  canvas, layout, text, the advert screens) and a smoother build/iterate loop for them. Start from
-  the cc-lua skill's monitor-ui kb.
+- [x] **Member card read/write** — `lib/card` reads/writes floppy `{ id, score-mirror }`; no card = anonymous free-play.
+- [x] **rednet economy protocol** — `bet{id,stake}→bet_ok|bet_deny`, `credit{id,delta}→balance`,
+      `query{id}→balance`, `mint{name,balance}→minted`. Hub persists the ledger (`ledger.tbl`), sole writer.
+- [x] **Slot payout model** — fixed stake, per-symbol paytable, triple-seven jackpot (`slot_pay`).
+- [x] **Show balance** — economy header (player · balance · stake · win / INSUFFICIENT / FREE PLAY).
+- [x] **Admin card issue** — `issue <name> [balance]` mints ledger id + writes the floppy (hub needs a drive).
+- [ ] **In-world verification (Task 9, user-run)** — deploy `update hub|slot|issue`; mint→insert→bet→
+      win/lose→insufficient→eject(anon)→hub-offline-win→outbox-flush. Hub + slot stations each gain a disk drive.
 
-### Option B — Hub economy (member cards + scoring)
+Parked (each its own spec later):
+- **Scoreboards** — display-only rednet subscribers rendering standings around the floor.
+- **Diegetic sink** — what score is FOR (redstone payout: dispense item / open door / lamp).
+- **Multiplayer economy** (`lib/mp_econ`) — multi-card pot / interactive wagers; core already SP/MP-agnostic.
+- **Lua UI deepdive + workflow** — monitor-UI patterns/toolkit pass (start from the cc-lua monitor-ui kb).
 
-Extend the hub (which already knows every station) into the score ledger, and make the slot pay:
-
-- [ ] **Member card read/write** — floppy in the station drive holds `{ id, score-mirror }`;
-      station reads `id` on insert. (No card = anonymous, still playable.)
-- [ ] **rednet economy protocol** — `station→hub` `credit {id, delta}` and `query {id}` →
-      `balance {id, score}` (shapes already sketched in the spec + README). Hub persists the ledger.
-- [ ] **Slot payout model** — win → score delta (flat? per-symbol paytable? triple-7 jackpot?).
-- [ ] **Show winnings / balance** on the monitor (reserved TOP block of the 1×2).
-- [ ] **Scoreboards** — display-only rednet subscribers that render standings around the floor.
-- [ ] **Diegetic sink** — what score is FOR (redstone payout: dispense item / open door / lamp).
-
-(These fold in the earlier "scoring / earnings system" notes; the hub-authoritative model means
-the score lives on the hub, not the disk.)
+Non-blocking follow-ups from the final review (see the SDD ledger F1/F2):
+- **F1** `wallet.request` is a blocking event pump (drops presence/disk/key during a ~1.5s hub-down
+  round-trip); doc note landed. Optional: re-broadcast presence after a round-trip.
+- **F2** credit to an *unknown* id would be treated as acked (win silently lost). Unreachable in normal
+  single-hub flow (ledger never deletes a just-debited id). Cheap fix: hub `credit_deny` reply.
 
 ## slot.lua tuning knobs (if revisited)
 
@@ -74,6 +77,8 @@ the score lives on the hub, not the disk.)
 - Gradient: `GRAD_DEEP` / `GRAD_TEAL` and drift rate `tick * 0.05` (`slot.lua`).
 - Layout: viewport at `cv.h * 0.34`, `barH`, bulb spacing (`topLayout` in `slot.lua`).
 - Config: `TOP_NAME`, `SPIN_SIDE`, `SPIN_LEVEL=13` (`slot.lua`).
+- Payout: `STAKE=10`; per-symbol multiplier `cherry 3× · bell 5× · bar 8× · seven 25× (jackpot)`
+  (`slot/slot_pay.lua`). Starting card balance default `100` (`issue`).
 
 ## slot v1 — status (complete)
 
