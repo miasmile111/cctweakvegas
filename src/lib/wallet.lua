@@ -25,6 +25,14 @@ function M._drop(list, id, delta)
   return false
 end
 
+-- classify a credit reply. "ok" = hub applied it; "deny" = hub refused (unknown id — retrying can
+-- never succeed, so do NOT outbox); "queue" = no reply (hub down — outbox it, the win is not lost).
+function M._creditResult(r)
+  if r == nil then return "queue" end
+  if r.kind == "credit_deny" then return "deny" end
+  return "ok"
+end
+
 -- ---- outbox persistence (I/O) ----------------------------------------------
 local function loadOutbox()
   if not fs.exists(OUTBOX) then return {} end
@@ -89,14 +97,29 @@ function M.bet(id, stake)
   return false, r.balance, r.reason
 end
 
+-- fail closed, exactly like bet. `bet` stays the slot's wager-round special case; `debit` is the
+-- honest, game-agnostic withdrawal primitive (the cage today; mp_econ pots + the trading station next).
+function M.debit(id, amount)
+  local r = request({ kind = "debit", id = id, amount = amount },
+                    { debit_ok = true, debit_deny = true })
+  if not r then return false, nil, "timeout" end
+  if r.kind == "debit_ok" then return true, r.balance end
+  return false, r.balance, r.reason
+end
+
 -- guaranteed: on timeout the credit is queued to the outbox and returned false (win not lost).
+-- An explicit credit_deny (unknown id) is NOT queued — it would retry forever. Returns
+-- ok, balance, reason.
 function M.credit(id, delta)
-  local r = request({ kind = "credit", id = id, delta = delta }, { balance = true })
-  if r then return true, r.balance end
+  local r = request({ kind = "credit", id = id, delta = delta },
+                    { balance = true, credit_deny = true })
+  local res = M._creditResult(r)
+  if res == "ok"   then return true, r.balance end
+  if res == "deny" then return false, nil, r.reason end
   local box = loadOutbox()
   M._enqueue(box, id, delta)
   saveOutbox(box)
-  return false
+  return false, nil, "queued"
 end
 
 -- try to bank every queued credit; drop each one the hub acks, keep the rest.
@@ -106,9 +129,11 @@ function M.flush()
   local i = 1
   while i <= #box do
     local item = box[i]
-    local r = request({ kind = "credit", id = item.id, delta = item.delta }, { balance = true })
-    if r then
-      M._drop(box, item.id, item.delta)   -- acked: remove; list shrank, don't advance i
+    local r = request({ kind = "credit", id = item.id, delta = item.delta },
+                      { balance = true, credit_deny = true })
+    local res = M._creditResult(r)
+    if res == "ok" or res == "deny" then
+      M._drop(box, item.id, item.delta)   -- acked (or unbankable): remove; list shrank, don't advance i
       saveOutbox(box)                      -- persist after EACH ack so an interruption mid-pass can
                                            -- never resend an already-credited win (double-credit guard)
     else

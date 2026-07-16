@@ -34,4 +34,10 @@ do
   t.eq(#box, 1, "drop removes only one duplicate")
 end
 
+-- ---- _creditResult: the F2 fix (unknown id must NOT read as acked) --------
+t.eq(W._creditResult(nil), "queue", "no reply (hub down) -> outbox it")
+t.eq(W._creditResult({ kind = "balance", id = "alice", balance = 240 }), "ok", "balance reply -> ok")
+t.eq(W._creditResult({ kind = "credit_deny", id = "ghost", reason = "unknown" }), "deny",
+     "credit_deny -> deny, never queued (retry can never succeed)")
+
 t.done()

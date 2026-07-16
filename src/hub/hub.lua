@@ -132,11 +132,25 @@ local function registrar()
         rednet.send(sender, { kind = "bet_deny", id = msg.id, balance = bal,
                               reason = (bal == nil) and "unknown" or "insufficient" }, PROTO)
       end
+    elseif type(msg) == "table" and msg.kind == "debit"
+           and type(msg.id) == "string" and type(msg.amount) == "number" then
+      local ok, bal = ledger.debit(scores, msg.id, msg.amount)
+      if ok then
+        persistLedger()
+        rednet.send(sender, { kind = "debit_ok", id = msg.id, balance = bal }, PROTO)
+      else
+        rednet.send(sender, { kind = "debit_deny", id = msg.id, balance = bal,
+                              reason = (bal == nil) and "unknown" or "insufficient" }, PROTO)
+      end
     elseif type(msg) == "table" and msg.kind == "credit"
            and type(msg.id) == "string" and type(msg.delta) == "number" then
       local bal = ledger.apply(scores, msg.id, msg.delta)
-      if bal then persistLedger() end
-      rednet.send(sender, { kind = "balance", id = msg.id, balance = bal }, PROTO)
+      if bal then
+        persistLedger()
+        rednet.send(sender, { kind = "balance", id = msg.id, balance = bal }, PROTO)
+      else
+        rednet.send(sender, { kind = "credit_deny", id = msg.id, reason = "unknown" }, PROTO)
+      end
     elseif type(msg) == "table" and msg.kind == "query" and type(msg.id) == "string" then
       rednet.send(sender, { kind = "balance", id = msg.id, balance = ledger.balance(scores, msg.id) }, PROTO)
     elseif idle.isPresenceQuery(msg) then
