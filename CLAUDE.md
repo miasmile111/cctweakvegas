@@ -22,6 +22,12 @@ repo: **`miasmile111/cctweakvegas`** (public). Loop: you write `.lua` into `src/
 from the repo (cache-busted, overwrites — no `wget` delete dance). The in-game copy is a snapshot;
 nothing lands until `update` runs. Exact `install.list` format + first-time setup: `cc-lua` skill.
 
+> **Deploy gotcha — CDN lag.** `raw.githubusercontent.com` (Fastly) edge-caches ~5 min and does
+> **not** reliably honor the `?cb=` cache-buster, so `update` run immediately after a `git push` can
+> fetch a **stale `packages.lua`** — symptoms: a newly-added package reads as `unknown package`, or a
+> package installs an old/short file list (missing a new module). It's not a code bug. Wait ~2–5 min
+> after pushing, then re-run `update`. New-package installs may need a couple of retries.
+
 ## Build workflow — standing authorization
 
 This is a **Minecraft-server hobby project, NOT production** — scope architecture accordingly; favor
