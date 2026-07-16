@@ -40,9 +40,14 @@ drawing back and regenerate faithful Lua — closing the design loop without pro
 1. **Monitor configuration**
    - Authoritative inputs: `cols` × `rows` (what `getSize()` returns in-world). Canvas derives
      `subW = cols·2`, `subH = rows·3`.
-   - Optional: `blocksW` × `blocksH` — used ONLY to draw approximate block-seam guides (even
-     divisions of the canvas), clearly labelled "approximate — verify in-world". Not authoritative;
-     the exact block→cell mapping is unknown (see lesson). Default seams off.
+   - Optional: `blocksW` × `blocksH` — drive (a) block-seam guides (even divisions of the canvas —
+     the seam/bezel *positions* are approximate, verify in-world) and (b) a **"max res"** button that
+     sets cols/rows to the exact terminal size for that block layout at scale 0.5 (the finest). The
+     block→cell count formula IS known (verified from CC:Tweaked `ServerMonitor.rebuild()`):
+     `cells = max(1, round((blocks − 0.3125) / (scale · font/64)))`, font `6` wide / `9` tall,
+     `0.3125 = 2·(RENDER_BORDER 2/16 + RENDER_MARGIN 0.5/16)`, `RENDER_PIXEL_SCALE 1/64`. So the cell
+     count is exact; only the physical bezel *position* between blocks stays approximate. E.g. slot
+     `1×2 @ 0.5 = 15×24`. Default seams off.
    - Sensible presets (e.g. "slot 1×2 @0.5 ≈ 15×21") as convenience buttons; all editable.
    - Guard: clamp cols/rows to a sane range (e.g. 1..200) to keep the buffer bounded.
 

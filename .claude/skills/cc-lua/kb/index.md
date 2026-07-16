@@ -50,6 +50,10 @@ another facet of something already written. Keep this index's catalog in sync (o
 
 ## Catalog
 
+- [[monitor-resolution]] — `monitor-resolution.md` — the foundational model: cell (6×9 px) / subpixel
+  (2×3 teletext, 2 colours) / real-px, `getSize`/`setTextScale`, and the **exact** block-layout→cell
+  formula (from CC:Tweaked `ServerMonitor.rebuild`): `cols = max(1, round((blocksW−0.3125)/(scale·6/64)))`.
+  Slot 1×2 @0.5 = 15×24. Read before any monitor-UI sizing decision. See `docs/monitor-resolution-lesson.html`.
 - [[monitor-ui]] — `monitor-ui.md` — hard-won graphics pitfalls: the "too long without yielding"
   watchdog, fractional-coord `setPixel` crash, palette animation + dark-colours-read-as-black,
   no native clipping, window+`setVisible` flicker-free draw, multi-file re-import traps, analog

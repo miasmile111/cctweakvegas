@@ -361,9 +361,10 @@
   <h2>Smaller scale, more cells, finer canvas</h2>
   <p>The physical monitor is fixed; <code>setTextScale</code> only changes how big each cell is drawn.
     Smaller scale ⇒ more cells fit ⇒ the subpixel canvas gets bigger. The slot runs at
-    <strong>0.5</strong> — the maximum resolution. The exact cell count for a given block arrangement
-    is whatever <code>getSize()</code> returns in-world; slide below to see how it drives the derived
-    canvas and real-pixel dimensions.</p>
+    <strong>0.5</strong> — the maximum resolution. The cell count is <strong>exact</strong>, straight
+    from CC:Tweaked's own formula: <code>cells = max(1, round((blocks − 0.3125) / (scale · font/64)))</code>
+    with font <code>6</code> wide / <code>9</code> tall and <code>0.3125 = 2·(border 2/16 + margin 0.5/16)</code>.
+    So a <strong>1×2</strong> monitor at 0.5 is <strong>15×24</strong> cells. Slide below to watch it change.</p>
 
   <div class="fig">
     <div class="fig-head"><b>Fig.05 — scale → getSize → canvas</b><span>slide the scale · type real cell count</span></div>
@@ -377,17 +378,17 @@
           </label>
         </div>
         <div class="controls">
-          <label class="field">getSize() cols <input type="number" id="scale-cols" value="15" min="1" max="200"></label>
-          <label class="field">rows <input type="number" id="scale-rows" value="21" min="1" max="200"></label>
-          <span class="small">at scale 0.5 — estimate, confirm in-world</span>
+          <label class="field">getSize() cols <input type="number" id="scale-cols" value="15" min="1" max="400"></label>
+          <label class="field">rows <input type="number" id="scale-rows" value="24" min="1" max="400"></label>
+          <span class="small">= 1×2 blocks @ 0.5, <b>exact</b> (CC formula)</span>
         </div>
       </div>
       <div class="readout" id="scale-read">
         <h4>Derived (at current cols×rows)</h4>
         <dl class="kv">
-          <dt>cells</dt><dd id="s-cells">15 × 21</dd>
-          <dt>subpixel canvas</dt><dd id="s-canvas" class="hl">30 × 63</dd>
-          <dt>real pixels</dt><dd id="s-real">90 × 189</dd>
+          <dt>cells</dt><dd id="s-cells">15 × 24</dd>
+          <dt>subpixel canvas</dt><dd id="s-canvas" class="hl">30 × 72</dd>
+          <dt>real pixels</dt><dd id="s-real">90 × 216</dd>
           <dt>vs scale 1.0</dt><dd id="s-vs">~2× finer</dd>
         </dl>
         <p class="small" style="margin:12px 0 0">Halving the scale roughly doubles cells on each axis —
@@ -422,13 +423,13 @@
         </div>
         <div class="controls">
           <label class="field">cols <input type="number" id="slot-cols" value="15" min="8" max="120"></label>
-          <label class="field">rows <input type="number" id="slot-rows" value="21" min="12" max="200"></label>
+          <label class="field">rows <input type="number" id="slot-rows" value="24" min="12" max="200"></label>
         </div>
       </div>
       <div class="readout" id="slot-read">
         <h4>topLayout() — subpixel coords</h4>
         <dl class="kv">
-          <dt>canvas</dt><dd id="sl-canvas">30 × 63</dd>
+          <dt>canvas</dt><dd id="sl-canvas">30 × 72</dd>
           <dt>viewport y</dt><dd id="sl-view" class="hl">—</dd>
           <dt>reels x</dt><dd id="sl-xs">—</dd>
           <dt>top bar y</dt><dd id="sl-topbar">—</dd>
@@ -459,7 +460,8 @@
 <footer class="end">
   cctweaked · monitor reference · glyph 6×9 verified (CraftOS-PC gfxmode + CC font) ·
   teletext 2×3 / 2-colour verified in-world (src/lib/subpixel.lua) ·
-  cell counts read from getSize() — confirm the slot's in-world next session.
+  cell counts exact via CC:Tweaked ServerMonitor.rebuild() formula (blocks + scale); slot 1×2 @0.5 = 15×24.
+  Block-seam bezel positions remain approximate.
 </footer>
 
 <script>
@@ -825,13 +827,12 @@
       var f=fit(cv), ctx=f.ctx, W=f.w, H=f.h; ctx.clearRect(0,0,W,H);
       var ink=tok("--ink-soft"), teal=tok("--teal"), blue=tok("--blue"), grid=tok("--grid"), panel2=tok("--panel-2");
       var scale=parseFloat(range.value);
-      // illustrate a fixed 1x2 block monitor; cell size drawn scales with `scale`
+      // fixed 1x2 block monitor; exact cell count per CC:Tweaked ServerMonitor.rebuild():
+      //   cells = max(1, round((blocks - 0.3125) / (scale * font/64))), font 6w/9h
       var pad=20;
-      // base cells-per-block at scale 1 (illustrative constant for the drawing only)
-      var baseCol=7, baseRow=5;            // ~cells per block @ scale1 (illustrative)
-      var blocksW=1, blocksH=2;
-      var colsAt=Math.max(1, Math.round(baseCol*blocksW/scale));
-      var rowsAt=Math.max(1, Math.round(baseRow*blocksH/scale));
+      var blocksW=1, blocksH=2, sub=2*(2/16+0.5/16);
+      var colsAt=Math.max(1, Math.round((blocksW-sub)/(scale*6/64)));
+      var rowsAt=Math.max(1, Math.round((blocksH-sub)/(scale*9/64)));
       // draw the monitor face with colsAt x rowsAt cells
       var availW=W-2*pad, availH=H-2*pad-24;
       var cw=Math.min(availW/colsAt, availH/rowsAt);
@@ -844,7 +845,7 @@
       ctx.strokeStyle=teal; ctx.lineWidth=2.5; ctx.strokeRect(gx,gy,gw,gh);
       ctx.beginPath(); ctx.moveTo(gx, gy+gh/2); ctx.lineTo(gx+gw, gy+gh/2); ctx.stroke();
       ctx.fillStyle=ink; ctx.font="12px ui-monospace, Consolas, monospace"; ctx.textAlign="center"; ctx.textBaseline="top";
-      ctx.fillText("1×2 block monitor @ scale "+scale.toFixed(1)+"  →  ~"+colsAt+"×"+rowsAt+" cells (illustrative)", W/2, gy+gh+8);
+      ctx.fillText("1×2 block monitor @ scale "+scale.toFixed(1)+"  →  "+colsAt+"×"+rowsAt+" cells (exact, CC formula)", W/2, gy+gh+8);
     }
     function readout(){
       var cols=Math.max(1,parseInt(colsI.value)||1), rows=Math.max(1,parseInt(rowsI.value)||1);
@@ -890,7 +891,7 @@
     }
     function draw(){
       var f=fit(cv), ctx=f.ctx, W=f.w, H=f.h; ctx.clearRect(0,0,W,H);
-      var cols=Math.max(8,parseInt(colsI.value)||15), rows=Math.max(12,parseInt(rowsI.value)||21);
+      var cols=Math.max(8,parseInt(colsI.value)||15), rows=Math.max(12,parseInt(rowsI.value)||24);
       var cw=cols*2, ch=rows*3;             // subpixel canvas
       var L=topLayout(cw,ch);
       // fit canvas into the drawing area, 1 subpixel -> `u` device px
