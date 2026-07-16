@@ -95,9 +95,9 @@ stays small. Two small gateways beat one gateway with two personalities.
    `balance = nil` and is treated as acked, silently dropping it. The cage makes this reachable
    (deposit against a card whose ledger id is gone), so fix it here.
 3. **`pixelfont`** — add a `scale` parameter to `drawGlyph`/`drawText`/`drawCentered`/`textWidth`
-   (each glyph pixel becomes an N×N block; `gap` stays raw subpixels, unscaled) and a **`$`** glyph
-   to `BIG`. A 1× number is 6 subpx tall
-   on a canvas twice the slot's width; the balance is the emotional center of this screen.
+   (each glyph pixel becomes an N×N block; `gap` stays raw subpixels, **unscaled**) and the owner's
+   two `$` glyph tables (see below). A 1× number is 6 subpx tall on a canvas twice the slot's width;
+   the balance is the emotional center of this screen.
 
 ### What this enables (forward-look — do NOT build now)
 
@@ -129,30 +129,57 @@ failure that froze the slot on a card swap. The queue keeps the pump free.
 Per `.claude/skills/cc-lua/kb/monitor-resolution.md`: `cols = round((2 − 0.3125) / (0.5·6/64)) = 36`,
 `rows = round((2 − 0.3125) / (0.5·9/64)) = 24`. Bands use slot's `Rl(row) = (row-1)*3 + 1` helper.
 
+**Owner-approved layout** (`tools/cage-preview.html`, signed off 2026-07-16). The preview is the
+source of truth for every constant; the plan carries them.
+
 ```
-row  1-2   header      native text: "cage1 · ALICE"  |  "INSERT CARD"
-row  3-8   BIG $        pixelfont BIG @2× (8×12 subpx/glyph): $ + up to 6 digits = 62 of 72 subpx
-row  9-10  ══ bar ══    + bulbs
-row 11-18  MATERIALS    4 buttons × 9 cells: ingot sprite + native "IRON" + "$100"
-row 19-20  QTY          [ 1x ] [ 5x ] [ 20x ] — selected = yellow (slot's stake idiom)
-row 21-22  ══ bar ══    + bulbs
-row 23-24  DEPOSIT      full-width button + status line
-           side bulb lanes cols 1 & 36, rows 9–22 — starting below the bar (the corner-bulb fix)
+row  1-2   header      native: player name (col 3) · status right-aligned to col 35
+row  3-7   BIG $        owner's $ glyph @1× (7×14) + digits @2× (8×12): 61 of 72 subpx
+row  8-9   ══ bar ══    red + bulbs
+row 10-17  MATERIALS    4 buttons × 9 cells, black box: ingot sprite (rows 10-12),
+                        native "Withdraw" (13) / "COPPER" (14) / "$25" (16)
+row 18-19  QTY          [ 1x ] [ 5x ] [ 20x ] — selected = yellow (slot's stake idiom)
+row 20-21  ══ bar ══    red + bulbs
+row 22-24  DEPOSIT      full-width, 3 cells tall, STEEL BEVEL (pushed-in on tap)
+           side bulb lanes cols 1 & 36, rows 3-7 extended one bulb up into the header
 ```
 
 - **Palette identity: green↔gold gradient** on slot's existing `GRAD` + `bulb()` machinery. Same
   kit, different money — the floor should read as a district, not a clone.
+- **The delta-tinted counter** (reusable pattern): the balance tints by direction — **gold climbing,
+  pink falling, white at rest**. The tint is the feedback; you read "being paid" / "spending" before
+  you read the digits. **Pink, not red**: stock red is luminance 114 and the gradient's gold band is
+  ~118, so a red number vanishes on half the drift — and a cell holds 2 colours, so no outline can
+  save it. Pink 200 reads as "down" and clears the ground at both ends.
+- **The palette, not screen space, is the scarce resource.** 16 slots, all spoken for: gradient 4
+  (blue/purple/magenta/cyan) · content 10 (white text+bevel-light, orange copper, lightBlue diamond,
+  yellow bulbs+qty-selected+count-up, pink count-down, gray bulbs-off+bevel-dark, lightGray iron+
+  bevel-face, green press-flash, red bars, black panels) · free 2 (lime, brown). Slots are **global
+  to the monitor**, so a station affords *one* bevel ramp shared by all its buttons — which makes a
+  bevel a station's signature rather than decoration.
+- **Bevel ramp = steel** (white 240 / lightGray 153 / gray 76 → +87/−77). The only true ramp in CC's
+  stock 16: the greens (161/132/17) have no highlight, and the reds — plentiful by count — put red at
+  114 and brown at 106, eight points apart, so they have **no shadow**. Steel costs no slots.
+- **No card ⇒ not the kiosk.** Controls aren't drawn at all (drawing them dead lies about what's
+  tappable) and there is **no `$0`** (that reads as "you're broke", not "no card"). The screen shows
+  the rate table instead — the wait is the one moment a player has nothing to do, so it teaches.
 - **6-digit ceiling** at 2× ($999,999). Beyond that the number clips; the fix is a 1× fallback.
   Out of scope now (the slot pays 25× a $100 stake), but named rather than discovered at $1M.
 - `monitor_touch` is diegetic here (settled in slot v3): physical in-world interaction, not a
   terminal GUI. Hit-testing is **cell-space, band-first** — slot's `stakeAt(tx, ty)` pattern.
 
-### UI review gate (owner-set)
+### The `$` glyphs — two sizes, not two scales
 
-After this spec **and** the implementation plan are written, and **before** plan execution: build
-`tools/cage-preview.html` (a live browser preview, `tools/slot-preview.html` style) for owner
-redline. Layout gets right as early as possible, when it is cheapest. Only after sign-off does the
-layout become Lua. This is the golden-standard loop in `kb/monitor-ui-workflow.md`.
+The owner drew **two** `$`: 5×10 (`mockup(3).json`) and 7×14 (`mockup(4).json`). These are separate
+glyphs, **not** one scaled: `scale` doubles pixels (5×10 @2× = a chunky 10×20 of the same drawing),
+whereas the 7×14 carries hand-drawn detail no scaling could produce. Both go in the library as
+`SIGN_SM` / `SIGN_LG`; `scale` stays orthogonal to both. The cage uses **LG at 1×** beside 2× digits:
+14 tall against 12, overshooting a subpixel above and below, which is how a `$` sits against figures.
+
+### UI review gate — CLEARED (2026-07-16)
+
+`tools/cage-preview.html` was built and signed off by the owner before implementation, per the
+golden-standard loop in `kb/monitor-ui-workflow.md`. Layout got right when it was cheapest.
 
 ## Failure behavior
 

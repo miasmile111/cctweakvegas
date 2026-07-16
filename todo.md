@@ -113,8 +113,51 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       canvas-edge cells → `encodeCell` squashed it — see `kb/monitor-ui.md`); selected stake = **yellow**.
     - Parked slot polish: celebration art beyond the bar flash; text colours; **advert screen** (see NEXT).
 
+## → IN FLIGHT: the Cage (diegetic sink) — spec + plan DONE, UI approved, NOT YET BUILT
+
+The `$` exit. A kiosk where a member card's `$` becomes real metal (droppers spitting ingots on the
+floor) and metal becomes `$`. Bidirectional, flat rate, hub-authoritative.
+Spec: `docs/superpowers/specs/2026-07-16-diegetic-sink-cage-design.md`;
+plan: `docs/superpowers/plans/2026-07-16-diegetic-sink-cage.md` (**10 tasks, self-contained for a
+fresh session — start there**). Owner-approved layout: `tools/cage-preview.html` (clickable; it IS
+the source of truth for Tasks 7-9).
+
+- **Rates (flat, symmetric):** copper $25 · iron $100 · gold $250 · diamond $1000. `cage/cage_rates.lua`.
+- **Hardware:** computer + advanced monitor **2×2 @0.5 = 36×24 cells** + disk drive + wired modem +
+  deposit chest + vault chest + 2–3 droppers (each a modem, all sharing ONE redstone line).
+- **Vault fed by deposits** — the metal players cash in IS the metal others cash out. Empty ⇒ deny.
+- **Kiosk, no confirm:** qty (1x/5x/20x) + tap a metal = immediate debit + shower. Spam = overflow.
+- **Core additions that pay forward to `mp_econ`:** `wallet.debit` (the honest debit primitive — an MP
+  pot is "debit each player, credit the winner"; the trading station is the same pair), `credit_deny`
+  (**closes latent F2**), `pixelfont` scale + the owner's two `$` glyphs.
+- **Known MP blocker, named not built:** `card.read()` takes the **first** drive with a disk.
+  Single-card-per-station is baked in; `mp_econ` needs `card.readAll()`/`card.read(drive)`.
+- **Card-session extraction is a rule-of-three call** — `sp_econ` + `cage_econ` are instances 1 and 2;
+  extract `lib/card_session.lua` when `mp_econ` makes three.
+
+### UI patterns settled here (reusable — see also `kb/monitor-ui-workflow.md`)
+
+- **The palette, not screen space, is the scarce resource.** 16 slots, global to the monitor: cage
+  spends 4 on the gradient, 10 on content, 2 free. A station affords **one** bevel ramp shared by all
+  its buttons — which makes a bevel a station's signature, not decoration.
+- **Bevel button** (`drawBevel`, light top/left + dark bottom/right, swapped when pushed). **Steel is
+  the only true ramp in CC's stock 16** (white 240 / lightGray 153 / gray 76 = +87/−77): the greens
+  are 161/132/17 (no highlight) and red 114 / brown 106 are 8 apart (no shadow). Costs no slots.
+  Corner cells see 3 colours and squash — a 2-cell price, accepted.
+- **Delta-tinted counter** — a rolling number tints by direction: **gold up, pink down**, white at
+  rest. The tint is the feedback. **Pink, not red:** stock red is luminance 114 against the gold
+  band's ~118, so a red number vanishes on half the drift, and a cell holds 2 colours so no outline
+  can save it.
+- **`monitor_touch` has no release event** — every "pressed" look is a timed flash (`FLASH_TICKS = 8`).
+- **Two `$` glyphs = two SIZES, not two scales** (`pixelfont.SIGN_SM` 5×10 / `SIGN_LG` 7×14). `scale`
+  doubles pixels; hand-drawn detail beats doubling. Scale stays orthogonal.
+- **Open question for in-world verification:** do server-thread peripheral calls (`chest.list`,
+  `pushItems`) pump the event queue and eat a pending tick timer? tweaked.cc is silent on timing.
+  `cage.lua` re-arms the timer after every touch handler to guarantee liveness regardless.
+
 ## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
 
+0. **Build the cage** (above) — spec + plan + approved UI all done; execution is the next action.
 1. **General multiplayer capabilities** — the core is already SP/MP-agnostic (`lib/ledger·card·wallet`).
    Build `lib/mp_econ` (multi-card pot / interactive wagers) + a first 2–4-player game or MP mode. Own spec.
 2. **Economy bug — floppy-swap freeze (open).** Station *sometimes* freezes (no crash; reboot to clear)
@@ -128,11 +171,12 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
 4. **More minigames** — 1–4 player, monitor / Create-contraption / hybrid. Each its own brainstorm→spec→build.
 
 Parked (each its own spec later):
-- **Trading station** — transfer **M-Bucks between member cards** (players may hold multiple cards);
+- **Trading station** — transfer **`$` between member cards** (players may hold multiple cards);
   hub-mediated (debit sender id, credit receiver id — two id-scoped ledger writes). Diegetic amount +
-  confirm controls. Reuses the core; likely a small new gateway. Do after scoreboards + sink. See `kb/economy.md`.
+  confirm controls. Reuses the core; `wallet.debit` (built for the cage) is already its primitive.
+  See `kb/economy.md`.
 - **Scoreboards** — display-only rednet subscribers rendering standings around the floor.
-- **Diegetic sink** — what M-Bucks are FOR (redstone payout: dispense item / open door / lamp).
+- ~~**Diegetic sink**~~ — **in flight, see the Cage above.**
 - **Multiplayer economy** (`lib/mp_econ`) — multi-card pot / interactive wagers; core already SP/MP-agnostic.
 
 Non-blocking follow-ups from the final review (see the SDD ledger F1/F2):

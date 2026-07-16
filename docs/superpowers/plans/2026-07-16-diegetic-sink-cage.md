@@ -10,10 +10,52 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-16-diegetic-sink-cage-design.md` — read it before Task 1.
 
+---
+
+## Start here (you are a fresh session — read this first)
+
+You are implementing the **cage**, a new station in a CC:Tweaked Minecraft minigame hub. The design
+conversation is over; everything it decided is written down. Nothing is left to your taste — where
+this plan states a choice, it was made with the owner and the reasoning is in the comment beside it.
+**Read, in this order:**
+
+1. **`README.md`** — the project's why (diegetic input, idle-asleep, hub-authoritative economy).
+2. **`CLAUDE.md`** — workflow + the standing build authorization (run the chain end to end, no
+   check-ins; merge to main and push when green).
+3. **The `cc-lua` skill** (`.claude/skills/cc-lua/SKILL.md`) — CraftOS/Lua 5.1 rules. **Mandatory
+   before writing any Lua here.** Then its KB: `kb/monitor-resolution.md`, `kb/monitor-ui.md`,
+   `kb/monitor-ui-workflow.md`, `kb/event-pump-reentrancy.md`.
+4. **`kb/economy.md`** — the ledger/card/wallet economy you are extending. Its "Hard-won lessons"
+   are not optional reading; two of them are load-bearing here.
+5. **`kb/advanced-peripherals.md`** — why the cage uses chests + droppers and *not* the AP Inventory
+   Manager (it binds one player per memory card; that breaks walk-up-and-play).
+6. **The spec** (above), then **`tools/cage-preview.html`** — the owner-approved layout. Tasks 7-9
+   are a transcription of that file's JS. Open it.
+
+**What already exists and works** (do not redesign it): `lib/idle_runner` (deep-sleep/wake; a station
+is just a `play(mon, pres)` + a `<name>_advert`), `lib/subpixel` (the 2-colours-per-cell canvas),
+`lib/pixelfont`, `lib/card` · `lib/wallet` · `lib/ledger` · `lib/sp_econ` (the economy core),
+`hub/hub.lua` (the ledger's sole writer), and `slot/` — **the reference station. `src/slot/slot.lua`
+is the model for `cage.lua`; read it in full before Task 9.**
+
+**Execution:** use `superpowers:subagent-driven-development` (fresh implementer + reviewer per task,
+fix Critical/Important findings, whole-branch review at the end). Tasks are ordered by dependency;
+1-6 are pure logic and I/O, 7-9 are the approved UI, 10 is deploy + docs.
+
+**Three things that will bite you if you skim:**
+- **The Lua canvas is 1-indexed; the preview's JS buffer is 0-indexed.** Every raw JS coordinate
+  gains +1 on the way over. The constants in Task 9 are already converted. (`kb/monitor-ui-workflow.md`
+  calls this "the classic port bug" for a reason.)
+- **A cell holds exactly 2 colours** (`encodeCell`). Art that looks right in a paint buffer can squash
+  on the real monitor. That is what the offline PNG render in Task 9 is for — it is not optional.
+- **Never block the event pump.** No `sleep()` loops in `play()`. A nested `os.pullEvent` (which
+  `wallet.request` and `rednet.lookup` both are) eats the caller's tick timer and freezes the
+  station. This already happened once in-world; see `[[event-pump-reentrancy]]`.
+
 ## Global Constraints
 
 - **Lua 5.1 / CraftOS only.** No `goto`, no integer division `//`, no bitwise operators. Use `table.unpack or unpack`.
-- **Pure modules must not touch CC globals** (`fs`, `rednet`, `peripheral`, `os.pullEvent`) — they run under bare `luajit` in tests. This applies to: `cage_rates`, `cage_vault`, `pixelfont`, `cage_symbols`.
+- **Pure modules must not touch CC globals** (`fs`, `rednet`, `peripheral`, `os.pullEvent`, **and `colors`**) — they run under bare `luajit` in tests and in the offline PNG harness. This applies to: `cage_rates`, `cage_vault`, `pixelfont`, `cage_symbols`. Use **numeric colour literals** in those files, exactly as `src/slot/slot_symbols.lua` does (`local C = { r=16384, y=16, ... }`) — `colors.red` there would break both the tests and the render harness.
 - **Currency is `$`.** Display `$<n>`, never `MB` or `M-Bucks` (retired 2026-07-16).
 - **Header comment on every program:** what it does, how to run it, wiring notes. Project convention.
 - **Rates (exact):** copper_ingot 25 · iron_ingot 100 · gold_ingot 250 · diamond 1000. Flat both directions.
@@ -37,7 +79,7 @@
 
 | File | Responsibility | Pure? |
 | --- | --- | --- |
-| `src/lib/pixelfont.lua` | **Modify** — add `scale` param + `$` glyph | ✅ |
+| `src/lib/pixelfont.lua` | **Modify** — add `scale` param + `SIGN_SM`/`SIGN_LG` `$` glyphs | ✅ |
 | `src/lib/wallet.lua` | **Modify** — add `debit()`, `_creditResult()`, handle `credit_deny` | partly |
 | `src/hub/hub.lua` | **Modify** — handle `debit`, reply `credit_deny` | ✗ |
 | `src/lib/cage_econ.lua` | **Create** — card session + hub debit/credit gateway | ✗ |
@@ -55,7 +97,7 @@
 
 ---
 
-### Task 1: pixelfont — `scale` parameter + `$` glyph
+### Task 1: pixelfont — `scale` parameter + the owner's two `$` glyphs
 
 **Files:**
 - Modify: `src/lib/pixelfont.lua`
@@ -63,23 +105,31 @@
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `M.textWidth(font, str, gap, scale) -> number` · `M.drawGlyph(cv, font, ch, x, y, color, scale)` · `M.drawText(cv, font, str, x, y, color, gap, scale)` · `M.drawCentered(cv, font, str, y, color, gap, scale)` · `M.BIG["$"]` (4×6). **`scale` defaults to 1 and `gap` keeps its existing default of 1 — every existing slot.lua call site must behave identically.** At `scale = s`, each glyph pixel becomes an `s × s` block; a BIG glyph is `4s` wide, `6s` tall; `gap` is in **subpixels, not scaled**.
+- Produces: `M.textWidth(font, str, gap, scale) -> number` · `M.drawGlyph(cv, font, ch, x, y, color, scale)` · `M.drawText(cv, font, str, x, y, color, gap, scale)` · `M.drawCentered(cv, font, str, y, color, gap, scale)` · `M.SIGN_SM` (`$` 5×10) · `M.SIGN_LG` (`$` 7×14). **`scale` defaults to 1 and `gap` keeps its existing default of 1 — every existing slot.lua call site must behave identically.** At `scale = s`, each glyph pixel becomes an `s × s` block; a BIG glyph is `4s` wide, `6s` tall; `gap` is in **subpixels, not scaled**.
+
+**The two `$` are two SIZES, not two scales — do not "simplify" them into one.** `scale` doubles pixels (`SIGN_SM` at 2× is a chunky 10×20 of the same drawing); `SIGN_LG` is separately hand-drawn with detail no scaling produces. They are owner artwork (`docs/mockups/`, from `mockup(3).json` / `mockup(4).json`) — reproduce the bitmaps below **exactly, pixel for pixel**. They are not yours to tidy.
 
 - [ ] **Step 1: Write the failing tests**
 
 Append to `test/test_pixelfont.lua` (keep the existing cases; `t.done()` must remain last):
 
 ```lua
--- ---- scale + $ (cage) ----------------------------------------------------
-t.ok(P.BIG["$"] ~= nil, "BIG has a $ glyph")
-t.eq(#P.BIG["$"], 6, "$ is 6 rows tall")
-t.eq(#P.BIG["$"][1], 4, "$ is 4 px wide")
+-- ---- scale + the $ glyphs (cage) -----------------------------------------
+t.ok(P.SIGN_SM["$"] ~= nil, "SIGN_SM has a $")
+t.eq(#P.SIGN_SM["$"], 10, "SIGN_SM $ is 10 rows tall")
+t.eq(#P.SIGN_SM["$"][1], 5, "SIGN_SM $ is 5 px wide")
+t.ok(P.SIGN_LG["$"] ~= nil, "SIGN_LG has a $")
+t.eq(#P.SIGN_LG["$"], 14, "SIGN_LG $ is 14 rows tall")
+t.eq(#P.SIGN_LG["$"][1], 7, "SIGN_LG $ is 7 px wide")
 
 -- textWidth: scale multiplies glyph width, gap is NOT scaled
 t.eq(P.textWidth(P.BIG, "8", 1, 1), 4, "one BIG digit @1x = 4")
 t.eq(P.textWidth(P.BIG, "8", 1, 2), 8, "one BIG digit @2x = 8")
 t.eq(P.textWidth(P.BIG, "88", 1, 2), 17, "two BIG digits @2x = 8+1+8")
-t.eq(P.textWidth(P.BIG, "$123456", 1, 2), 62, "$ + 6 digits @2x = 7*8 + 6*1 = 62 (fits 72)")
+t.eq(P.textWidth(P.BIG, "123456", 1, 2), 53, "6 digits @2x = 6*8 + 5*1 = 53")
+-- the cage's balance line: SIGN_LG(7) + gap(1) + 6 digits @2x(53) = 61, fits the 72-wide canvas
+t.eq(P.textWidth(P.SIGN_LG, "$", 1, 1) + 1 + P.textWidth(P.BIG, "123456", 1, 2), 61,
+     "$ + 6 digits = 61 of 72 subpx")
 -- default scale is 1 (back-compat with slot.lua call sites)
 t.eq(P.textWidth(P.BIG, "88", 1), 9, "omitted scale = 1x")
 t.eq(P.textWidth(P.WIN, "WIN:", 1), 16, "WIN: unchanged at 16")
@@ -105,14 +155,25 @@ t.eq(cv2.px["1,7"], 7, "@2x centered starts at x=7")
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `luajit test/test_pixelfont.lua`
-Expected: FAIL — `BIG has a $ glyph` (expected `true`, actual `false`) and the scale width cases.
+Expected: FAIL — `attempt to index field 'SIGN_SM' (a nil value)`.
 
 - [ ] **Step 3: Implement**
 
-Add the `$` glyph to `M.BIG` in `src/lib/pixelfont.lua` (after the `["9"]` line, matching the slashed style):
+Add the two `$` tables to `src/lib/pixelfont.lua` (after `M.BIG`). Copy the bitmaps **exactly**:
 
 ```lua
-  ["$"] = { ".##.", "###.", ".##.", "..##", "###.", ".##." },
+-- The owner's hand-drawn $ glyphs — TWO SIZES, NOT two scales. `scale` doubles pixels; SIGN_LG is
+-- separately drawn with detail a scaled SIGN_SM could never have. Keep both; scale is orthogonal.
+--   SIGN_SM 5x10 (mockup(3).json) — pairs with 1x digits.
+--   SIGN_LG 7x14 (mockup(4).json) — thicker, stem overshooting. Pairs with BIG @2x (12 tall):
+--     14 vs 12 overshoots a subpixel above and below, which is how a $ sits against figures.
+M.SIGN_SM = {
+  ["$"] = { "..#..", ".###.", "#.#.#", "#.#..", ".##..", "..##.", "..#.#", "#.#.#", ".###.", "..#.." },
+}
+M.SIGN_LG = {
+  ["$"] = { "...#...", "...#...", "..###..", ".#####.", "##.#.#.", "##.#...", ".####..",
+            "..####.", "...#.##", "##.#.##", ".#####.", "..###..", "...#...", "...#..." },
+}
 ```
 
 Replace `textWidth`, `drawGlyph`, `drawText`, `drawCentered` with the scale-aware versions:
@@ -173,7 +234,7 @@ Expected: both test files print `N passed, 0 failed`, then `SYNTAX_OK`.
 
 ```bash
 git add src/lib/pixelfont.lua test/test_pixelfont.lua
-git commit -m "feat(pixelfont): scale param + \$ glyph for the cage's big balance"
+git commit -m "feat(pixelfont): scale param + the owner's two \$ glyphs"
 ```
 
 ---
@@ -889,7 +950,7 @@ git commit -m "feat(cage): peripheral I/O — chests, droppers, shared redstone 
 
 ---
 
-> **STOP — the pre-execution gate applies from here.** Tasks 7, 8 and 9 encode layout. Do not start them until `tools/cage-preview.html` exists and the owner has approved it. Every geometry constant below marked `<from preview>` is filled in **from the approved preview**, not invented.
+> **UI gate CLEARED (2026-07-16).** `tools/cage-preview.html` was built and signed off by the owner. Every constant in Tasks 7-9 below is transcribed from that approved preview — **it is the source of truth, and it is in the repo. Open it and read the JS before writing the Lua.** If a number here and a number there disagree, the preview wins; fix the plan.
 
 ---
 
@@ -900,13 +961,53 @@ git commit -m "feat(cage): peripheral I/O — chests, droppers, shared redstone 
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `M.SPRITES` — keyed by denom `key` (`copper`/`iron`/`gold`/`diamond`), each a sprite in the **`slot_symbols` shape**: `{ w = n, h = n, px = { <row-major colors, 0/nil = transparent> } }`. Drawn with `subpixel`'s `Canvas:drawSprite(x, y, sprite)`.
+- Produces: `M.SPRITES` — keyed by denom `key` (`copper`/`iron`/`gold`/`diamond`), each a sprite in the **`slot_symbols` shape**: `{ w = 8, h = 9, px = { <row-major colors, 0/nil = transparent> } }`. Drawn with `subpixel`'s `Canvas:drawSprite(x, y, sprite)`.
 
-**Read `src/slot/slot_symbols.lua` first and match its shape exactly** — same table layout, same palette-constant idiom, same comment style. Sprite dimensions come from the approved preview `<from preview>`.
+**Read `src/slot/slot_symbols.lua` first and match its shape exactly** — same table layout, same palette-constant idiom, same comment style. Sprites are **8×9 subpixels = 4×3 cells**, the project's standard symbol size.
 
 - [ ] **Step 1: Implement**
 
-Create `src/cage/cage_symbols.lua` mirroring `slot_symbols.lua`'s structure: a header comment (what it is, that it's pure, the sprite shape), local colour constants, then `M.SPRITES` with one entry per denom key. Sprite art + dimensions: `<from preview>`.
+Create `src/cage/cage_symbols.lua`:
+
+```lua
+-- cage_symbols.lua — the cage's metals as subpixel sprite data (0 = transparent). 8x9 = 4x3 cells,
+-- the project's standard symbol size (see slot_symbols, whose idiom this copies).
+--
+-- Colours are NUMERIC LITERALS, not colors.* — exactly as slot_symbols does it — so this module
+-- loads under bare luajit for the offline PNG render harness and the unit tests. Do not "improve"
+-- them into colors.orange; that breaks the harness.
+--
+-- ONE COLOUR PER SPRITE, deliberately. A sprite pixel plus the panel fill behind it is already the
+-- 2 colours a cell can hold; a highlight would be a 3rd and encodeCell would eat it (see
+-- [[monitor-ui]]). These read as flat metal silhouettes because that is what the hardware allows.
+local W, H = 8, 9
+local ORANGE, LIGHT_GRAY, YELLOW, LIGHT_BLUE = 2, 256, 16, 8   -- colours.orange/lightGray/yellow/lightBlue
+
+local INGOT = { "________", "__####__", "_######_", "########",
+                "########", "########", "_######_", "________", "________" }
+local GEM   = { "________", "__####__", "_######_", "########",
+                "_######_", "__####__", "___##___", "________", "________" }
+
+-- build a single-colour sprite from H strings of W chars: "#" = on, anything else = transparent
+local function make(rows, color)
+  local px = {}
+  for y = 1, H do
+    local line = rows[y]
+    for x = 1, W do px[(y - 1) * W + x] = (line:sub(x, x) == "#") and color or 0 end
+  end
+  return { w = W, h = H, px = px }
+end
+
+local M = {}
+M.SPRITES = {
+  copper  = make(INGOT, ORANGE),
+  iron    = make(INGOT, LIGHT_GRAY),
+  gold    = make(INGOT, YELLOW),
+  diamond = make(GEM,   LIGHT_BLUE),
+}
+
+return M
+```
 
 - [ ] **Step 2: Syntax check**
 
@@ -931,11 +1032,26 @@ git commit -m "feat(cage): ingot sprites"
 - Consumes: nothing (may `require("subpixel")` / `require("pixelfont")`).
 - Produces: `M.draw(mon)` — the **exact** contract `idle_runner` requires (it calls `require(cfg.name .. "_advert")` then `advert.draw(mon)`).
 
-**Read `src/slot/slot_advert.lua` first and match it.** Drawn **once** on entering deep sleep — it must be static and cost nothing (core principle: idle = truly asleep). Content: the cage's face — the green↔gold identity, "CASH OUT" / the rate table. Layout `<from preview>`.
+**Read `src/slot/slot_advert.lua` first and match it.** Drawn **once** on entering deep sleep — it must be static and cost nothing (core principle: idle = truly asleep). No animation, no loop, no palette drift: a single draw and return.
+
+Content — the cage's face. Reuse the preview's **no-card screen** as the model (it is the same job: someone is looking at the machine and does not yet have money in it):
+
+```
+row  5   "THE CAGE"            centered, native
+row  8-9 red bar
+row 12   "METAL IN - CASH OUT" centered, native
+row 14-17  the rate table, native, col 12:  "COPPER      $25"
+                                            "IRON       $100"
+                                            "GOLD       $250"
+                                            "DIAMOND   $1000"
+row 20-21 red bar
+```
+
+Static gradient: since nothing animates here, **do not** repaint the `GRAD` slots — draw the bands in ordinary palette colours (`colors.green` / `colors.gray` / `colors.black` to taste) or a flat ground. Repainting the palette and then returning would leave the slots wrong for whatever runs next.
 
 - [ ] **Step 1: Implement**
 
-Create `src/cage/cage_advert.lua` following `slot_advert.lua`'s structure and the approved preview's idle screen.
+Create `src/cage/cage_advert.lua` following `slot_advert.lua`'s structure and the layout above.
 
 - [ ] **Step 2: Syntax check**
 
@@ -960,7 +1076,11 @@ git commit -m "feat(cage): idle advert screen"
 - Consumes: `idle_runner` (`run{name, monitor, zone, play}`), `subpixel`, `pixelfont` (Task 1), `cage_econ` (Task 5), `cage_rates` (Task 3), `cage_vault` (Task 4), `cage_hw` (Task 6), `cage_symbols` (Task 7).
 - Produces: the station entry point. `play(mon, pres) -> "sleep" | "quit"`.
 
-**Read `src/slot/slot.lua` in full first.** This file is deliberately its sibling: same `Rl(row)` band helper, same `GRAD` palette machinery + `restorePalette()` discipline, same `bulb()`, same cell-space band-first touch hit-testing, same `topWin.setVisible(false/true)` wrap around native text, same `pres`/`onEvent` handling. Differences: green↔gold gradient, no reels, and the tick-driven shower.
+**Read `src/slot/slot.lua` in full first, and open `tools/cage-preview.html` beside it** — the preview's JS *is* this file's draw code, already reviewed pixel by pixel with the owner. Port it; don't reinvent it.
+
+⚠ **The classic port bug (`kb/monitor-ui-workflow.md` step 4): the preview's JS buffer is 0-indexed, the Lua canvas is 1-indexed.** JS `R(row) = (row-1)*3` ↔ Lua `Rl(row) = (row-1)*3+1`. Any JS expression `R(n)+k` ports unchanged as `Rl(n)+k`, but every **raw** JS coordinate gains +1. The transcribed constants below are already converted — use them as given.
+
+This file is deliberately slot.lua's sibling: same `Rl(row)` band helper, same `GRAD` palette machinery + `restorePalette()` discipline, same `bulb()`, same cell-space band-first touch hit-testing, same `topWin.setVisible(false/true)` wrap around native text, same `pres`/`onEvent` handling. Differences: green↔gold gradient, no reels, and the tick-driven shower.
 
 **Structure:**
 
@@ -971,11 +1091,101 @@ git commit -m "feat(cage): idle advert screen"
                  droppers = { "minecraft:dropper_0", "minecraft:dropper_1", "minecraft:dropper_2" },
                  side = "back", monitor = nil, zone = "all" }
    ```
-3. **Layout** — `topLayout()` returning the bands, using `Rl(row) = (row - 1) * 3 + 1`. Band rows `<from preview>`; the spec's starting point is header 1-2, BIG `$` 3-8, bar 9-10, materials 11-18, qty 19-20, bar 21-22, deposit 23-24, side bulb lanes cols 1 & 36 rows 9-22.
-4. **Balance count-up/down** — reuse slot's easing shape exactly, but signed so it works in both directions:
+3. **Palette** — 16 slots, all accounted for. **The palette, not screen space, is the scarce resource.**
    ```lua
+   -- gradient (repainted every tick — NOTHING else may draw in these)
+   local GRAD = { colors.blue, colors.purple, colors.magenta, colors.cyan }   -- 4 bands
+   local GRAD_DEEP = { 0.00, 0.28, 0.10 }   -- deep casino-felt green
+   local GRAD_GOLD = { 0.62, 0.46, 0.06 }   -- money gold
+   -- content: white text + bevel light · orange copper · lightBlue diamond · yellow bulbs/qty-sel/
+   -- count-up · pink count-down · gray bulbs-off + bevel dark · lightGray iron + bevel face ·
+   -- green press-flash · red bars · black panels.      FREE: lime, brown.
+   local WHITE, YELLOW, PINK, GRAY, LIGHT_GRAY = colors.white, colors.yellow, colors.pink, colors.gray, colors.lightGray
+   local GREEN, RED, BLACK = colors.green, colors.red, colors.black
+   ```
+   `updateGradient(phase)` / `restorePalette()` / `gradOrig` exactly as `slot.lua` does them, with `GRAD_GOLD` in place of `GRAD_TEAL`. Called as `updateGradient(tick * 0.05)`.
+4. **Layout** — transcribed from the approved preview:
+   ```lua
+   local function Rl(row) return (row - 1) * 3 + 1 end
+
+   local DENOM_COL, DENOM_WC = { 1, 10, 19, 28 }, 9    -- 4 metal buttons, 9 cells each = 36
+   local QTY_COL,   QTY_WC   = { 1, 13, 25 },     12   -- 3 qty buttons, 12 cells each = 36
+
+   local function topLayout()
+     return {
+       balY    = Rl(3) + 1,                                  -- big $ — rows 3-7
+       topBarY = Rl(8),  topBarH = 6,                        -- red bar rows 8-9
+       denomY  = Rl(10), denomH  = (Rl(17) + 2) - Rl(10) + 1, -- metals rows 10-17 (24 subpx)
+       symY    = Rl(10) + 1,                                 -- sprite rows 10-12, clearing row 13
+       qtyY    = Rl(18), qtyH = 6,                           -- qty rows 18-19
+       botBarY = Rl(20), botBarH = 6,                        -- red bar rows 20-21
+       depY    = Rl(22), depH = 9,                           -- DEPOSIT rows 22-24 (3 cells)
+       sideTop = Rl(3) - 4, sideBot = Rl(7) + 2,             -- bulb lanes, one bulb up into the header
+     }
+   end
+   ```
+   Subpixel x of cell column `c` is `(c-1)*2 + 1`. The per-element geometry (already +1 converted):
+   ```lua
+   -- gradient: bandH = math.ceil(cv.h / #GRAD) = 18  -> exactly 6 cell rows per band, no straddle
+   cv:fillRect(1, 1 + (b - 1) * bandH, cv.w, bandH, GRAD[b])
+   -- metal black box i  (the 1-subpixel left inset is intentional — it is what the owner approved)
+   cv:fillRect((DENOM_COL[i] - 1) * 2 + 2, L.denomY, DENOM_WC * 2 - 2, L.denomH, lit and GREEN or BLACK)
+   -- metal sprite i (8 wide, centred in the 18-subpixel button)
+   cv:drawSprite((DENOM_COL[i] - 1) * 2 + 6, L.symY, sym.SPRITES[rates.DENOMS[i].key])
+   -- qty button i
+   cv:fillRect((QTY_COL[i] - 1) * 2 + 1, L.qtyY, QTY_WC * 2, L.qtyH, (i == qtyIdx) and YELLOW or GRAY)
+   -- DEPOSIT: steel bevel across the full width
+   drawBevel(cv, 1, L.depY, cv.w, L.depH, LIGHT_GRAY, WHITE, GRAY, tick < depUntil)
+   -- bars + bulbs (slot.lua's exact loops)
+   cv:fillRect(1, L.topBarY, cv.w, L.topBarH, barCol)   -- barCol = flashing and YELLOW or RED
+   cv:fillRect(1, L.botBarY, cv.w, L.botBarH, barCol)
+   for x = 6, cv.w - 2, 4 do
+     bulb(cv, x, L.topBarY + 2, math.floor(x / 4), tick)
+     bulb(cv, x, L.botBarY + 2, math.floor(x / 4), tick)
+   end
+   for y = L.sideTop, L.sideBot, 4 do
+     bulb(cv, 1, y, math.floor(y / 4), tick); bulb(cv, cv.w - 1, y, math.floor(y / 4), tick)
+   end
+   ```
+5. **The bevel** (reusable — this is the floor's "fancy button"):
+   ```lua
+   -- A bevelled button: 1-subpixel light/dark edges around a face; `down` swaps them (pushed in).
+   -- Steel (white 240 / lightGray 153 / gray 76 = +87/-77) is the ONLY true 3-step ramp in CC's
+   -- stock 16 colours: the greens are 161/132/17 (no highlight) and red 114 / brown 106 are eight
+   -- points apart (no shadow). Costs no slots. The bottom-left and top-right CORNER cells see both
+   -- edge colours plus the face — 3 colours, so encodeCell squashes them. Two cells, accepted.
+   local function drawBevel(cv, x, y, w, h, face, light, dark, down)
+     local tl, br = light, dark
+     if down then tl, br = dark, light end
+     cv:fillRect(x, y, w, h, face)
+     cv:fillRect(x, y, w, 1, tl); cv:fillRect(x, y, 1, h, tl)
+     cv:fillRect(x, y + h - 1, w, 1, br); cv:fillRect(x + w - 1, y, 1, h, br)
+   end
+   ```
+6. **The money** — the owner's `$` at 1× beside 2× digits, and the **delta-tinted counter**:
+   ```lua
+   local SIGN_W, SIGN_H, BIG_H = 7, 14, 12   -- SIGN_LG is 7x14; BIG @2x is 12 tall
+
+   -- centred as a UNIT. The $ is TALLER than the figures, so it starts a subpixel ABOVE them and
+   -- overshoots equally below — the negative offset is deliberate, not an off-by-one.
+   local function drawBalance(cv, y, digits, color)
+     local total = SIGN_W + 1 + font.textWidth(font.BIG, digits, 1, 2)
+     local x = math.floor((cv.w - total) / 2) + 1
+     font.drawGlyph(cv, font.SIGN_LG, "$", x, y - math.floor((SIGN_H - BIG_H) / 2), color, 1)
+     font.drawText(cv, font.BIG, digits, x + SIGN_W + 1, y, color, 1, 2)
+   end
+
+   -- The tint IS the feedback: you read "being paid" / "spending" before you read the digits.
+   -- PINK, not red: stock red is luminance 114 and the gradient's gold band is ~118, so a red
+   -- number vanishes on half the drift — and a cell holds 2 colours, so no outline can save it.
+   local function tintFor(disp, target)
+     if disp < target then return YELLOW end   -- climbing: gold
+     if disp > target then return PINK end     -- falling
+     return WHITE                              -- at rest
+   end
+
    -- dispBal eases toward the real balance: UP on a deposit, DOWN as the droppers empty.
-   -- Same ~24-frame ramp as the slot's win count-up (slot.lua's `result` state).
+   -- Same ~24-frame ramp as the slot's win count-up (slot.lua's `result` state), but signed.
    local function easeToward(cur, target)
      if cur == target then return cur end
      local step = math.max(1, math.ceil(math.abs(target - cur) / 24))
@@ -983,7 +1193,8 @@ git commit -m "feat(cage): idle advert screen"
      return math.max(target, cur - step)
    end
    ```
-5. **The shower** — tick-driven, never blocking:
+   Drawn as `drawBalance(cv, L.balY, tostring(math.floor(dispBal)), tintFor(dispBal, econ.balance or 0))`.
+7. **The shower** — tick-driven, never blocking:
    ```lua
    -- loads[i] = items dropper i still owes the floor. Each tick: one pulse, every non-empty
    -- dropper spits one item. Taps ADD to loads mid-shower, so bursts overlap and spamming
@@ -991,7 +1202,8 @@ git commit -m "feat(cage): idle advert screen"
    -- events — the exact freeze from [[event-pump-reentrancy]].
    ```
    Per tick: `if vault.anyLoaded(loads) then loads = vault.pulseLoads(loads); hw.pulse() end`
-6. **Withdraw (a material tap)** — the ordering invariant, in this exact order:
+   The bars flash yellow while `vault.anyLoaded(loads)` — that is the cash-machine moment.
+8. **Withdraw (a material tap)** — the ordering invariant, in this exact order:
    ```lua
    -- `loads` and `nextDropper` are play()-locals: loads[i] = items dropper i still owes the floor,
    -- nextDropper = where the next tap's round-robin starts (so consecutive taps stay even).
@@ -1012,21 +1224,78 @@ git commit -m "feat(cage): idle advert screen"
    end
    ```
    **Reviewer note:** `loads` is fed from `loadedPer` — what actually reached each dropper — never from `qty`. Pulsing for items that were never loaded would drain the counter against empty droppers and desync the count-down from the metal on the floor.
-7. **Deposit (the DEPOSIT tap)** — `local total, moves, ignored = vault.valueListing(hw.depositList(), rates)`; if `total == 0` set `econ.msg = "NOTHING TO DEPOSIT"` and stop; else `hw.sweepToVault(moves)` then `econ.deposit(total)` → the big number counts up. (Junk is never in `moves`, so it stays put.)
-8. **Touch hit-testing** — cell-space, band-first, slot's `stakeAt` pattern; returns nil on a miss. Bands `<from preview>`:
-   ```lua
-   -- map a monitor touch (cell col,row) to an action, or nil for a miss
-   local function hitTest(tx, ty)   -- -> "qty", n | "denom", n | "deposit" | nil
-   ```
-9. **Wake reset** — `qtyIdx = 1` on entry to `play()` (spec: qty resets to 1x on wake).
-10. **Registration tail**:
+9. **Deposit (the DEPOSIT tap)** — `local total, moves, ignored = vault.valueListing(hw.depositList(), rates)`; if `total == 0` raise the **toast** (below) and stop; else `hw.sweepToVault(moves)` then `econ.deposit(total)` → the big number counts up. (Junk is never in `moves`, so it stays put.)
+10. **Native text overlays** — drawn after `cv:render()`, inside the `topWin.setVisible(false/true)` wrap, exactly as `slot.lua` does. Native text is **cell-locked** and **not** subject to `encodeCell`; set each string's background to the fill beneath it or it will box.
+    ```lua
+    -- the gradient's 4 bands are 18 subpx = exactly 6 cell rows each, so a cell never straddles two
+    local function bandAt(row) return GRAD[math.ceil(row / 6)] end
+    -- centre `text` within a cell-column span, slot.lua's stake-label idiom
+    local function writeIn(text, row, colStart, widthCells, fg, bg) ... end
+    ```
+    | element | row | col | bg |
+    | --- | --- | --- | --- |
+    | player name | 2 | 3 (clears the bulb at col 1) | `bandAt(2)` |
+    | status (`HUB OFFLINE` / `NEED $2000` / `VAULT: 3 IRON` / `PAYING n`) | 2 | `36 - #status` (ends col 35, clearing the right bulb) | `bandAt(2)` |
+    | `Withdraw` | 13 | centred in `DENOM_COL[i]+1`, width 9 | `BLACK`, or `GREEN` while lit |
+    | metal name (`COPPER`…) | 14 | centred in `DENOM_COL[i]+1`, width 9 | same |
+    | price (`$25`…) | 16 | centred in `DENOM_COL[i]+nudge`, width 9, **`nudge = 1` for iron and gold only** (i = 2, 3) | same |
+    | qty (`1x`/`5x`/`20x`) | 18 | centred in `QTY_COL[i]`, width 12 | `YELLOW` selected / `GRAY` |
+    | `DEPOSIT` | 23 | centred on 36 → col 15 | `LIGHT_GRAY` (the steel face), fg `BLACK` |
+
+    Copy rules, settled with the owner: the verb is **`Withdraw`, mixed case** — the metal is what you're picking, so the metal is the only thing SHOUTED. `Withdraw` is 8 chars in a 9-cell button: **exactly one cell of slack, and `+1` uses it.** Do not nudge further — at +2 the label spills onto the next button and DIAMOND's runs off a 36-column screen.
+11. **No card ⇒ not the kiosk.** Draw gradient + bars + bulbs, then **return early** — no metals, no qty, no DEPOSIT, and **no big `$`**. Controls drawn dead lie about what is tappable, and `$0` reads as "you're broke" rather than "no card". Instead the screen teaches the rates, which is the one moment the player has nothing to do:
+    | element | row | col |
+    | --- | --- | --- |
+    | `INSERT YOUR CARD` | 5 | centred (in the money band — where the money will be) |
+    | `METAL IN - CASH OUT` | 12 | centred |
+    | rate rows, `("%-9s%5s"):format(label, "$"..value)` | 14, 15, 16, 17 | 12 |
+12. **The empty-box toast** — DEPOSIT tapped with nothing of value in the chest is the ONE case where the player needs *teaching*, not an error. Say where the items go; never "invalid". 2 seconds (`TOAST_TICKS = 40`), and it **covers the metals on purpose**: the answer to "why did nothing happen" should be the only thing on screen.
+    ```lua
+    -- panel rows 12-16, white 1px border on black
+    cv:fillRect(3, Rl(12), cv.w - 4, (Rl(16) + 2) - Rl(12) + 1, BLACK)   -- x=3, w=68, h=15
+    cv:fillRect(3, Rl(12), cv.w - 4, 1, WHITE)          -- top
+    cv:fillRect(3, Rl(16) + 2, cv.w - 4, 1, WHITE)      -- bottom
+    cv:fillRect(3, Rl(12), 1, 15, WHITE)                -- left
+    cv:fillRect(cv.w - 3, Rl(12), 1, 15, WHITE)         -- right
+    ```
+    Native text on it, bg `BLACK`: `PLACE YOUR DEPOSIT` centred row 13, `IN THE DEPOSIT BOX` centred row 15.
+13. **Press feedback** — `FLASH_TICKS = 8` (~0.4s). A tapped metal flashes **`GREEN`** (the money-moved signal) with its labels flipped to dark ink; DEPOSIT's bevel goes **pushed-in**. `monitor_touch` has **no release event**, so both are timed flashes, not mouse-ups. A *denied* withdraw does **not** flash — green means money moved.
+14. **Touch hit-testing** — cell-space, band-first, slot's `stakeAt` pattern; returns nil on a miss:
+    ```lua
+    -- map a monitor touch (cell col, row) to an action, or nil for a miss
+    local function hitTest(tx, ty)   -- -> "deposit" | "qty", i | "denom", i | nil
+      if ty >= 22 then return "deposit" end                        -- rows 22-24
+      if ty >= 18 and ty <= 19 then                                -- qty rows 18-19
+        for i = 1, #QTY_COL do
+          if tx >= QTY_COL[i] and tx < QTY_COL[i] + QTY_WC then return "qty", i end
+        end
+        return nil
+      end
+      if ty >= 10 and ty <= 17 then                                -- metals rows 10-17
+        for i = 1, #DENOM_COL do
+          if tx >= DENOM_COL[i] and tx < DENOM_COL[i] + DENOM_WC then return "denom", i end
+        end
+        return nil
+      end
+      return nil
+    end
+    ```
+    `monitor_touch` event args: `ev[2] = side, ev[3] = x (col), ev[4] = y (row)`. Ignore touches entirely when `econ.player == nil` — the controls aren't on screen.
+15. **⚠ Re-arm the tick timer after any handler that touches peripherals or rednet.** A `monitor_touch` handler runs `chest.list()` / `pushItems` / `wallet.debit` — server-thread and rednet round-trips. **The docs do not say whether a server-thread peripheral call pumps the event queue while it waits** (tweaked.cc's inventory page is silent on timing entirely), and if it does it can swallow the pending tick timer and stall the loop forever. That is exactly the class of bug that froze the slot on a card swap and is *still open* as the floppy-swap freeze. Don't gamble on it — guarantee liveness:
+    ```lua
+    -- after handling a touch (withdraw/deposit/qty), before looping:
+    os.cancelTimer(timer); timer = os.startTimer(TICK)
+    ```
+    Costs one timer per tap; removes a whole failure class. **Flag for in-world verification:** does a tap during a big sweep drop the tick?
+16. **Wake reset** — `qtyIdx = 1` on entry to `play()` (spec: qty resets to 1x on wake).
+17. **Registration tail**:
     ```lua
     require("idle_runner").run{
       name = "cage", monitor = mon, zone = CFG.zone, play = play,
     }
     ```
     **No `wake` key** — the cage has no lever; hub presence wakes it (`idle_runner`'s `wake` is optional).
-11. **`restorePalette()` before EVERY return from `play()`** — both the `"sleep"` and `"quit"` paths, exactly as `slot.lua` does. Forgetting one leaves the monitor's palette wrecked for the next program.
+18. **`restorePalette()` before EVERY return from `play()`** — both the `"sleep"` and `"quit"` paths, exactly as `slot.lua` does. Forgetting one leaves the monitor's palette wrecked for the next program.
 
 - [ ] **Step 1: Implement**
 
@@ -1039,8 +1308,16 @@ Expected: `SYNTAX_OK`.
 
 - [ ] **Step 3: Offline PNG render verify**
 
-Per `kb/monitor-ui-workflow.md`: render the subpixel layer to a PNG (the sim reuses the real `subpixel.lua` + `cage_symbols`) and compare against the approved preview. This catches `encodeCell`'s 2-colours-per-cell truth — the edge-straddling bulb lesson (`kb/monitor-ui.md`) — before anything deploys.
-Expected: the render matches the approved layout; no squashed art at canvas-edge cells.
+Per `kb/monitor-ui-workflow.md` step 5: render the real subpixel layer to a PNG **without the game** — a luajit harness that `require`s the actual `subpixel.lua` + `pixelfont.lua` + `cage_symbols.lua`, calls the draw code into a canvas backed by a stub target (`test/stub_target.lua` is the existing one), dumps `cv.buf`, and a Python/PIL script colours it up. This caught real bugs on slot v3 (art overlapping a bar, a stray corner bulb, off-by-ones) with **zero** deploy cycles.
+
+Compare against `tools/cage-preview.html` side by side. Check specifically:
+- the metals band (sprites rows 10-12, `Withdraw` clear of them at 13),
+- the bulb lanes (cols 1 & 36 — the leftmost bar bulb starting at `x = 6` is the fix for a bulb that straddled the edge cells and got squashed; see `kb/monitor-ui.md`),
+- the bevel's two corner cells (known 3-colour squash — expected, not a regression),
+- the `$` sitting a subpixel above and below the digits.
+
+Gotchas: luajit's `io.open` wants a Windows path, not `/c/…`; write to the cwd. **Native text overlays are not in `cv.buf`**, so the PNG shows the subpixel layer only — reason about native text separately.
+Expected: the render matches the approved preview; no squashed art at canvas-edge cells.
 
 - [ ] **Step 4: Commit**
 
