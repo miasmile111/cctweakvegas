@@ -342,16 +342,20 @@ end
 -- would return whichever came first — a coin flip that silently draws the kiosk on the wrong screen.
 -- Probing costs a setTextScale, so restore the scale on every monitor we reject.
 local MON_W, MON_H = 36, 24
+-- Returns w, h, oldScale, wrapped. ALWAYS returns `wrapped`+`oldScale` when it has them, even on the
+-- failure path — setTextScale(0.5) may already have landed before getSize() threw (peripheral yanked
+-- mid-probe), and the caller can only put it back if we hand it back.
 local function monSizeAt05(name)
   local m = peripheral.wrap(name)
   if not m then return nil end
   local okOld, old = pcall(m.getTextScale)
+  if not okOld then old = nil end          -- can't read it => nothing to restore to; say so honestly
   local ok, w, h = pcall(function()
     m.setTextScale(0.5)
     return m.getSize()
   end)
-  if not ok then return nil end
-  return w, h, (okOld and old or nil), m
+  if not ok then return nil, nil, old, m end
+  return w, h, old, m
 end
 
 local function findMonitorBySize()
@@ -365,6 +369,7 @@ end
 
 -- Fill in anything cage.cfg didn't pin. cfg always wins.
 local DISCOVERED = { deposit = false, vault = false, droppers = false, monitor = false }
+local EXTRA_INV                       -- set when discovery saw >2 candidate inventories
 local function discover()
   if not CFG.droppers then
     local d = findDroppers()
@@ -372,6 +377,7 @@ local function discover()
   end
   if not CFG.deposit or not CFG.vault then
     local b = findBarrels()
+    EXTRA_INV = (#b > 2) and b or nil   -- checked at boot; see the guard below
     -- Never hand the SAME barrel to both roles. cage.cfg may pin just one of them (e.g. only
     -- `vault=barrel_0`), and a naive b[1]/b[2] would then also pick barrel_0 as the deposit —
     -- the cage would sweep a barrel into itself.
@@ -402,17 +408,34 @@ local function findMon(name)
     if not m or not peripheral.hasType(name, "monitor") then
       error(("Monitor '%s' not found. Run `cage test`, then fix monitor= in cage.cfg."):format(name), 0)
     end
+    -- Check the SIZE even when pinned by cage.cfg. The layout is transcribed pixel-for-pixel for
+    -- 36x24; on anything else subpixel silently clips every out-of-range fillRect and the kiosk
+    -- renders as garbage. Without this, `monitor=` would "accept" a wrong monitor — i.e. the exact
+    -- fix the no-monitor error below tells you to apply would quietly not work.
+    local w, h = monSizeAt05(name)
+    if w ~= MON_W or h ~= MON_H then
+      error(("Monitor '%s' is %sx%s at scale 0.5 — the cage needs %dx%d (a 2x2 ADVANCED monitor).\n"
+             .. "Run `cage test` to see every monitor's size."):format(
+             name, tostring(w), tostring(h), MON_W, MON_H), 0)
+    end
     return m
   end
   -- discover() couldn't find a 36x24 @0.5 monitor. Don't silently grab the wrong screen.
-  error("No 36x24 monitor found (need a 2x2 ADVANCED monitor).\n" ..
-        "Run `cage test` to see every monitor's size, then set monitor= in cage.cfg.", 0)
+  error(("No %dx%d monitor found (need a 2x2 ADVANCED monitor at scale 0.5).\n"
+         .. "Run `cage test` to see every monitor's size."):format(MON_W, MON_H), 0)
 end
 
 -- ---- `cage test` — setup + wiring diagnostics -------------------------------
 -- Runs BEFORE the hard-stops below on purpose: its whole job is to tell you WHY a cage won't boot,
 -- so it must survive a config that makes cage_hw.new() refuse.
-local function src(k) return DISCOVERED[k] and "(auto)" or "(cage.cfg)" end
+-- THREE states, not two. `DISCOVERED[k]` is only set when discovery SUCCEEDS, so "discovery came up
+-- empty" and "pinned in cage.cfg" would otherwise collapse into the same label — and print
+-- "(cage.cfg)" on a station that has no cage.cfg, precisely when the cage won't boot and the owner
+-- is reading this to find out why.
+local function src(k)
+  if CFG[k] == nil then return "(NOT FOUND)" end
+  return DISCOVERED[k] and "(auto)" or "(cage.cfg)"
+end
 
 local function testMode(cmd, a, b)
   if cmd == "drop" then
@@ -445,6 +468,13 @@ local function testMode(cmd, a, b)
       return
     end
 
+    -- FORCE THE LINE LOW FIRST — do not assume it is. CC persists redstone output after a program
+    -- exits, and play()'s Q path can leave it HIGH mid-cycle. A dropper fires on the RISING edge, so
+    -- starting high means the first pulseOn is no edge at all: with 4 items across 4 droppers this
+    -- test is exactly ONE cycle, so nothing would drop and it would still report success — sending
+    -- the owner off to rip out redstone that was working.
+    hw.pulseOff(); sleep(0.1)
+
     local loads, cycles = loadedPer, 0
     while vault.anyLoaded(loads) do        -- same 2-high/4-low cadence play() uses
       hw.pulseOn();  sleep(0.1)
@@ -467,9 +497,13 @@ local function testMode(cmd, a, b)
 
   print("Monitors (size @0.5 — the cage needs " .. MON_W .. "x" .. MON_H .. "):")
   for _, n in ipairs(namesOfType("monitor")) do
-    local w, h = monSizeAt05(n)
-    print(("  %-22s %sx%s %s"):format(n, tostring(w), tostring(h),
-          (w == MON_W and h == MON_H) and "<- the cage's" or ""))
+    local w, h, old, m = monSizeAt05(n)
+    local mine = (w == MON_W and h == MON_H)
+    print(("  %-22s %sx%s %s"):format(n, tostring(w), tostring(h), mine and "<- the cage's" or ""))
+    -- Probing costs a setTextScale, so put every OTHER monitor back. `right` is a peripheral_hub, so
+    -- namesOfType("monitor") reaches every monitor on the whole floor network — without this,
+    -- one `cage test` would silently rescale the SLOT machine's live screen mid-draw.
+    if not mine and m and old then pcall(m.setTextScale, old) end
   end
 
   print("Resolved config:")
@@ -481,6 +515,12 @@ local function testMode(cmd, a, b)
         src("droppers")))
   if CFG.droppers then
     for i = 1, #CFG.droppers do print("      " .. CFG.droppers[i]) end
+  end
+
+  if EXTRA_INV then
+    print(("WARNING: %d non-dropper inventories on the network; the cage expects 2."):format(#EXTRA_INV))
+    print("  lowest-named wins, which is a guess — pin deposit=/vault= in cage.cfg:")
+    for i = 1, #EXTRA_INV do print("    " .. EXTRA_INV[i]) end
   end
 
   local hw, err = cage_hw.new(CFG)
@@ -515,6 +555,14 @@ local cv  = subpixel.new(win)
 if CFG.deposit and CFG.deposit == CFG.vault then
   error(("deposit and vault are the same inventory (%s).\nThe cage would sweep a barrel into itself."
          .. " Fix deposit=/vault= in cage.cfg; `cage test` shows what it found."):format(CFG.deposit), 0)
+end
+-- The build is TWO non-dropper inventories. More than that and "lowest-named wins" is a guess, not a
+-- rule — and the modem is a peripheral_hub, so discovery sees the whole floor: a hopper built over a
+-- dropper would sort ahead of the barrels and quietly become the deposit box. Refuse rather than
+-- silently pick, and name the candidates so the fix is obvious.
+if EXTRA_INV then
+  error(("found %d non-dropper inventories; the cage expects 2 (deposit + vault):\n  %s\n"
+         .. "Pin deposit= and vault= in cage.cfg."):format(#EXTRA_INV, table.concat(EXTRA_INV, "\n  ")), 0)
 end
 local hw, hwErr = cage_hw.new(CFG)
 if not hw then error(hwErr .. "\nRun `cage test` to see what's attached, then fix cage.cfg.", 0) end
@@ -778,6 +826,10 @@ local function play(_, pres)
         end
       end
     elseif ev[1] == "key" and ev[2] == keys.q then
+      -- Drop the line before leaving. Quitting between phase 0 and 2 would otherwise leave it HIGH,
+      -- and CC persists redstone output after the program exits — so the next rising edge never
+      -- happens and the droppers sit dead until something else toggles it.
+      hw.pulseOff()
       restorePalette(); return "quit"
     end
   end

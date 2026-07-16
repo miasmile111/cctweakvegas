@@ -8,6 +8,20 @@
 local M = {}
 
 function M.new(cfg)
+  -- NIL-CHECK BEFORE ANYTHING TOUCHES cfg. The caller discovers these at boot, so a grey (unattached)
+  -- modem means they arrive nil — and `#nil` / `peripheral.wrap(nil)` both THROW, which would blow
+  -- past this function's fail-loud contract and take `cage test` (the tool that exists to diagnose
+  -- exactly this) down with it. Return the message; never raise.
+  if not cfg.deposit then
+    return nil, "no deposit inventory found — is the player-facing barrel's modem attached (red)?"
+  end
+  if not cfg.vault then
+    return nil, "no vault inventory found — the cage needs TWO non-dropper inventories on the network"
+  end
+  if not cfg.droppers or #cfg.droppers == 0 then
+    return nil, "no droppers found — is each dropper's own modem attached (red)?"
+  end
+
   local self = { nDroppers = #cfg.droppers }
 
   local deposit = peripheral.wrap(cfg.deposit)
