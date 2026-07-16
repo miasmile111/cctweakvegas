@@ -123,7 +123,7 @@ function layout(){
     midTop:R(14), midBot:R(16)+2, paylineY:R(14), // black middle band rows 14-16
     botBarY:R(21), botBarH:6,                  // bottom red bar rows 21-22
     stakeY:R(23),                              // stake buttons rows 23-24
-    sideTop:R(11), sideBot:R(19)+2};           // side bulb lanes — frame the reel only (no bar corners)
+    sideTop:R(10), sideBot:R(20)+2};           // side bulb lanes — full frame, top & bottom bulbs
 }
 
 const STAKES=[10,25,100];
@@ -152,7 +152,7 @@ function buildFrame(st){
   // cell-text in the TOP cell row, drawn as an overlay in frame() (same method as the header).
   for(let i=0;i<3;i++)fillRect(b,STAKE_X[i],L.stakeY,STAKE_W[i],6,i===st.stakeIdx?YELLOW:GRAY);
   // bulbs on both bars + side lanes
-  for(let x=2;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}
+  for(let x=6;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}  // start x=6: leftmost bar bulb straddled the edge cells
   for(let y=L.sideTop;y<=L.sideBot;y+=4){bulb(b,0,y,Math.floor(y/4),st.tick);bulb(b,CW-2,y,Math.floor(y/4),st.tick);}
   // WIN: label (exact mockup font) + big count-up amount (custom fonts)
   drawTextCentered(b,F_WIN,"WIN:",L.winLblY,WHITE,1);

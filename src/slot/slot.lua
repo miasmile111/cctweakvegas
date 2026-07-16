@@ -68,7 +68,7 @@ local function topLayout()
     paylineY  = Rl(14),                       -- middle symbol top
     botBarY   = Rl(21), botBarH = 6,          -- bottom red bar (rows 21-22)
     stakeY    = Rl(23),                       -- stake buttons (rows 23-24)
-    sideTop   = Rl(11), sideBot = Rl(19) + 2, -- side bulb lanes (cols 1 & 15) — frame the reel only (no bar corners)
+    sideTop   = Rl(10), sideBot = Rl(20) + 2, -- side bulb lanes (cols 1 & 15) — full frame, top & bottom bulbs
   }
 end
 
@@ -121,8 +121,9 @@ local function drawTop(cv, reels, bulbTick, result, stakeIdx, dispAmt)
     cv:fillRect(1, L.stakeY, cv.w, 6, GRAY)
     cv:fillRect(STAKE_X[stakeIdx], L.stakeY, STAKE_W[stakeIdx], 6, YELLOW)
   end
-  -- bulbs: a row on each frame bar + vertical lanes down cols 1 & 15
-  for x = 2, cv.w - 2, 4 do
+  -- bulbs: a row on each frame bar + vertical lanes down cols 1 & 15. The bar rows start at x=6
+  -- (not x=2) — the leftmost bulb straddled the canvas-edge cells and rendered as a squashed sliver.
+  for x = 6, cv.w - 2, 4 do
     bulb(cv, x, L.topBarY + 2, math.floor(x / 4), bulbTick)
     bulb(cv, x, L.botBarY + 2, math.floor(x / 4), bulbTick)
   end
