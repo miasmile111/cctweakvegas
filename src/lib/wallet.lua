@@ -87,11 +87,14 @@ function M.flush()
   while i <= #box do
     local item = box[i]
     local r = request({ kind = "credit", id = item.id, delta = item.delta }, { balance = true })
-    if r then M._drop(box, item.id, item.delta)  -- acked: remove; list shrank, don't advance i
-    else i = i + 1                                -- still unreachable: keep it, move on
+    if r then
+      M._drop(box, item.id, item.delta)   -- acked: remove; list shrank, don't advance i
+      saveOutbox(box)                      -- persist after EACH ack so an interruption mid-pass can
+                                           -- never resend an already-credited win (double-credit guard)
+    else
+      i = i + 1                            -- still unreachable: keep it, move on
     end
   end
-  saveOutbox(box)
 end
 
 -- admin: mint a new ledger id. Returns id, or nil,reason ("exists" / "hub offline").
