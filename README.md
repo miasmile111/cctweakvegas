@@ -1,56 +1,119 @@
-# cctweaked
+# cctweaked — the Hub (meta design)
 
-Workspace for writing CC:Tweaked (ComputerCraft) Lua programs and getting them into
-**Seansemperfi's Atlas Server** (CC:Tweaked for Minecraft 1.21.1, joined as a remote
-multiplayer server).
+> Living design doc for the whole project. Read this first, every session. It holds the
+> **why** and the **shape** — not Lua syntax (that's the `cc-lua` skill) and not the
+> import/deploy workflow (that's `CLAUDE.md` + the skill). Keep it succinct; expand it as
+> the base grows.
 
-## Workflow
+## Vision
 
-1. Ask Claude Code to write/edit a program → it lands in `src/` as a `.lua` file.
-2. Host that file publicly (pastebin or a GitHub gist).
-3. Import it in-game over HTTP.
+A diegetic **minigame hub** built inside Minecraft on Seansemperfi's Atlas Server — a
+Vegas / Macau / Tokyo gambling-district *feeling*: neon, noise, a floor of machines you
+walk up to and play. Every game is rendered on **real in-world monitors** and/or built as
+**physical Create contraptions**, and controlled by **physical blocks** (levers, buttons,
+pressure plates) via redstone. Games are **1 player or 2–4 players**. A lightweight
+**membership economy** ties the floor together: winnings from any game accrue to your
+personal card. Built on **CC:Tweaked** + **Create: Simulated**.
 
-Because you *join* a remote server (you're not the host), you can't drop files into the
-world save on disk — everything comes in over HTTP.
+## Core principles
 
-## Importing a file in-game
+Every part of the base obeys these. When a design choice is unclear, these decide it.
 
-**Pastebin (simplest):**
-1. Paste the file at <https://pastebin.com>, create the paste, note the code in the URL
-   (`pastebin.com/AbCd1234` → `AbCd1234`).
-2. In-game terminal: `pastebin get AbCd1234 hello`
-3. Run it: `hello`
+1. **Diegetic input only.** Controls are physical in-world blocks read over redstone —
+   levers, buttons, pressure plates. No terminal GUI, keyboard, or touchscreen for gameplay.
+2. **Idle = truly asleep.** No game loop runs without a redstone-certain signal that a
+   player is present. Server lag is the enemy; with many machines on the floor, no station
+   may burn cycles while unattended. Three tiers:
+   - **Deep sleep** — zone empty. Computer blocks on an event (`os.pullEvent`), ~zero cost.
+   - **Attract** — a proximity sensor (e.g. pressure plate) detects a nearby body → a Vegas
+     advertisement animation plays ("COME PLAY, GET MONEY"). Runs *only* while someone's in
+     the zone; wakes quietly, without the player having to ask.
+   - **Armed round** — the start control (lever/button) is triggered → the full game loop
+     runs for that one round, then falls back to attract or sleep.
+3. **Hub-authoritative economy.** One server holds the canonical score per player. Games
+   report *changes*; they never own the truth.
+4. **Cards are optional flavor, never a gate.** The floppy-disk membership card is a fun
+   meta-layer for tracking winnings — a game is fully playable with no card inserted (just
+   untracked / anonymous). Never require a card to play.
+5. **Monochrome by default.** White/black monitors unless a build confirms an advanced
+   (colored) monitor. Games scoped to 1–4 players.
 
-**GitHub gist / any raw URL (best for iterating):**
-1. Paste into a public gist, click **Raw**, copy that URL.
-2. In-game: `wget <raw-url> hello`
-3. Edit → re-save gist → re-run the same `wget` to overwrite.
+## System architecture
 
-## First test
+Three roles on one **rednet** bus.
 
-Import `src/hello.lua` and run `hello`. It prints the CraftOS version, computer ID, and
-whether the `http` API is available (it must be, for imports to work).
-
-## Notes
-
-- Runtime is CraftOS / Lua 5.1.
-- HTTP is enabled on the pack; `localhost`/LAN is blocked, public URLs are allowed.
-- The `cc-lua` skill in `.claude/skills/` guides Claude Code when writing programs here.
-
-## slot — lever-triggered slot machine
-
-Files: `src/lib/subpixel.lua` + `src/slot.lua` (+ `src/slot_logic.lua`, `src/slot_symbols.lua`).
-
-Wiring: one computer; one ADVANCED monitor 1×2 (portrait) = the reels. A redstone **lever**
-feeds a side of the computer; the reels spin when that side's analog signal reaches `SPIN_LEVEL`
-(15). No touchscreen — the physical lever is the input.
-
-Import (each file, over HTTP — filenames must match exactly, no extra `s`):
 ```
-pastebin get <code> subpixel     # or wget <raw-url> subpixel
-pastebin get <code> slot_logic
-pastebin get <code> slot_symbols
-pastebin get <code> slot
+   [ Game station ]      [ Game station ]      [ Game station ]   ... (many)
+        |  ^
+        v  |  report score delta / query balance
+   ============================ rednet ================================
+        |                                        ^
+        v  apply delta                           | broadcast update
+   [ Hub server ] --- canonical ledger: id -> score
+        |
+        v
+   [ Scoreboard ] [ Scoreboard ] ...   (display-only subscribers)
 ```
-Then `slot test` → note the monitor name + which **side** your lever drives (its level hits 15)
-→ set `TOP_NAME` and `SPIN_SIDE` in `slot` → run `slot`. Pull the lever to spin.
+
+- **Hub server** — one computer. Owns the ledger (`id → score`), persists it, answers
+  balance queries, applies deltas from games, and broadcasts changes to scoreboards.
+- **Game stations** — self-contained per game. Arm on redstone, run a round, and on payout
+  send a *delta* to the hub. Read an inserted card only to learn *which* `id` to credit.
+- **Scoreboards** — display-only. Subscribe to hub broadcasts, render standings on monitors
+  around the floor.
+
+## Membership card
+
+A **floppy disk** (CC item) each player owns; they pick a name at issue.
+
+| Field   | Role                                                                |
+| ------- | ------------------------------------------------------------------- |
+| `id`    | Player identity (chosen name). The key the hub credits against.     |
+| `score` | Cached mirror of the hub's canonical value, for local display only. |
+
+- **Authoritative score lives on the hub**, not the disk. The disk carries `id`; `score` on
+  it is a convenience copy the hub keeps fresh. (Trust model: close friends — no anti-cheat,
+  security is out of scope.)
+- **Lifecycle:** insert card at a station's disk drive → station reads `id` → play → on a win
+  the station sends `+delta` for that `id` to the hub → eject to leave. No card = anonymous
+  round, nothing reported.
+- **Extensible.** Start with `id` + `score`; add fields later (tier, tickets, stats) without
+  reshaping the model.
+
+## Rednet protocol (sketch)
+
+Message *shapes*, not code — the contract between roles. Firmed up when the hub is built.
+
+- `station → hub` — **credit**: `{ id, delta }` (award/deduct winnings for a round).
+- `station → hub` — **query**: `{ id }` → hub replies `{ id, score }` (show balance at a machine).
+- `hub → scoreboards` — **update**: `{ id, score }` broadcast (or a full standings snapshot).
+
+Design intent: stations are fire-and-forget where possible; the hub is the only writer of truth.
+
+## Create: Simulated
+
+The base leans on **Create: Simulated** (the physics-contraption core of the Create
+Aeronautics suite) alongside CC:Tweaked. It assembles blocks into rigid physics bodies and
+exposes redstone components + a physics-interaction API. For a diegetic minigame floor that
+means a game need not live only on a screen — it can have **real moving parts**: spinning
+wheels, drop / plinko rigs, dice tumblers, race vehicles, physical prize / coin actuators.
+CC:Tweaked is the brain (logic, scoring, monitors); Create: Simulated is the body (kinetics
+the brain drives and reads over redstone). Games may be **monitor-rendered**, **physical
+contraption**, or **hybrid**.
+
+## Components & roadmap
+
+| Component            | Status  | Notes                                                        |
+| -------------------- | ------- | ------------------------------------------------------------ |
+| **Slot machine**     | v1 ✓    | Lever-armed, monitor-rendered reels. See `todo.md` / `src/`. |
+| **Hub server**       | next    | Canonical ledger + the rednet protocol above.                |
+| **Membership cards** | next    | Issue disks; card read/write at stations.                    |
+| **Scoreboards**      | planned | Rednet display subscribers around the floor.                 |
+| **More games**       | ongoing | 1–4 player; monitor / Create-contraption / hybrid.           |
+
+Each component gets its own detail as it's built (its `src/` files, its `todo.md` section).
+
+---
+
+*Import/deploy workflow and Lua/CraftOS syntax are **not** here — see `CLAUDE.md` for the
+workflow and the `cc-lua` skill for implementation.*

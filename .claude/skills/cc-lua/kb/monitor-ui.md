@@ -1,7 +1,15 @@
+---
+title: Monitor UI gotchas — CC:Tweaked graphics
+area: monitor-ui
+verified: in-game 2026-07-16 (building src/slot.lua)
+tags: [monitor, subpixel, palette, window, clipping, watchdog, redstone, deploy]
+---
+
 # Monitor UI gotchas — CC:Tweaked graphics (hard-won)
 
 Real bugs hit while building `src/slot.lua` (subpixel graphics on a 1×2 advanced monitor).
 Each entry: the symptom, the cause, the fix. Keywords for search included on purpose.
+This page bundles several findings; split any one out into its own `kb/` entry if it grows.
 
 ## "Too long without yielding" crash from a hot per-cell loop
 

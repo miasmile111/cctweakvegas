@@ -54,31 +54,54 @@ Authoritative docs: **https://tweaked.cc/**. When unsure about a function, signa
 
 Fetch the page for the module you're using before relying on memory for a signature. See `[[cc-api-docs]]` memory.
 
-## Local references (read before building monitor graphics)
+## Knowledge base — empirical, server-only findings (`kb/`)
+
+`kb/index.md` is a living wiki of things learnable **only on the real server** — monitor
+rendering, peripheral quirks, redstone timing — and cases where the world contradicts the
+docs/intuition. It is the home for those findings so this skill stays a stable how-to.
+
+- **READ before building/debugging** monitor UI, peripherals, or redstone: skim `kb/index.md`
+  and open any entry matching your `area`/tags. These are mistakes already made in-world.
+- **WRITE when you learn** a server-only or docs-vs-reality fact: add/update a `kb/` entry
+  (see the format in `kb/index.md`) instead of inlining a one-off example here. Don't log
+  things testable in plain Lua.
+- Seed entry: `kb/monitor-ui.md` — watchdog "too long without yielding", fractional-coord
+  `setPixel` crash, palette animation + dark-colours-read-as-black, no native clipping,
+  window+`setVisible` flicker-free draw, multi-file re-import traps, analog lever input.
+
+## Local references (authored how-to)
 
 - `references/subpixel-drawing.md` — the reusable 2×3 teletext subpixel canvas (`src/lib/subpixel.lua`):
   chars 128–159, `term.blit`, how to draw pixel art at 6× the cell resolution.
-- `references/monitor-ui-gotchas.md` — **hard-won pitfalls**: the "too long without yielding"
-  watchdog (no hot per-cell loops), fractional-coordinate crashes (floor in `setPixel`), animated
-  gradients via `setPaletteColour` (and dark colours reading as black), no native clipping, the
-  window+`setVisible` flicker-free pattern, multi-file re-import / version-mismatch traps, and
-  redstone analog-lever input. Read this before any monitor UI work — it is a list of mistakes
-  already made, so you don't repeat them.
 
 ## Deploy / test loop (getting code onto the server to test)
 
-You cannot push to the server; the user hosts the file and pulls it in-game. Standard loop:
+Canonical repo: **`miasmile111/cctweakvegas`** (public). Raw base for every program:
+`https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/`. You push; the user
+pulls in-game with the `update` program. **The in-game copy is a snapshot** — nothing reaches
+the server until it's pulled.
 
-1. Write/edit the program in `src/`.
-2. User hosts it:
-   - **Pastebin:** paste `src/<game>.lua` at https://pastebin.com → Create paste → note the code from the URL (`pastebin.com/AbCd1234` → `AbCd1234`).
-   - **Gist (better for iterating):** paste into a public gist → click **Raw** → copy that URL.
-3. Import in-game:
-   - `pastebin get <code> <game>`  → run `<game>`
-   - or `wget <raw-url> <game>`  (re-save gist + re-run `wget` to overwrite on each edit)
-4. Iterate: edit `src/` → re-host → re-import. **The in-game copy is a snapshot** — edits on the PC don't reach the server until re-imported. For games with settings (e.g. side mappings), prefer an in-game `.cfg` file the program reads at startup so remapping doesn't require re-import.
+**Primary loop (`src/update.lua`):**
 
-**Optional automated upload:** if the user provides a Pastebin API dev key, you may `curl` the file to `https://pastebin.com/api/api_post.php` (`api_dev_key`, `api_option=paste`, `api_paste_code=@file`) via Bash and return the paste code directly — offer this only if they want to skip manual pasting.
+1. Write/edit the program(s) in `src/`.
+2. `git push` (you do this — the user authed `gh` as `miasmile111`).
+3. In-game: the user runs **`update`**. It reads the computer's `install.list`, `http.get`s
+   each listed program from the raw base with a `?cb=<epoch>` cache-buster (defeats the ~5-min
+   raw.githubusercontent CDN cache), and overwrites the local files. No `wget`, no manual delete.
+
+**Why not plain `wget`:** `wget <url> <name>` **errors if the file exists** ("File already
+exists") and doesn't cache-bust — hence a purpose-built updater. See `src/update.lua` header for
+the `install.list` format (`<localname> [repo-subpath]`, defaults to `<localname>.lua`).
+
+**One-time per fresh computer:**
+`wget https://raw.githubusercontent.com/miasmile111/cctweakvegas/main/src/update.lua update`
+→ `edit install.list` (name its programs) → `update`.
+
+Per-station settings (side mappings, monitor names) still belong in an in-game `.cfg` the program
+reads at startup, so reconfiguring never needs a re-pull.
+
+**Fallback (no repo access / quick throwaway):** paste to a gist → `wget <raw-url> <name>`, or
+pastebin → `pastebin get <code> <name>`.
 
 ## First-time / smoke test
 
