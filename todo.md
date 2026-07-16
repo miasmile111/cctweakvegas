@@ -42,9 +42,11 @@ Built, deployed, verified in-world. Then generalized so every station inherits i
   `update <pkg>` just relabels from that run's packages. Harmless while self-contained (no
   collisions); revisit if recycling machines. Would need a hub `deregister` msg + a local `reset`.
 
-## Hub economy — core loop BUILT + reviewed (2026-07-16), in-world pending
+## Hub economy — core loop DONE + in-world verified (2026-07-16). Currency = **M-Bucks (MB)**
 
-Branch `feat/hub-economy`. Spec: `docs/superpowers/specs/2026-07-16-hub-economy-design.md`;
+Vertical-slice step 1 complete. Full reference: **`kb/economy.md`** (read it before extending the economy).
+Currency is **M-Bucks** (full *Mia-Bucks*, abbrev **MB**) — the unit of every balance/stake/payout.
+Spec: `docs/superpowers/specs/2026-07-16-hub-economy-design.md`;
 plan: `docs/superpowers/plans/2026-07-16-hub-economy.md`. Bet-and-risk slot on a hub-authoritative
 ledger, layered so a 2nd game reuses it: **core** (`lib/ledger` pure · `lib/card` · `lib/wallet`
 +outbox) → **SP gateway** (`lib/sp_econ`) → tiny per-game payout (`slot/slot_pay`). All 8 code tasks
@@ -56,14 +58,26 @@ passed per-task review + a whole-branch review (deploy/package completeness + pr
 - [x] **Slot payout model** — fixed stake, per-symbol paytable, triple-seven jackpot (`slot_pay`).
 - [x] **Show balance** — economy header (player · balance · stake · win / INSUFFICIENT / FREE PLAY).
 - [x] **Admin card issue** — `issue <name> [balance]` mints ledger id + writes the floppy (hub needs a drive).
-- [ ] **In-world verification (Task 9, user-run)** — deploy `update hub|slot|issue`; mint→insert→bet→
-      win/lose→insufficient→eject(anon)→hub-offline-win→outbox-flush. Hub + slot stations each gain a disk drive.
+- [x] **In-world verification** — deployed; mint→insert→bet→win/lose→insufficient→eject(anon)→
+      hub-offline-outbox all confirmed working. Hub + slot stations have disk drives.
+
+## → NEXT: Lua UI deepdive + slot-machine finishing touches
+
+The active next build (user-set 2026-07-16). Two intertwined threads:
+- **Lua UI deepdive + workflow** — a patterns/toolkit pass on monitor UIs (the `lib/subpixel` canvas,
+  layout, text, headers, advert screens) + a smoother build/iterate loop. Start from the cc-lua
+  **`kb/monitor-ui.md`**. New behavior → brainstorm first.
+- **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
+  economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
+  balance/stake/win header layout; any deny/row-2 visual nits.
 
 Parked (each its own spec later):
+- **Trading station** — transfer **M-Bucks between member cards** (players may hold multiple cards);
+  hub-mediated (debit sender id, credit receiver id — two id-scoped ledger writes). Diegetic amount +
+  confirm controls. Reuses the core; likely a small new gateway. Do after scoreboards + sink. See `kb/economy.md`.
 - **Scoreboards** — display-only rednet subscribers rendering standings around the floor.
-- **Diegetic sink** — what score is FOR (redstone payout: dispense item / open door / lamp).
+- **Diegetic sink** — what M-Bucks are FOR (redstone payout: dispense item / open door / lamp).
 - **Multiplayer economy** (`lib/mp_econ`) — multi-card pot / interactive wagers; core already SP/MP-agnostic.
-- **Lua UI deepdive + workflow** — monitor-UI patterns/toolkit pass (start from the cc-lua monitor-ui kb).
 
 Non-blocking follow-ups from the final review (see the SDD ledger F1/F2):
 - ~~**F1** `wallet.request` blocking event pump~~ **FIXED (1a7d9d7)** — it swallowed slot.lua's tick

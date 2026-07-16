@@ -35,6 +35,10 @@ the simplest thing that works, don't gold-plate. For any new build, run this cha
 without pausing to check in at each gate** (the user has EXPLICITLY authorized this, incl. merging to
 main and pushing — granted 2026-07-16):
 
+0. **Read the project KB first.** Before brainstorming/researching a new feature or debugging,
+   read the relevant repo `kb/` docs (`economy.md`, `advanced-peripherals.md`) **and** the `cc-lua`
+   skill KB (`.claude/skills/cc-lua/kb/index.md` + matching entries). This local, in-world-verified
+   knowledge comes **before** any external/web research — it's mistakes already made; don't re-derive.
 1. **Brainstorm → spec** (`superpowers:brainstorming`), then self-check the spec (placeholders /
    consistency / scope / ambiguity). **No pause for spec sign-off.**
 2. **→ `superpowers:writing-plans`** right after the spec self-check.
