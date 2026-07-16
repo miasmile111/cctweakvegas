@@ -57,19 +57,24 @@ DEEP SLEEP  ──────────────────────�
                                          (a spin always finishes first)
 ```
 
-- **DEEP SLEEP** — monitor cleared/off. Loop body is a single `os.pullEvent()`. Zero loop cost.
-  Transitions to ACTIVE on:
+- **DEEP SLEEP** — a **static "COME PLAY / GET MONEY" advertisement** is drawn ONCE (frozen
+  gradient + centered text), then the loop body is a single `os.pullEvent()`. Zero loop cost — the
+  sign advertises but costs the same as a black screen (no timer, no redraw). Transitions to ACTIVE on:
   - `rednet_message` where `msg.kind=="presence"`, `msg.present==true`, and the zone matches
     (`msg.zone == ZONE or msg.zone == "all"`); **or**
   - a `redstone` event whose `SPIN_SIDE` analog level rose to `SPIN_LEVEL` (cold lever pull /
     hub-down fallback).
 - **ACTIVE** — the existing 0.05s timer loop, with substates:
-  - `attract` — current idle visuals (drifting gradient + chase bulbs) **plus** a
-    "COME PLAY · GET MONEY" banner. Polls the lever each tick (as today).
-  - `spinning` / `result` — unchanged from slot v1.
+  - `attract` — the animated game view: drifting gradient + chase bulbs + the **reels** (the
+    COME PLAY advert is NOT shown here; it belongs to the idle screen). Polls the lever each tick.
+  - `spinning` / `result` — unchanged from slot v1 (WIN/LOSE banner on result).
   - Exit to DEEP SLEEP when a `presence=false` for this zone has been received **and** the machine
     is in `attract` (idle). If `present=false` arrives mid-`spinning`/`result`, finish the round,
-    then sleep. On sleep: restore gradient palette, clear the monitor, block again.
+    then sleep. On sleep: draw the static idle advert (which sets its own palette) and block again.
+
+  **Idle vs active render (refined during in-game verification):** empty zone shows the static
+  COME PLAY sign; a present player sees the reels only. The two are mutually exclusive — the advert
+  is the "come hither" seen from afar, the reels are what you get when you walk up.
 
 ### Hub — the only forever-loop
 

@@ -220,7 +220,9 @@ local function updateGradient(phase)
   end
 end
 
--- draw one full top-monitor frame (subpixel graphics + banner text overlay), flushed at once
+-- draw one full top-monitor frame (subpixel graphics + banner text overlay), flushed at once.
+-- ACTIVE (player present) shows the reels only; the COME PLAY advert is the IDLE screen (drawIdleSign),
+-- not an overlay here. `attract` is accepted for call-site compatibility but no longer draws a banner.
 local function drawTopFrame(reels, bulbTick, result, attract)
   topWin.setVisible(false)
   drawTop(topCv, reels, bulbTick, result)
@@ -228,12 +230,6 @@ local function drawTopFrame(reels, bulbTick, result, attract)
     local label = (result == "win") and "WIN!" or "LOSE"
     topWin.setTextColor(WHITE)
     topWin.setBackgroundColor(result == "win" and GREEN or RED)
-    topWin.setCursorPos(math.floor((tw - #label) / 2) + 1, th)
-    topWin.write(label)
-  elseif attract then
-    local label = "COME PLAY"
-    topWin.setTextColor(YELLOW)
-    topWin.setBackgroundColor(BLACK)
     topWin.setCursorPos(math.floor((tw - #label) / 2) + 1, th)
     topWin.write(label)
   end
@@ -262,10 +258,30 @@ local function clearMonitor()
   topMon.setBackgroundColor(colors.black); topMon.clear()
 end
 
+-- IDLE screen: a STATIC "COME PLAY / GET MONEY" advertisement shown while the zone is empty.
+-- Drawn ONCE, then deepSleep blocks on os.pullEvent — no timer, zero idle cost (it advertises
+-- instead of going black, but costs the same as sleeping).
+local function drawIdleSign()
+  topWin.setVisible(false)
+  updateGradient(0)                       -- freeze the gradient at one phase (static, no drift)
+  local bandH = math.ceil(topCv.h / #GRAD)
+  for b = 1, #GRAD do
+    topCv:fillRect(1, 1 + (b - 1) * bandH, topCv.w, bandH, GRAD[b])
+  end
+  topCv:render()
+  topWin.setTextColor(YELLOW); topWin.setBackgroundColor(BLACK)
+  local l1, l2 = "COME PLAY", "GET MONEY"
+  topWin.setCursorPos(math.floor((tw - #l1) / 2) + 1, math.floor(th / 2))
+  topWin.write(l1)
+  topWin.setCursorPos(math.floor((tw - #l2) / 2) + 1, math.floor(th / 2) + 1)
+  topWin.write(l2)
+  topWin.setVisible(true)
+end
+
 -- DEEP SLEEP: no timer. Block until a player is present (hub) or the lever is pulled cold.
 -- Returns true to wake into ACTIVE, or false if the operator quit (Q).
 local function deepSleep()
-  clearMonitor()
+  drawIdleSign()                        -- static COME PLAY advert while empty (no timer, zero cost)
   queryPresence()                       -- if a player is already in range, the hub's reply wakes us
   local prevLvl = redstone.getAnalogInput(SPIN_SIDE)
   while true do
