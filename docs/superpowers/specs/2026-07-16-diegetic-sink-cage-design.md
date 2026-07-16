@@ -95,7 +95,8 @@ stays small. Two small gateways beat one gateway with two personalities.
    `balance = nil` and is treated as acked, silently dropping it. The cage makes this reachable
    (deposit against a card whose ledger id is gone), so fix it here.
 3. **`pixelfont`** — add a `scale` parameter to `drawGlyph`/`drawText`/`drawCentered`/`textWidth`
-   (each glyph pixel becomes an N×N block) and a **`$`** glyph to `BIG`. A 1× number is 6 subpx tall
+   (each glyph pixel becomes an N×N block; `gap` stays raw subpixels, unscaled) and a **`$`** glyph
+   to `BIG`. A 1× number is 6 subpx tall
    on a canvas twice the slot's width; the balance is the emotional center of this screen.
 
 ### What this enables (forward-look — do NOT build now)
@@ -130,7 +131,7 @@ Per `.claude/skills/cc-lua/kb/monitor-resolution.md`: `cols = round((2 − 0.312
 
 ```
 row  1-2   header      native text: "cage1 · ALICE"  |  "INSERT CARD"
-row  3-8   BIG $        pixelfont BIG @2× (8×12 subpx/glyph): $ + up to 6 digits = 68 of 72 subpx
+row  3-8   BIG $        pixelfont BIG @2× (8×12 subpx/glyph): $ + up to 6 digits = 62 of 72 subpx
 row  9-10  ══ bar ══    + bulbs
 row 11-18  MATERIALS    4 buttons × 9 cells: ingot sprite + native "IRON" + "$100"
 row 19-20  QTY          [ 1x ] [ 5x ] [ 20x ] — selected = yellow (slot's stake idiom)
