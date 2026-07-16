@@ -8,7 +8,8 @@
 -- FORCE-LOADED chunk — the hub is the one part of the base that must always be online.
 -- (This is the deliberate exception to "idle = asleep": it's infrastructure.)
 --
--- Later this same service will handle the score economy (credit/query) — see the spec.
+-- This service also owns the score economy: a persisted id->score ledger with bet/credit/query/mint
+-- handlers (see the registrar loop below) and the mint tool `issue`. See the hub-economy spec.
 
 local PROTO = "ccvegas"
 local STORE = "registry.tbl"

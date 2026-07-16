@@ -39,7 +39,10 @@ end
 
 -- ---- hub round-trip (I/O) --------------------------------------------------
 -- send msg to the hub, wait TIMEOUT for a reply whose .kind is in `kinds`. Returns the reply
--- table or nil. NOTE: pumps os events during the wait (brief, on bet/credit only).
+-- table or nil. NOTE: this is a BLOCKING event pump — it runs its own os.pullEvent loop and
+-- DISCARDS every non-matching event (presence, disk, key) pulled during the wait. Cheap while the
+-- hub is up (<50ms round-trip); on a hub-down bet it blocks ~TIMEOUT and drops those events for that
+-- window (presence/card state resync on the next event; a swallowed Q is briefly unresponsive).
 local function request(msg, kinds)
   local hub = rednet.lookup(PROTO, "hub")
   if not hub then return nil end
