@@ -76,8 +76,13 @@ const SYMBOLS=[
 ];
 const NUM_SYMBOLS=4;
 
-// small font: WIN letters + colon (for the WIN: label)
-const F_SM={"W":["#.#","#.#","#.#","###","#.#"],"I":["###",".#.",".#.",".#.","###"],"N":["#.#","###","###","###","#.#"],":":[".","#",".","#","."]," ":["...","...","...","...","..."]};
+// WIN: label — exact bitmap from mockup(2): W 5×4, I 3×4, N 4×4, colon 1×4 (1px gaps). Starts col 5.
+const F_WIN={
+ "W":["#...#","#.#.#","#.#.#",".#.#."],
+ "I":["###",".#.",".#.","###"],
+ "N":["#..#","##.#","#.##","#..#"],
+ ":":[".","#",".","#"]
+};
 // large slashed number font (4x6) — matches the owner's drawn "0"
 const F_LG={
  "0":["####","#..#","#.##","##.#","#..#","####"],
@@ -91,8 +96,6 @@ const F_LG={
  "8":["####","#..#","####","#..#","#..#","####"],
  "9":["####","#..#","####","...#","...#","####"],
 };
-// small digits (3x5) + "$" for the stake buttons. "1" is 1-wide so "$100" ($+1+0+0) fits a 5-cell button.
-const F_DIG={"0":["###","#.#","#.#","#.#","###"],"1":["#","#","#","#","#"],"2":["###","..#","###","#..","###"],"3":["###","..#",".##","..#","###"],"4":["#.#","#.#","###","..#","..#"],"5":["###","#..","###","..#","###"],"6":["###","#..","###","#.#","###"],"7":["###","..#","..#","..#","..#"],"8":["###","#.#","###","#.#","###"],"9":["###","#.#","###","..#","###"],"$":[".#.","###","##.",".##","###"]};
 function gW(f,ch){const g=f[ch];return g?g[0].length:3;}
 function tW(f,str,gap){let w=0;for(const ch of str)w+=gW(f,ch)+gap;return w-gap;}
 
@@ -124,7 +127,8 @@ function layout(){
 }
 
 const STAKES=[10,25,100];
-const STAKE_X=[0,10,20], STAKE_W=[10,10,10];  // 3 full-width buttons (5 cells each) so "$100" fits
+// mockup(2) button regions (subpx): $10 cols 1-4, $25 cols 6-10, $100 cols 12-15 (gaps at col 5 & 11)
+const STAKE_X=[0,10,22], STAKE_W=[8,10,8], STAKE_COL=[1,6,12], STAKE_WC=[4,5,4];
 function bulb(b,x,y,seed,tick){const on=((seed+tick)%2===0);fillRect(b,x,y,2,2,on?YELLOW:GREY);}
 
 function buildFrame(st){
@@ -144,18 +148,14 @@ function buildFrame(st){
   const barCol=(st.result==="win" && st.tick%2===0)?YELLOW:RED;
   fillRect(b,0,L.topBarY,CW,L.topBarH,barCol);
   fillRect(b,0,L.botBarY,CW,L.botBarH,barCol);
-  // stake buttons: full region magenta when selected, else gray; "$<n>" centered (subpixel, gap 1)
-  for(let i=0;i<3;i++){
-    const sel=i===st.stakeIdx;
-    fillRect(b,STAKE_X[i],L.stakeY,STAKE_W[i],6,sel?MAGENTA:GRAY);
-    const lbl="$"+STAKES[i], w=tW(F_DIG,lbl,0);
-    drawText(b,F_DIG,lbl,STAKE_X[i]+Math.round((STAKE_W[i]-w)/2),L.stakeY+1,sel?BLACK:WHITE,0);
-  }
+  // stake buttons: fill the full region magenta(selected)/gray(others); the "$<n>" LABEL is native
+  // cell-text in the TOP cell row, drawn as an overlay in frame() (same method as the header).
+  for(let i=0;i<3;i++)fillRect(b,STAKE_X[i],L.stakeY,STAKE_W[i],6,i===st.stakeIdx?MAGENTA:GRAY);
   // bulbs on both bars + side lanes
   for(let x=2;x<CW-2;x+=4){bulb(b,x,L.topBarY+2,Math.floor(x/4),st.tick);bulb(b,x,L.botBarY+2,Math.floor(x/4),st.tick);}
   for(let y=L.sideTop;y<=L.sideBot;y+=4){bulb(b,0,y,Math.floor(y/4),st.tick);bulb(b,CW-2,y,Math.floor(y/4),st.tick);}
-  // WIN: label + big count-up amount (custom fonts)
-  drawTextCentered(b,F_SM,"WIN:",L.winLblY,WHITE);
+  // WIN: label (exact mockup font) + big count-up amount (custom fonts)
+  drawTextCentered(b,F_WIN,"WIN:",L.winLblY,WHITE,1);
   drawTextCentered(b,F_LG,String(st.dispAmt),L.amtY,WHITE,1);
   // outcome overlay: cover the stake row, green(win)/red(lose); text drawn native in frame()
   if(st.result==="win"||st.result==="lose"){
@@ -180,12 +180,16 @@ function paint(canvas,buf,collapse,grid){
   }
   if(grid){ctx.strokeStyle="rgba(229,127,216,.25)";ctx.lineWidth=1;for(let cx=0;cx<=15;cx++){ctx.beginPath();ctx.moveTo(cx*2*s,0);ctx.lineTo(cx*2*s,72*s);ctx.stroke();}for(let cy=0;cy<=24;cy++){ctx.beginPath();ctx.moveTo(0,cy*3*s);ctx.lineTo(30*s,cy*3*s);ctx.stroke();}}
 }
-// native cell-text overlay (header + outcome word) — like topWin.write, not subpixel
-function overlayNative(canvas,text,cellRow,col){
+// native cell-text overlay (header, stake labels, outcome word) — like topWin.write, not subpixel
+function overlayNative(canvas,text,cellRow,col,color){
   const ctx=canvas.getContext("2d"),s=12,cw=2*s,ch=3*s;
-  ctx.fillStyle="#f0f0f0";ctx.font=`${Math.floor(ch*0.92)}px ui-monospace,monospace`;ctx.textBaseline="top";
+  ctx.fillStyle=color||"#f0f0f0";ctx.font=`${Math.floor(ch*0.92)}px ui-monospace,monospace`;ctx.textBaseline="top";
   if(col==null)col=Math.floor((15-text.length)/2)+1;
   ctx.fillText(text,(col-1)*cw,cellRow*ch);
+}
+// centre native text within a cell column span [colStart, colStart+widthCells)
+function overlayNativeIn(canvas,text,cellRow,colStart,widthCells,color){
+  overlayNative(canvas,text,cellRow,colStart+Math.floor((widthCells-text.length)/2),color);
 }
 
 const st={stakeIdx:0,result:"none",winAmt:250,dispAmt:250,tick:0,header:"ALICE: 240 MB",scroll:0,
@@ -206,8 +210,14 @@ function frame(){
   paint(p,b,false,showGrid); paint(m,b,true,showGrid);
   for(const c of [p,m]){
     overlayNative(c, st.header, 1);                                  // header, row 2 (centered)
-    if(st.result==="win") overlayNative(c,"WIN",23);                 // outcome word over stakes
-    else if(st.result==="lose") overlayNative(c,"Loss",23);
+    if(st.result==="win"||st.result==="lose"){                       // outcome word over stakes
+      overlayNative(c, st.result==="win"?"WIN":"Loss", 23);
+    } else {                                                         // native "$<n>" in the TOP cell (row 23)
+      for(let i=0;i<3;i++){
+        const sel=i===st.stakeIdx, col=(sel?"#111":"#f0f0f0");
+        overlayNativeIn(c, "$"+STAKES[i], 22, STAKE_COL[i], STAKE_WC[i], col);
+      }
+    }
   }
   requestAnimationFrame(frame);
 }
