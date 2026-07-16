@@ -17,19 +17,37 @@ Spec: `docs/superpowers/specs/2026-07-16-station-identity-and-deploy-design.md`.
 - **Fail-loud preflight** — missing drive/modem = hard stop; hub offline = loud REGISTRATION
   FAILED (files still install).
 
-## Next session — pick ONE
+## Idle / lag model + station framework — DONE (2026-07-16)
 
-### Option A — Lag / idle-sleep model (unblocks safe auto-run at scale)
+Built, deployed, verified in-world. Then generalized so every station inherits idle-safety.
 
-Auto-run is correct but **not lag-safe across many machines yet**: `slot.lua` animates its
-gradient/bulbs continuously, so every booted slot burns tick budget. Implement the README's
-3-tier idle model in `slot` (brainstorm first — new behavior):
+- **Hub-driven presence** — the hub has an Advanced Peripherals **Player Detector** and runs the
+  *only* forever-loop; it edge-broadcasts `presence` over rednet. Stations deep-sleep on
+  `os.pullEvent` (zero cost) and wake on presence or a local lever edge. **Pull-able presence**
+  (`presence?` query) syncs boot-while-occupied + lever-wake-outside-range.
+  Spec: `docs/superpowers/specs/2026-07-16-idle-lag-model-design.md`.
+- **Shared `lib/idle_runner.lua`** — owns deep-sleep/wake/presence and draws `<name>_advert`. A
+  station is now just a play file + a `<basename>_advert.lua`. `src/` reorganized into
+  `hub/ slot/ pong/ lib/` (deploy flattens by name, so `require()` is unchanged). **slot** and
+  **pong** both run on it — pong gained idle-safety it never had.
+  Spec: `docs/superpowers/specs/2026-07-16-station-folders-and-idle-runner-design.md`.
+- Advanced Peripherals capabilities catalogued in `kb/advanced-peripherals.md`.
+- Idle state = a static `COME PLAY / GET MONEY` advert (drawn once, zero cost); present = the game.
+- (Not measured: exact tick-cost numbers — qualitatively confirmed idle stations cost ~nothing.)
 
-- [ ] **Deep sleep** — when no player is in the zone, block on `os.pullEvent` (zero loop).
-- [ ] **Attract** — a proximity input (pressure plate / player detector via redstone) wakes a
-      Vegas "COME PLAY" advertisement animation; runs *only* while someone's near.
-- [ ] **Armed round** — the lever starts a spin; fall back to attract/sleep after.
-- [ ] Confirm the tick-cost drop (many idle slots should cost ~nothing). Log findings to `kb/`.
+## Known gaps / parked
+
+- **No station reset/deregister.** `.installed` accumulates (merge-only) and the hub registry
+  reserves `computerID → instance` forever (idempotent by immutable ID). No uninstall/reset command;
+  `update <pkg>` just relabels from that run's packages. Harmless while self-contained (no
+  collisions); revisit if recycling machines. Would need a hub `deregister` msg + a local `reset`.
+
+## Next session — options
+
+- **Lua UI deepdive + workflow** — a patterns/toolkit pass on monitor UIs (the `lib/subpixel`
+  canvas, layout, text, the advert screens) and a smoother build/iterate loop for them. Start from
+  the cc-lua skill's monitor-ui kb.
+- **Hub economy (member cards + scoring)** — Option B below.
 
 ### Option B — Hub economy (member cards + scoring)
 

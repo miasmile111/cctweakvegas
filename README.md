@@ -115,7 +115,7 @@ contraption**, or **hybrid**.
 | **Deploy / identity**  | ✓       | `update`/`hub`/`mkinstaller`: push→pull, auto-name, auto-run. Spec in `docs/`. |
 | **Slot machine**       | v1 ✓    | Lever-armed, monitor-rendered reels. See `todo.md` / `src/`.      |
 | **Hub server**         | v0 ✓    | Registrar built (assigns station labels). **Economy = next.**     |
-| **Idle / lag model**   | next    | Deep-sleep→attract→armed in each game; unblocks auto-run at scale. |
+| **Idle / lag model**   | ✓       | 3-tier idle; shared `lib/idle_runner` every station reuses. See `docs/`. |
 | **Membership cards**   | next    | Issue disks; card read/write; credit/query economy on the hub.    |
 | **Scoreboards**        | planned | Rednet display subscribers around the floor.                      |
 | **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |
