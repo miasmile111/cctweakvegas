@@ -22,6 +22,26 @@ repo: **`miasmile111/cctweakvegas`** (public). Loop: you write `.lua` into `src/
 from the repo (cache-busted, overwrites — no `wget` delete dance). The in-game copy is a snapshot;
 nothing lands until `update` runs. Exact `install.list` format + first-time setup: `cc-lua` skill.
 
+## Build workflow — standing authorization
+
+This is a **Minecraft-server hobby project, NOT production** — scope architecture accordingly; favor
+the simplest thing that works, don't gold-plate. For any new build, run this chain **end to end
+without pausing to check in at each gate** (the user has EXPLICITLY authorized this, incl. merging to
+main and pushing — granted 2026-07-16):
+
+1. **Brainstorm → spec** (`superpowers:brainstorming`), then self-check the spec (placeholders /
+   consistency / scope / ambiguity). **No pause for spec sign-off.**
+2. **→ `superpowers:writing-plans`** right after the spec self-check.
+3. **→ `superpowers:subagent-driven-development`** right after the plan (fresh implementer + reviewer
+   per task; fix Critical/Important findings; whole-branch review at the end). **No pause for the
+   execution-choice prompt.**
+4. **All green?** unit tests + `luajit -bl` syntax pass; per-task and whole-branch reviews clean.
+5. **→ merge to main** (`superpowers:finishing-a-development-branch`, option 1) and **push** — the
+   deploy loop pulls from the repo, so in-world verification happens *after* the merge+push.
+
+Still stop for: genuine blockers, spec/plan contradictions, or irreversibly destructive actions.
+Everything else: proceed.
+
 ## Layout
 
 ```
