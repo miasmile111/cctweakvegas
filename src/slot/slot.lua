@@ -29,7 +29,7 @@ local font     = require("pixelfont")
 local STAKES   = require("slot_pay").STAKES   -- {10, 25, 100} — single source of truth for the ladder
 
 local RED, YELLOW, GREEN, WHITE, BLACK, GREY = 16384, 16, 8192, 1, 32768, 128
-local MAGENTA, GRAY = 4, 128                   -- stake buttons: selected magenta, others gray
+local GRAY = 128                                -- stake buttons: selected YELLOW (below), others gray
 local SYM_W, SYM_H = 8, 9
 local SYMBOL_PX = SYM_H                          -- snug: each symbol fills exactly 3 cells (no gap)
 
@@ -68,7 +68,7 @@ local function topLayout()
     paylineY  = Rl(14),                       -- middle symbol top
     botBarY   = Rl(21), botBarH = 6,          -- bottom red bar (rows 21-22)
     stakeY    = Rl(23),                       -- stake buttons (rows 23-24)
-    sideTop   = Rl(10), sideBot = Rl(20) + 2, -- side bulb lanes (cols 1 & 15) — below top bar, above bottom bar
+    sideTop   = Rl(11), sideBot = Rl(19) + 2, -- side bulb lanes (cols 1 & 15) — frame the reel only (no bar corners)
   }
 end
 
@@ -119,7 +119,7 @@ local function drawTop(cv, reels, bulbTick, result, stakeIdx, dispAmt)
     cv:fillRect(1, L.stakeY, cv.w, 6, result == "win" and GREEN or RED)
   else
     cv:fillRect(1, L.stakeY, cv.w, 6, GRAY)
-    cv:fillRect(STAKE_X[stakeIdx], L.stakeY, STAKE_W[stakeIdx], 6, MAGENTA)
+    cv:fillRect(STAKE_X[stakeIdx], L.stakeY, STAKE_W[stakeIdx], 6, YELLOW)
   end
   -- bulbs: a row on each frame bar + vertical lanes down cols 1 & 15
   for x = 2, cv.w - 2, 4 do
@@ -217,7 +217,7 @@ local function drawTopFrame(reels, bulbTick, result, status, stakeIdx, dispAmt)
       local sel = (i == stakeIdx)
       local lbl = "$" .. STAKES[i]
       topWin.setTextColor(sel and BLACK or WHITE)
-      topWin.setBackgroundColor(sel and MAGENTA or GRAY)
+      topWin.setBackgroundColor(sel and YELLOW or GRAY)
       topWin.setCursorPos(STAKE_COL[i] + math.floor((STAKE_WC[i] - #lbl) / 2), 23); topWin.write(lbl)
     end
   end
