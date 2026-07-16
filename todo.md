@@ -98,12 +98,19 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       full-magenta selected / gray). **Celebration:** bars-only yellow flash on win. **Outcome overlay:**
       green(WIN)/red(Loss) over the stakes. **Stakes = monitor_touch** (tap the button; persists,
       resets to $10 on wake). `pixelfont` added to `packages.lua`. Tests 24/24; whole-file review clean.
-    - **NEXT — in-world verify:** `update slot` (mind CDN lag), then: tap $10/$25/$100 to pick stake,
-      pull lever to spin, confirm 3-symbol black-middle window, count-up on win, bars flash, outcome
-      overlay, header shows id/balance. Parked polish: celebration art beyond the flash, text colours.
-- **Slot finishing touches** — polish pass, including: **show `M-Bucks`/`MB` instead of `$`** in the
-  economy header (`drawTopFrame` in `slot.lua`; `sp_econ.drawHeader` default); clean up the
-  balance/stake/win header layout; any deny/row-2 visual nits.
+    - **IN-WORLD VERIFIED (2026-07-16)** — owner confirmed "it works!". Post-verify fixes shipped:
+      (a) stray corner bulb — side bulb lanes now start below the top red bar; (b) **reel rubber-band** —
+      the reel snapped `pos=0` from an arbitrary position, so after `SYMBOL_PX` changed it jumped a
+      symbol back; now `slot_logic.stepReel` **eases forward into the nearest aligned stop** (pos a
+      multiple of `NUM_SYMBOLS*symbolPx` → final centred), no snap (tests updated). Free-play shows a
+      static "0" by design (no card = no payout); insert a card to see the count-up.
+    - **Workflow codified (owner's request):** the mockup → live `tools/slot-preview.html` preview →
+      Lua → **offline PNG verify** → deploy loop is now the **golden standard** in
+      `kb/monitor-ui-workflow.md` (+ SKILL pointer). SKILL's hard-rule reconciled: **`monitor_touch`
+      IS diegetic** (physical in-world interaction), ban is keyboard/terminal-GUI only.
+    - Parked polish: celebration art beyond the bar flash; text colours (all white first pass).
+- **Slot finishing touches** — polish pass: header layout nits; any deny/row-2 visual tweaks; the
+  parked polish above. (MB `$`→`MB` swap already shipped a05efce; header now shows `id: bal MB`.)
 
 Parked (each its own spec later):
 - **Trading station** — transfer **M-Bucks between member cards** (players may hold multiple cards);
