@@ -114,12 +114,27 @@ function M._pumpSafe(fn, ...)
   return unpack(res, 2)
 end
 
--- rednet.lookup is ITSELF a blocking event pump, so cache the hub id and only look it up when we
--- don't have one (or after a timeout, in case the hub restarted with a new id). Keeps the hot path
--- (a mid-round balance refresh) from pumping — and eating — the caller's own events during lookup.
-local hubId
+-- rednet.lookup is ITSELF a blocking event pump AND it discards what it pulls, so:
+--   1. cache the hub id, so the hot path (a mid-round balance refresh) never looks up at all;
+--   2. run it through _pumpSafe, so when we DO look up, the caller's timer survives;
+--   3. back off after a failure -- a cache only helps when the hub ANSWERS. When it does not,
+--      hubId stays nil and without this we would burn TIMEOUT pumping on every single call.
+-- Together these turn "hub down = frozen station" into "hub down = one brief hitch per BACKOFF".
+local LOOKUP_BACKOFF = 5   -- seconds to trust a failed lookup before trying again
+
+-- pure: should we spend a lookup right now? `lastFail` is nil until one fails.
+function M._lookupDue(lastFail, now, backoff)
+  if lastFail == nil then return true end
+  if now < lastFail then return true end          -- clock moved backwards: never wedge
+  return (now - lastFail) >= backoff
+end
+
+local hubId, lastFail
 local function getHub()
-  if hubId == nil then hubId = rednet.lookup(PROTO, "hub") end
+  if hubId then return hubId end
+  if not M._lookupDue(lastFail, os.clock(), LOOKUP_BACKOFF) then return nil end
+  hubId = M._pumpSafe(rednet.lookup, PROTO, "hub", TIMEOUT)
+  if hubId then lastFail = nil else lastFail = os.clock() end
   return hubId
 end
 

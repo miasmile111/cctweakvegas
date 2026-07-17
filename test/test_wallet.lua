@@ -265,4 +265,14 @@ do
   t.eq(queued[1][2], 7, "and it is the right timer")
 end
 
+-- ---- _lookupDue: don't re-pump a hub that just failed to answer ------------
+-- A failed lookup burns the full TIMEOUT pumping events. Without a backoff that happens on EVERY
+-- call while the hub is down. This is the pure decision; the getHub wiring is verified in-world.
+t.ok(W._lookupDue(nil, 100, 5), "never looked up before -> due")
+t.ok(not W._lookupDue(100, 100, 5), "just failed -> not due")
+t.ok(not W._lookupDue(100, 104.9, 5), "inside the backoff window -> not due")
+t.ok(W._lookupDue(100, 105, 5), "backoff window elapsed exactly -> due")
+t.ok(W._lookupDue(100, 200, 5), "long past the window -> due")
+t.ok(W._lookupDue(100, 99, 5), "clock went backwards -> due (never wedge)")
+
 t.done()
