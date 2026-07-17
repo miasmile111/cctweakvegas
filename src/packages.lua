@@ -13,6 +13,7 @@ return {
     files = {
       { name = "subpixel",     path = "lib/subpixel.lua" },
       { name = "pixelfont",    path = "lib/pixelfont.lua" },
+      { name = "slot_style",   path = "slot/slot_style.lua" },
       { name = "idle_logic",   path = "lib/idle_logic.lua" },
       { name = "proximity",    path = "lib/proximity.lua" },
       { name = "idle_runner",  path = "lib/idle_runner.lua" },

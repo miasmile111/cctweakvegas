@@ -520,28 +520,31 @@ would it embarrass us?* Anything else is a distraction from opening.
 
 **Known rough edges, in rough priority — brainstorm before building any of them:**
 
-- **The adverts — and the real deliverable under them is a PIXELFONT ALPHABET.** (Owner-scoped
-  2026-07-17: **this is its own session, AFTER the freeze fix is deployed and verified.** Do not
-  cram it behind a bugfix.)
-  - **`pixelfont` has NO LETTERS today.** It holds `M.WIN` (the literal glyphs `W`,`I`,`N`,`:` —
-    drawn for one label), `M.BIG` (digits 0-9, 4×6), and `SIGN_SM`/`SIGN_LG` (the two `$`). That is
-    the whole font. **Both adverts fall back to native CC cell text — which is exactly why they read
-    as default-palette placeholders.** So "restyle the adverts" is really "build an alphabet".
-  - **Why big type is the requirement, not a preference (owner):** an advert is *designed* to be read
-    from **far away** across the floor. Use the biggest font that fits, as much as possible.
-  - **The central tension — canvas width.** Slot = 15×24 cells = **30 × 72 subpixels**. Cage = 36×24
-    cells = **72 × 72**. At `BIG`'s 4-wide + 1 gap that is **6 letters/line on the slot**, 3 at 2×
-    scale. So `MONEY` fits and `COME PLAY` does not. **Owner's call: fitting `MONEY` big beats
-    fitting `COME PLAY` small.** The cage has 2.4× the width — the two stations may not want the
-    same answer, and that is fine.
-  - **Open for that session:** which glyph set (A-Z only? digits/punctuation?), and who draws. The
-    precedent is owner-draws-a-few → Claude extrapolates (owner drew `0` → 1-9 extrapolated; owner
-    drew `W`/`I`/`N`). 26 glyphs by hand is a big ask — suggest the owner draws ~4 that set the style
-    (a curve, a diagonal, a stem: `S`,`A`,`E`,`O`), Claude extrapolates, owner reviews in the preview.
-  - **Cage advert:** already got the full treatment and is *not* a placeholder — the ask there is
-    "some things to clear up", chiefly moving it onto the big font once the alphabet exists.
-  - Golden-standard loop, unchanged: `kb/monitor-ui-workflow.md` (owner mockup → live preview →
-    subpixel/pixelfont → offline PNG verify → deploy).
+- ~~**The adverts — and the real deliverable under them is a PIXELFONT ALPHABET.**~~ **BUILT
+  2026-07-17** (`feat/pixelfont-alphabet`; spec + plan in `docs/superpowers/`). **In-world
+  verification is PENDING and is the owner's** — `update slot` + `update cage`, then walk up to each
+  station, walk away, and read the idle face *from across the floor* (the whole point).
+  - **`pixelfont` now has an alphabet.** A-Z + `! : - . ,` + a **space** went into `M.BIG` (one table
+    with the digits, so a mixed string like `COPPER $25` is one `drawText` call and every existing
+    call site is untouched). Base 4 wide, `M`/`W` at 5 — matches the owner's square slashed digits.
+    `pixelfont` was already variable-width and scale-aware, so this was **data, not new code**; the
+    27 pre-existing tests stayed green (now 125).
+  - **The space is 3 subpixels wide, not 4 — and it is load-bearing.** At 4, `METAL IN` @2x measures
+    **73** against the cage's 72-wide canvas and the copy would have had to change; at 3 it is 71.
+    (Also: a *missing* glyph has width 0, so before this a space advanced 1 subpixel and words
+    collided — a latent bug nothing had hit.)
+  - **`slot_style.lua` was extracted** from `slot.lua` so the idle face and the play face share ONE
+    gradient/bulb/colour kit instead of drifting apart. `slot.lua` changed by deletion + require only.
+  - **Slot copy: `GET` @2x / `MONEY` @1x / big `$`.** `COME PLAY` was dropped — it fits at no scale
+    (44 @1x on a 30-wide canvas). Fitting `MONEY` big beat fitting `COME PLAY` small (owner's call).
+  - **Cage: `THE CAGE` / `METAL IN` / `CASH OUT` @2x**, with the **rate table kept native** (it is
+    long small print — the native-vs-subpixel rule; native is also denser, 3 subpx/row vs 6). The
+    PNG-verify step caught the two signage lines merging with no gap and it was fixed there.
+  - Verified offline the golden-standard way (`kb/monitor-ui-workflow.md`): both screens rendered to
+    PNG through `encodeCell` (`docs/mockups/slot-advert.png`, `cage-advert.png`); `tools/font-preview.html`
+    is the owner's glyph-review surface. **Owner: review the confusable pairs there** — `S`/`5`,
+    `I`/`T`, `G`/`6` differ by only 1-2 subpixels, a real far-legibility risk; redraw any you dislike
+    (`I`/`T` is the live one — `METAL IN`/`CASH OUT`/`THE CAGE` all contain both).
 - **Nothing tells a new player what any of this IS.** No card, no idea what `$` is, no idea the cage
   exists. The membership card is deliberately optional (README principle 4) — but "optional" only
   works if a player can *discover* it. Consider signage, a `chat_box` bark on approach (AP has one),
@@ -562,6 +565,16 @@ would it embarrass us?* Anything else is a distraction from opening.
   tells the player they are broke rather than that the card is dead. Pre-existing; the `offline`
   machinery now makes it a 2-line fix (a third state), so it is cheap to close. Found by the
   hub-lookup branch's whole-branch review, filed not fixed (out of that branch's scope).
+- **`cage_rates.DENOMS` ceiling is now FOUR, not six** (tightened by the alphabet branch 2026-07-17).
+  `cage_advert`'s 2× signage pushed the native rate table down to cell rows 18-21; a **6th** metal
+  lands on the bottom red bar (a 5th fits but with no breathing room). The CEILING note in
+  `cage_rates.lua` has the exact geometry. `DENOMS` ships exactly 4, so nothing breaks — but a 5th
+  metal needs `cage_advert`'s bands re-laid out first.
+- **`pixelfont.M.SIGN_SM` is dead code** (found by the alphabet branch). Zero call sites — only
+  `SIGN_LG` ships (`cage.lua:170`, paired with `BIG`@2x). Its "pairs with 1× digits" comment is
+  unverified and looks wrong (`SIGN_SM` is 10 tall, `BIG`@1x is 6, so their baselines were never
+  worked out). It is the owner's drawing, so it was filed, not deleted. Decide: pair it with
+  something, or drop it.
 
 **Not in the open phase** (parked deliberately — they are how the floor *grows*, not how it opens):
 multiplayer/`mp_econ`, more games, scoreboards, the trading station.

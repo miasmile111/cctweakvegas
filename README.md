@@ -116,12 +116,12 @@ contraption**, or **hybrid**.
 | Component              | Status  | Notes                                                             |
 | ---------------------- | ------- | ----------------------------------------------------------------- |
 | **Deploy / identity**  | ✓       | `update`/`hub`/`mkinstaller`: push→pull, auto-name, auto-run. Spec in `docs/`. |
-| **Slot machine**       | v2 ✓    | Lever-armed reels; now bets a stake + pays a per-symbol paytable via the economy. |
+| **Slot machine**       | v2 ✓    | Lever-armed reels; bets a stake + pays a per-symbol paytable via the economy; idle advert on the `pixelfont` alphabet (in-world pending). |
 | **Hub server**         | v1 ✓    | Registrar + score ledger (`bet/credit/query/mint`, persisted, sole writer). |
 | **Idle / lag model**   | ✓       | 3-tier idle; shared `lib/idle_runner` every station reuses. See `docs/`. |
 | **Per-station proximity** | ✓ live   | Hub = position oracle: **O(players), not O(stations)**. A player at the cage wakes the cage, not the floor. Stations self-locate via a **GPS constellation** (built, working; `pos=` cfg fallback); deep sleep stays a true block. Wake radius 10. |
 | **Membership cards / economy** | core ✓ (in-world pending) | `lib/ledger·card·wallet·sp_econ` + `issue`; bet-and-pay slot. Layered SP/MP-agnostic. Spec in `docs/`. |
-| **Cage / diegetic sink** | v1 ✓    | `$` ↔ metal kiosk (`src/cage/`), in-world verified. Hardware self-discovers; `wallet.debit`+`credit_deny` core additions. **The `$` exit — the economy is now a loop.** |
+| **Cage / diegetic sink** | v1 ✓    | `$` ↔ metal kiosk (`src/cage/`), in-world verified. Hardware self-discovers; `wallet.debit`+`credit_deny` core additions; idle advert on the `pixelfont` alphabet (in-world pending). **The `$` exit — the economy is now a loop.** |
 | **Scoreboards**        | planned | Rednet display subscribers around the floor (own spec).           |
 | **Multiplayer economy**| planned | `lib/mp_econ`: multi-card pot / wagers; core already supports it (own spec). |
 | **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |
