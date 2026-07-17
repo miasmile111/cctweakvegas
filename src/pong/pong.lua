@@ -8,6 +8,11 @@
 -- Wiring: connect 4 pressure plates, each to a different side of the computer (via redstone
 -- dust). Put the MONITOR on a WIRED MODEM so it doesn't use up a side. Then run `pong test`,
 -- step on each plate, note which side lights up, and set the SIDES map below to match.
+--
+-- Waking: like every station, pong wakes on hub PRESENCE (GPS proximity) when it has an ender
+-- modem on a side. Without one it can't self-locate, so -- exactly as the slot leans on its lever
+-- -- it ALSO wakes on a local redstone edge: step on the plate feeding WAKE_SIDE ("STEP ON A
+-- PLATE"). Presence and the plate are both wake triggers; neither replaces the other.
 
 -- ---- config ----------------------------------------------------------------
 local SIDES = {
@@ -27,6 +32,8 @@ local BALL_SPEED  = 0.6    -- cells the ball moves per tick
 -- pong.lua). It is the ONLY place per-station wiring belongs. cfg always wins over discovery:
 -- CC does not hand identically-built stations identical peripheral names.
 --   drives=drive_0,drive_1     # seat order: left paddle first
+--   wake_side=left             # computer side whose plate/lever wakes pong from the advert
+--   wake_level=1               # analog level that counts as a wake (a pressure plate emits 15)
 local function readCfg()
   local out = {}
   if not fs.exists("pong.cfg") then return out end
@@ -48,6 +55,10 @@ end
 
 local CFG   = readCfg()
 local ANTE  = tonumber(CFG.ante) or 10
+-- Local wake trigger (see the "Waking" note in the header). Default side is P1's up plate, so the
+-- plate you already stand on to play doubles as the wake. cfg overrides it for a different wiring.
+local WAKE_SIDE  = CFG.wake_side or "left"
+local WAKE_LEVEL = tonumber(CFG.wake_level) or 1
 
 local mon = peripheral.find("monitor")
 if not mon then
@@ -305,4 +316,7 @@ local function play(mon, pres)
   end
 end
 
-require("idle_runner").run{ name = "pong", monitor = mon, zone = nil, play = play }
+require("idle_runner").run{
+  name = "pong", monitor = mon, zone = nil,
+  wake = { side = WAKE_SIDE, level = WAKE_LEVEL }, play = play,
+}
