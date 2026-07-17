@@ -77,6 +77,15 @@ local function run(cfg)
 
   local hasRednet = openAllModems() > 0
 
+  -- Sample the lever BEFORE resolvePos/registerPos below, not after: gps.locate blocks its full
+  -- timeout on every boot while this server has no GPS constellation, via a bare os.pullEvent loop
+  -- that silently swallows any redstone event that arrives during that wait (CC:Tweaked's
+  -- rom/apis/gps.lua). A lever pulled in that window must not be lost -- capturing wakeLvl here,
+  -- ahead of the blocking calls, means deepSleep can re-check the CURRENT reading against it and
+  -- catch the pull regardless of whether the event survived. Do not move this back down into
+  -- deepSleep -- that's the bug this fixes.
+  local wakeLvl = cfg.wake and redstone.getAnalogInput(cfg.wake.side) or 0
+
   -- Zone resolution. cfg.zone pins it (legacy stations, or two computers sharing one zone).
   -- Otherwise: our own computer ID if the hub knows where we are, else the floor-wide "all".
   -- The registrar already keys everything by the immutable os.getComputerID(), so reusing it as the
@@ -105,15 +114,25 @@ local function run(cfg)
   local function deepSleep()
     advert.draw(mon)
     queryPresence()                       -- if a player is already here, the hub's reply wakes us
-    local prevLvl = cfg.wake and redstone.getAnalogInput(cfg.wake.side) or 0
+    -- Re-check against wakeLvl (the baseline sampled up in run(), before resolvePos/registerPos)
+    -- instead of resampling fresh here: pull, don't trust push -- same reasoning as queryPresence()
+    -- re-asking the hub rather than relying on a broadcast that may have been missed. This is what
+    -- makes a redstone event swallowed by gps.locate's boot-time pullEvent loop irrelevant.
+    local lvl = cfg.wake and redstone.getAnalogInput(cfg.wake.side) or 0
+    local rose = cfg.wake and idle.leverRose(wakeLvl, lvl, cfg.wake.level)
+    wakeLvl = lvl
+    if rose then return "wake" end
     while true do
       local ev = { os.pullEvent() }
       if ev[1] == "rednet_message" then
         if idle.presenceFor(ev[3], zone) == true then return "wake" end
       elseif ev[1] == "redstone" and cfg.wake then
-        local lvl = redstone.getAnalogInput(cfg.wake.side)
-        if idle.leverRose(prevLvl, lvl, cfg.wake.level) then return "wake" end
-        prevLvl = lvl
+        local l = redstone.getAnalogInput(cfg.wake.side)
+        if idle.leverRose(wakeLvl, l, cfg.wake.level) then
+          wakeLvl = l
+          return "wake"
+        end
+        wakeLvl = l
       elseif ev[1] == "key" and ev[2] == keys.q then
         return "quit"
       end
