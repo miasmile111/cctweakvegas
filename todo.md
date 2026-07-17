@@ -65,9 +65,11 @@ passed per-task review + a whole-branch review (deploy/package completeness + pr
 - [x] **In-world verification** — deployed; mint→insert→bet→win/lose→insufficient→eject(anon)→
       hub-offline-outbox all confirmed working. Hub + slot stations have disk drives.
 
-## → NEXT: Lua UI deepdive + slot-machine finishing touches
+## Lua UI deepdive + slot-machine finishing touches — DONE (2026-07-16) ✓
 
-The active next build (user-set 2026-07-16). Two intertwined threads:
+(Was the active build 2026-07-16; everything below shipped and was verified in-world. The one item it
+did **not** cover — the slot's idle advert screen — is now the OPEN phase's top item.) Two intertwined
+threads:
 - **Lua UI deepdive + workflow** — a patterns/toolkit pass on monitor UIs (the `lib/subpixel` canvas,
   layout, text, headers, advert screens) + a smoother build/iterate loop. Start from the cc-lua
   **`kb/monitor-ui.md`**. New behavior → brainstorm first.
@@ -245,7 +247,14 @@ withdraw, outboxed deposit) → eject mid-shower.
   `pushItems`) pump the event queue and eat a pending tick timer? tweaked.cc is silent on timing.
   `cage.lua` re-arms the timer after every touch handler to guarantee liveness regardless.
 
-## Per-station proximity — BUILT 2026-07-17 ✓ (in-world verification PENDING)
+## Per-station proximity — BUILT + LIVE 2026-07-17 ✓ (GPS constellation up; full checklist not walked)
+
+> **Status, precisely.** Merged, pushed, deployed. The **GPS constellation is built and working** —
+> `gps locate` returns exact integer positions, so stations self-locate and register with the hub.
+> Default wake radius **10** (owner-set once it was live and felt, not guessed). What has **not** been
+> ticked off item by item is the wake checklist at the end of this section — above all *"walk to the
+> hub → the cage does NOT wake"*, which is the whole point of the feature. Do that before the floor
+> opens; it is one walk.
 
 The floor was ONE zone: `hub.lua` broadcast `{zone="all"}` and every station matched, so a player at
 the **hub** woke **every** station and a player at the **cage** woke nothing. (That is why the cage
@@ -449,7 +458,44 @@ least one host is broadcasting the wrong coordinates.
 - **Bonus:** the 2s `gps.locate` stall on every station boot disappears — that delay was the timeout
   expiring with no constellation to answer.
 
-## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
+## → NEXT: **the OPEN phase** — polish the floor until it can take real players (owner-set 2026-07-17)
+
+**The build phase is over. Everything needed to open exists and works in-world:** the economy is a
+loop (`$` in via slot/`issue`, out via the cage's real metal), stations sleep until you walk up to
+*them*, and a new station is wire-it-and-run. **Scope for opening: the cage + the slot machine only.**
+No new games, no new subsystems — this phase is about the floor being *good* rather than *complete*.
+
+**The question that decides every item below:** *would a player who has never seen this notice, and
+would it embarrass us?* Anything else is a distraction from opening.
+
+**Known rough edges, in rough priority — brainstorm before building any of them:**
+
+- **The slot's advert screen is a default-palette placeholder** (`slot_advert.lua`: plain COME PLAY /
+  GET MONEY). It is the station's face while idle, which is **most** of the time, and it is the first
+  thing anyone walking the floor sees. The cage's advert got the full treatment; the slot's did not.
+  Golden-standard loop: `kb/monitor-ui-workflow.md` (owner mockup → live preview → subpixel/pixelfont
+  → offline PNG verify → deploy).
+- **Nothing tells a new player what any of this IS.** No card, no idea what `$` is, no idea the cage
+  exists. The membership card is deliberately optional (README principle 4) — but "optional" only
+  works if a player can *discover* it. Consider signage, a `chat_box` bark on approach (AP has one),
+  or an attract-mode explainer. Diegetic only.
+- **Getting a card is an admin action.** `issue <name>` runs on the hub. To open, a player needs a
+  path to their first card that does not involve the owner typing. Own brainstorm; the trading
+  station (parked, below) may be the same machinery.
+- **Floppy-swap freeze (open bug, #2 below).** A station *sometimes* freezes on a card swap. This is
+  the one item that is not polish: a public floor will hit it far more often than we do. Repro +
+  root-cause per `kb/economy.md`; likely a nested `os.pullEvent` still reachable from
+  `sp_econ.onEvent`/`disk_eject`. See `[[event-pump-reentrancy]]`.
+- **Verify the proximity checklist end to end** (todo's proximity section) — the walk-to-the-hub test
+  in particular. It is the difference between "built" and "known good".
+- **`hub_version` / ping** — a station cannot distinguish "no hub" from "hub too old", so both read
+  HUB OFFLINE. Cost real debugging time twice now. Cheap, and every future protocol change has this
+  failure mode.
+
+**Not in the open phase** (parked deliberately — they are how the floor *grows*, not how it opens):
+multiplayer/`mp_econ`, more games, scoreboards, the trading station.
+
+## Backlog (behind the OPEN phase — owner-set 2026-07-16, roughly in priority order)
 
 0. ~~**Build the cage**~~ — **DONE + IN-WORLD VERIFIED 2026-07-17.** See the Cage section above.
    The economy is now a **loop**: `$` enters (slot paytable / `issue` mint) and finally *leaves*
