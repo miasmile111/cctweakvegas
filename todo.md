@@ -117,6 +117,31 @@ The active next build (user-set 2026-07-16). Two intertwined threads:
       canvas-edge cells → `encodeCell` squashed it — see `kb/monitor-ui.md`); selected stake = **yellow**.
     - Parked slot polish: celebration art beyond the bar flash; text colours; **advert screen** (see NEXT).
 
+## Cage — v1.1: stutter + responsiveness + edge gradient (2026-07-17) ✓
+
+In-world verified via the new `cage debug`. All three fixed; the kiosk GUI was reached for the first
+time this session (see the proximity section below for why it hadn't been).
+
+- **The monitor stutter was never the redstone.** Monitors don't read redstone at all, and terminal
+  writes are computer-thread (~free). Every `inventory` call is `mainThread = true` = **~50ms of
+  frozen play loop**, and `loadDroppers` re-listed the vault *per dropper*: 8 calls ≈ 400ms per tap.
+  One listing + a local slot mirror → 9 calls to 5. Measured after: `stock=26ms debit=19ms
+  load=190ms`. Full rule + the trap in the fix: `[[main-thread-peripheral-calls-cost-a-tick]]`.
+- **20x never cost more than 5x** (225ms vs 226ms) — the call count is per-dropper, not per-item. The
+  "worse at 20x" feel was the longer *shower* (5 cycles vs 2), not a longer stall.
+- **Responsiveness:** the green press-flash was *set* at ~45ms but not *drawn* until `withdraw()`
+  returned at ~226ms. Now renders at the point it's decided → 226ms to ~45ms perceived. Deliberately
+  NOT hoisted above the debit: a denied tap would flash "paid" at a player who wasn't.
+- **The left gradient column read black** between the red bars. Not the layout — canvas and render were
+  provably symmetric. The outer gradient columns were **1 subpixel** where every divider was 2, and a
+  lone subpixel at the extreme edge doesn't survive the monitor's edge (the money band was fine because
+  its edge cell is *uniform* gradient, not a half/half split). All five columns are now 2 wide.
+- **`cage debug`** — per-tap timings + frame gaps >100ms on the computer's terminal. Idle gaps of
+  121–200ms show up on a quiet floor; owner calls these server hitches, not worth chasing.
+- **Not done:** ~250ms per tap remains (4 pushes × ~50ms). Next lever is fanning the pushes across
+  coroutines (~250ms → ~100ms), but `parallel` eats the tick timer and touch events unless foreign
+  events are stashed — see `[[event-pump-reentrancy]]`.
+
 ## Cage (diegetic sink) — v1 shipped + **IN-WORLD VERIFIED (2026-07-17)** ✓
 
 The `$` exit. A kiosk where a member card's `$` becomes real metal (droppers spitting ingots on the
@@ -219,6 +244,53 @@ withdraw, outboxed deposit) → eject mid-shower.
 - **Open question for in-world verification:** do server-thread peripheral calls (`chest.list`,
   `pushItems`) pump the event queue and eat a pending tick timer? tweaked.cc is silent on timing.
   `cage.lua` re-arms the timer after every touch handler to guarantee liveness regardless.
+
+## → NEXT: per-station proximity ("is a player near THIS station?") — owner-chosen 2026-07-17
+
+**The floor is currently ONE zone, and that is the whole problem.** `hub.lua`'s `presenceLoop` finds a
+single `player_detector`, polls `isPlayersInRange(DET_RANGE)` and broadcasts
+`{kind="presence", zone="all", present=occ}`. Every station matches `zone == "all"`, so a player near
+the **hub** wakes **every** station, and a player at the cage wakes nothing unless the hub can see
+them. (This is why the cage sat on its advert during the v1 session — the GUI was never reached.)
+
+**Most of the plumbing already exists and is simply unused:**
+
+- `idle_logic.presenceFor(msg, myZone)` already matches `msg.zone == "all" or msg.zone == myZone`.
+- `idle_runner` already takes `cfg.zone` and passes a `pres` handle to `play()`.
+- `cage.cfg` already has a `zone=` key (defaults `all`); `cage.lua` already reads it.
+
+So the work is **hub-side**: learn where players are, learn where stations are, broadcast per-zone
+instead of one global `all`. **No station rewrite** — a station just stops defaulting to `all`.
+
+**The two halves to design:**
+
+1. **Where is the player?** `kb/advanced-peripherals.md` has the API: `getPlayerPos(name)` →
+   `{x,y,z,dimension,...}`, `getPlayersInRange(range)`, `getPlayersInCoords(p1,p2)` (box),
+   `getPlayersInCubic(w,h,d)` (centred on the detector), and cheap `isPlayersInRange(range)`.
+   **Check `dimension`** — a player at the same x/z in the Nether must not wake the floor.
+2. **Where is the station?** Either a `pos=x,y,z` line per station `.cfg` (dead simple, no new
+   hardware, but hand-maintained and drifts when a machine moves), or CC:T's real **`gps` API** —
+   `gps.locate()` needs a **constellation of 4 GPS host computers** with known coordinates. That is
+   the "GPS system" proper: a station learns its own position at boot and registers it with the hub,
+   which then owns a `zone → box` map. Costs 4 computers + a `gps` package; buys self-configuration
+   that matches how the rest of the floor already discovers its own hardware
+   (`[[station-hardware-discovery]]`).
+
+**Open questions to settle first:**
+
+- `playerDetMaxRange` on the Atlas Server (config; `-1` = infinite + multidim). Already an unverified
+  item in `kb/advanced-peripherals.md` — it **caps every zone size** and so constrains the design.
+  Verify in-world *before* designing around a range.
+- One detector on the hub, or one per station? Per-station is simpler logic (each polls its own
+  `isPlayersInRange`, no coordinates and no GPS needed at all) but costs an AP block per station and
+  gives up the hub-authoritative shape. **Worth pricing before assuming GPS is needed** — it may make
+  the entire GPS half unnecessary.
+- **Poll cost — read `[[main-thread-peripheral-calls-cost-a-tick]]` FIRST.** Almost certainly the AP
+  detector's methods are main-thread too (`@LuaFunction(mainThread = true)`), i.e. **~50ms of frozen
+  computer each**, and a naive `for each player: getPlayerPos()` every poll would be N calls per tick
+  on the hub — the exact bug just fixed in the cage, in the one place the whole floor depends on.
+  Prefer one cheap `getPlayersInRange`/`getPlayersInCoords` per poll over per-player position calls,
+  and **measure** (`cage debug` is the pattern). Verify the mainThread claim against the AP source.
 
 ## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
 
