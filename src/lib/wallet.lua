@@ -87,21 +87,23 @@ local unpack = table.unpack or unpack   -- Lua 5.1 (CraftOS) safety
 -- ever handing control back to us). So for the exact duration fn is on-CPU, os.pullEvent IS
 -- coroutine.yield -- fn's calls suspend `co` and land right back in the loop below. Only there,
 -- outside `co`, do we swap the real os.pullEvent back in to source the actual next event.
+-- No os.pullEvent mutation here, and none is needed: INSIDE a coroutine, os.pullEvent IS
+-- coroutine.yield(filter) already (that's how CraftOS itself is built -- see rom/apis/parallel.lua,
+-- which drives coroutines this exact same way). `fn` calling os.pullEvent() from inside `co` yields
+-- straight back to whichever `coroutine.resume(co, ...)` is on the call stack -- which is always us,
+-- right here. Swapping the global in and out bought nothing, and worse: it stomps the REAL
+-- os.pullEvent's terminate handling (it turns a "terminate" event into `error("Terminated", 0)`) for
+-- the whole duration fn runs, silently breaking Ctrl+T for anything pumped through this function.
 function M._pumpSafe(fn, ...)
   local co = coroutine.create(fn)
-  local realPullEvent = os.pullEvent
   local stash = {}
-  os.pullEvent = coroutine.yield
   local res = { coroutine.resume(co, ...) }
-  os.pullEvent = realPullEvent
   while coroutine.status(co) ~= "dead" do
     if not res[1] then error(res[2], 0) end
     local ev = { os.pullEvent() }
     -- the coroutine's OWN dns traffic is its business; everything else belongs to the caller
     if not (ev[1] == "rednet_message" and ev[4] == "dns") then stash[#stash + 1] = ev end
-    os.pullEvent = coroutine.yield
     res = { coroutine.resume(co, unpack(ev)) }
-    os.pullEvent = realPullEvent
   end
   if not res[1] then error(res[2], 0) end
   for _, e in ipairs(stash) do os.queueEvent(unpack(e)) end

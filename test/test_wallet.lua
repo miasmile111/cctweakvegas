@@ -154,7 +154,10 @@ local function fakeOS(incoming)
   local realPull, realQueue = os.pullEvent, os.queueEvent
   local queued = {}
   local i = 0
+  -- Model CraftOS faithfully: os.pullEvent YIELDS when called inside a coroutine (that is the whole
+  -- mechanism _pumpSafe stands on). Only the driver, on the main thread, pops a canned event.
   os.pullEvent = function()
+    if coroutine.running() then return coroutine.yield() end
     i = i + 1
     if not incoming[i] then error("fake event queue exhausted", 0) end
     return unpack(incoming[i])
