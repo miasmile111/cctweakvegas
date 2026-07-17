@@ -31,16 +31,15 @@ local logic    = require("slot_logic")
 local font     = require("pixelfont")
 local STAKES   = require("slot_pay").STAKES   -- {10, 25, 100} — single source of truth for the ladder
 
-local RED, YELLOW, GREEN, WHITE, BLACK, GREY = 16384, 16, 8192, 1, 32768, 128
-local GRAY = 128                                -- stake buttons: selected YELLOW (below), others gray
+local style = require("slot_style")
+-- The slot's look now lives in slot_style so the idle advert can share it. These locals are kept
+-- so the rest of this file (and its layout math) is untouched.
+local RED, YELLOW, GREEN, WHITE, BLACK, GREY =
+  style.RED, style.YELLOW, style.GREEN, style.WHITE, style.BLACK, style.GREY
+local GRAY = style.GRAY                          -- stake buttons: selected YELLOW, others gray
 local SYM_W, SYM_H = 8, 9
 local SYMBOL_PX = SYM_H                          -- snug: each symbol fills exactly 3 cells (no gap)
-
--- Animated background: these unused colour slots get redefined at runtime to a drifting
--- deep-blue <-> teal gradient (see updateGradient). None collide with the symbol/UI colours.
-local GRAD = { 2048, 512, 8, 1024, 64 }
-local GRAD_DEEP = { 0.00, 0.10, 0.65 }
-local GRAD_TEAL = { 0.00, 0.75, 0.65 }
+local GRAD = style.GRAD
 
 local function findMon(name)
   local m = peripheral.wrap(name)
@@ -99,17 +98,14 @@ local function drawReel(cv, x, reel, L)
   end
 end
 
--- a bulb: on = bright yellow, off = dim grey (blinks by seed+tick parity)
-local function bulb(cv, x, y, seed, bulbTick)
-  cv:fillRect(x, y, 2, 2, ((seed + bulbTick) % 2 == 0) and YELLOW or GREY)
-end
+-- a bulb: on = bright yellow, off = dim grey (blinks by seed+tick parity) — see slot_style
+local bulb = style.bulb
 
 -- draw the whole subpixel layer (everything except the native cell-text overlays)
 local function drawTop(cv, reels, bulbTick, result, stakeIdx, dispAmt)
   local L = topLayout()
   -- gradient bands across the whole canvas (palette-driven; recoloured for free each tick)
-  local bandH = math.ceil(cv.h / #GRAD)
-  for b = 1, #GRAD do cv:fillRect(1, 1 + (b - 1) * bandH, cv.w, bandH, GRAD[b]) end
+  style.bandFill(cv)
   -- reel: ONLY the middle band is black; top & bottom symbol rows ride the gradient
   cv:fillRect(1, L.midTop, cv.w, L.midBot - L.midTop + 1, BLACK)
   for i = 1, 3 do drawReel(cv, L.xs[i], reels[i], L) end
@@ -189,10 +185,7 @@ for i = 1, #GRAD do gradOrig[i] = { topMon.getPaletteColour(GRAD[i]) } end
 
 local function updateGradient(phase)
   for i = 1, #GRAD do
-    local a = 0.5 + 0.5 * math.sin(phase + i * 0.9)
-    local r = GRAD_DEEP[1] + (GRAD_TEAL[1] - GRAD_DEEP[1]) * a
-    local g = GRAD_DEEP[2] + (GRAD_TEAL[2] - GRAD_DEEP[2]) * a
-    local b = GRAD_DEEP[3] + (GRAD_TEAL[3] - GRAD_DEEP[3]) * a
+    local r, g, b = style.gradientRGB(i, phase)
     topMon.setPaletteColour(GRAD[i], r, g, b)
     topWin.setPaletteColour(GRAD[i], r, g, b)
   end
