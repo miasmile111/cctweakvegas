@@ -24,7 +24,8 @@ local BAR1_Y,  BAR1_H  = Rl(1),  6      -- cell rows 1-2
 local CAGE_Y           = Rl(3)          -- "THE CAGE" @2x -> y 7-18
 local BAR2_Y,  BAR2_H  = Rl(7),  6      -- cell rows 7-8
 local IN_Y             = Rl(9)          -- "METAL IN" @2x -> y 25-36
-local OUT_Y            = Rl(13)         -- "CASH OUT" @2x -> y 37-48
+local OUT_Y            = Rl(14)         -- "CASH OUT" @2x -> y 40-51 (one blank cell-row above it, so
+                                        -- it doesn't merge with METAL IN; still clears the rate table)
 local BAR3_Y,  BAR3_H  = Rl(23), 6      -- cell rows 23-24
 local RATE_ROW0        = 17             -- native CELL row; row i lands at RATE_ROW0 + i
 local RATE_COL         = 12             -- native cell column, matches the old layout
