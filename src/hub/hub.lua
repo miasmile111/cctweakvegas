@@ -16,6 +16,12 @@ local STORE = "registry.tbl"
 local DET_RANGE = 8      -- blocks: how near a player must be for the hub to wake stations (v1: one range)
 local POLL      = 0.3    -- seconds between detector polls (the hub's one forever-loop)
 local idle      = require("idle_logic")
+local prox      = require("proximity")
+local DIM       = "minecraft:overworld"   -- stations are assumed here unless they say otherwise.
+                                          -- There is no CC API for "what dimension am I in", so this
+                                          -- is config -- but a station that GPS-located itself has
+                                          -- already proved it shares the constellation's dimension
+                                          -- (spec fact 7).
 local args      = { ... }
 
 -- Open EVERY modem, never guess one. THE HUB ESPECIALLY: it is the one machine every station must
@@ -88,7 +94,7 @@ if args[1] == "test" and args[2] == "pos" then
   return
 end
 
-if args[1] == "test" then
+if args[1] == "test" and not args[2] then
   local det = peripheral.find("player_detector")
   if not det then
     print("No 'player_detector' found. Check the block is on the wired network.")
@@ -121,6 +127,29 @@ if fs.exists(STORE) then
 end
 reg.assignments = reg.assignments or {}   -- computerID -> { package = instance }
 reg.counters    = reg.counters or {}      -- package -> highest instance handed out
+reg.stations    = reg.stations or {}      -- computerID -> { pos = {x,y,z}, dim, range, label }
+
+-- `hub test zones` — what the hub thinks the floor looks like. A station that never appears here
+-- never registered a position, and is therefore still on the legacy "all" zone (not an error).
+if args[1] == "test" and args[2] == "zones" then
+  local n = 0
+  for id, s in pairs(reg.stations) do
+    n = n + 1
+    print(("  #%d  %s  pos=%d,%d,%d  range=%s  dim=%s"):format(
+      id, s.label or "?", s.pos.x, s.pos.y, s.pos.z,
+      tostring(s.range or prox.DEFAULT_RANGE), tostring(s.dim or DIM)))
+  end
+  if n == 0 then print("No stations have registered a position. All are on the legacy 'all' zone.") end
+  return
+end
+
+-- An unknown subcommand must not silently boot the hub: `hub test drop` would otherwise look like it
+-- worked while actually starting the registrar.
+if args[1] == "test" then
+  print(("Unknown subcommand: test %s"):format(tostring(args[2])))
+  print("Try: `hub test` (range meter), `hub test pos`, `hub test zones`.")
+  return
+end
 
 local function persist()
   local f = fs.open(STORE, "w"); f.write(textutils.serialize(reg)); f.close()
@@ -165,6 +194,27 @@ local function registrar()
       local n = assign(msg.computerID, msg.package)
       rednet.send(sender, { kind = "assigned", package = msg.package, instance = n }, PROTO)
       print(("  #%d  %s -> %s%d"):format(msg.computerID, msg.package, msg.package, n))
+    elseif type(msg) == "table" and msg.kind == "station_pos"
+           and type(msg.computerID) == "number" then
+      -- A station reporting where it is. `pos = nil` deregisters it (it lost GPS and has no cfg),
+      -- which drops it back to the legacy "all" zone rather than stranding it asleep forever.
+      local pos = prox.parsePos(msg.pos)
+      if pos then
+        reg.stations[msg.computerID] = {
+          pos   = pos,
+          dim   = (type(msg.dim) == "string") and msg.dim or nil,
+          range = tonumber(msg.range) or nil,
+          label = (type(msg.label) == "string") and msg.label or nil,
+        }
+        print(("  #%d  pos %d,%d,%d%s"):format(msg.computerID, pos.x, pos.y, pos.z,
+          msg.label and (" (" .. msg.label .. ")") or ""))
+      else
+        reg.stations[msg.computerID] = nil
+        print(("  #%d  pos cleared -> legacy 'all' zone"):format(msg.computerID))
+      end
+      persist()
+      rednet.send(sender, { kind = "station_pos_ok", computerID = msg.computerID,
+                            zone = msg.computerID }, PROTO)
     elseif type(msg) == "table" and msg.kind == "mint" and type(msg.name) == "string" then
       local id, err = ledger.mint(scores, msg.name, tonumber(msg.balance) or 0)
       if id then
