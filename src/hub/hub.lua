@@ -135,8 +135,13 @@ if args[1] == "test" and args[2] == "zones" then
   local n = 0
   for id, s in pairs(reg.stations) do
     n = n + 1
-    print(("  #%d  %s  pos=%d,%d,%d  range=%s  dim=%s"):format(
-      id, s.label or "?", s.pos.x, s.pos.y, s.pos.z,
+    -- %s, not %d, on the coords: parsePos accepts decimals BY DESIGN (F3 shows fractional XYZ, so
+    -- `pos=105.5,64,-238.25` is what an owner naturally types) and gps.locate rounds to 0.01. %d
+    -- would print 105 for 105.5 -- a diagnostic that quietly lies about the very value you ran it
+    -- to inspect -- and on a Lua that errors instead of truncating, this print is inside the
+    -- registrar loop, so it would take the hub and the whole floor down over a config typo.
+    print(("  #%d  %s  pos=%s,%s,%s  range=%s  dim=%s"):format(
+      id, s.label or "?", tostring(s.pos.x), tostring(s.pos.y), tostring(s.pos.z),
       tostring(s.range or prox.DEFAULT_RANGE), tostring(s.dim or DIM)))
   end
   if n == 0 then print("No stations have registered a position. All are on the legacy 'all' zone.") end
@@ -206,7 +211,8 @@ local function registrar()
           range = tonumber(msg.range) or nil,
           label = (type(msg.label) == "string") and msg.label or nil,
         }
-        print(("  #%d  pos %d,%d,%d%s"):format(msg.computerID, pos.x, pos.y, pos.z,
+        print(("  #%d  pos %s,%s,%s%s"):format(msg.computerID,
+          tostring(pos.x), tostring(pos.y), tostring(pos.z),
           msg.label and (" (" .. msg.label .. ")") or ""))
       else
         reg.stations[msg.computerID] = nil

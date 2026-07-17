@@ -105,7 +105,10 @@ local function run(cfg)
       local pos, src = resolvePos(cfg)
       if pos and registerPos(pos, cfg) then
         zone = os.getComputerID()
-        print(("[zone] #%d at %d,%d,%d (%s)"):format(zone, pos.x, pos.y, pos.z, src))
+        -- %s on the coords, not %d: a cfg pos= copied off F3 is fractional, and gps.locate rounds
+        -- to 0.01 -- %d would misreport it, or error outright on a Lua that won't truncate.
+        print(("[zone] #%d at %s,%s,%s (%s)"):format(zone,
+          tostring(pos.x), tostring(pos.y), tostring(pos.z), src))
       elseif pos then
         print("[zone] hub did not ack station_pos (offline, or too old) -> zone 'all'")
       else
