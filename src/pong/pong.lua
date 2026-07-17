@@ -275,8 +275,10 @@ local function play(mon, pres)
         elseif res == "free" then
           msg = "FREE RALLY - 2 cards to play for a pot"
         end
-        ls, rs = 0, 0                              -- a match starts from 0-0
-        resetBall(math.random() < 0.5 and -1 or 1)
+        if res ~= "deny" then
+          ls, rs = 0, 0                            -- reset only when a match actually (re)started
+          resetBall(math.random() < 0.5 and -1 or 1)
+        end
       elseif hit == "end" then
         local r = econ.finish{ [1] = ls, [2] = rs }
         if r.potWinner then
