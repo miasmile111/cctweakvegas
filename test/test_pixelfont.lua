@@ -79,4 +79,65 @@ F.drawCentered(cv2, F.BIG, "8", 1, 7, 1, 2)
 -- scaled width 8 -> x = floor((20-8)/2)+1 = 7
 t.eq(cv2.px["1,7"], 7, "@2x centered starts at x=7")
 
+-- ---- the alphabet ---------------------------------------------------------
+-- Structural invariants. A glyph with the wrong row count or a ragged row
+-- mis-measures forever and the failure shows up as a layout bug three files away,
+-- so assert the shape of every glyph rather than spot-checking a few.
+do
+  local LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  for i = 1, #LETTERS do
+    local ch = LETTERS:sub(i, i)
+    local g = F.BIG[ch]
+    t.ok(g ~= nil, "BIG has letter " .. ch)
+    if g then
+      t.eq(#g, 6, ch .. " is 6 rows tall")
+      local w = #g[1]
+      local ragged = false
+      for r = 2, #g do if #g[r] ~= w then ragged = true end end
+      t.ok(not ragged, ch .. " has rows of equal width")
+    end
+  end
+end
+
+-- Widths: base 4, M and W are 5. This is the whole layout budget's foundation.
+t.eq(F.textWidth(F.BIG, "M", 1), 5, "M is 5 wide")
+t.eq(F.textWidth(F.BIG, "W", 1), 5, "W is 5 wide")
+t.eq(F.textWidth(F.BIG, "A", 1), 4, "A is 4 wide")
+t.eq(F.textWidth(F.BIG, "E", 1), 4, "E is 4 wide")
+t.eq(F.textWidth(F.BIG, "Q", 1), 4, "Q is 4 wide (tail pokes out the bottom-right)")
+
+-- Punctuation + the space glyph.
+t.ok(F.BIG["!"] ~= nil, "BIG has !")
+t.ok(F.BIG[":"] ~= nil, "BIG has :")
+t.ok(F.BIG["-"] ~= nil, "BIG has -")
+t.ok(F.BIG["."] ~= nil, "BIG has .")
+t.ok(F.BIG[","] ~= nil, "BIG has ,")
+
+-- THE SPACE IS 3 WIDE, NOT 4, AND THAT IS LOAD-BEARING: at 4, "METAL IN" @2x is
+-- 73 of the cage's 72 subpixels. See the spec's width budget.
+t.ok(F.BIG[" "] ~= nil, "BIG has a space glyph")
+t.eq(F.textWidth(F.BIG, " ", 1), 3, "space is 3 wide")
+-- Before this glyph existed, glyphW returned 0 for " " and drawText advanced ONE
+-- subpixel for a space -- words collided. This is the regression lock for that.
+t.eq(F.textWidth(F.BIG, "A B", 1), 4 + 1 + 3 + 1 + 4, "'A B' = 13; the space actually advances")
+
+-- S must not be the same bitmap as 5. A naive square S is identical to BIG's "5";
+-- S is chamfered at top-left and bottom-right so they differ at four corners. Same
+-- problem the owner's slashed "0" already solves for 0-vs-O.
+do
+  local same = true
+  for r = 1, 6 do if F.BIG["S"][r] ~= F.BIG["5"][r] then same = false end end
+  t.ok(not same, "S is not the same bitmap as 5")
+end
+
+-- ---- the layout budget: these six numbers ARE the design -------------------
+-- Slot canvas is 30 subpixels wide, cage is 72. Every one of these is a regression
+-- lock: if a glyph width changes, the advert copy silently stops fitting.
+t.eq(F.textWidth(F.BIG, "GET", 1, 2), 26, "GET @2x = 26, fits the slot's 30")
+t.eq(F.textWidth(F.BIG, "MONEY", 1, 2), 46, "MONEY @2x = 46, does NOT fit 30 -- why MONEY is 1x")
+t.eq(F.textWidth(F.BIG, "MONEY", 1), 25, "MONEY @1x = 25, fits the slot's 30")
+t.eq(F.textWidth(F.BIG, "THE CAGE", 1, 2), 69, "THE CAGE @2x = 69, fits the cage's 72")
+t.eq(F.textWidth(F.BIG, "METAL IN", 1, 2), 71, "METAL IN @2x = 71 of 72 -- the tightest line on the floor")
+t.eq(F.textWidth(F.BIG, "CASH OUT", 1, 2), 69, "CASH OUT @2x = 69, fits the cage's 72")
+
 t.done()
