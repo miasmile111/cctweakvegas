@@ -672,20 +672,27 @@ local function drawFrame(st, econ)
     writeAt(status, 2, mw - #status, econ.denied and PINK or WHITE, bandAt(2))
   end
 
+  -- The toast panel (drawn in the subpixel layer by drawCage) sits over rows 12-16, but these button
+  -- labels are NATIVE text laid on top AFTER cv:render(), so they punch straight through the panel
+  -- unless we skip them. Gate the whole button-label block on the toast: when it's up, the panel is
+  -- the only thing in this region, which is the point ("why did nothing happen").
+  local toast = st.tick < st.toastUntil
   -- each button reads as a sentence: "Withdraw / COPPER". Lowercase verb, SHOUTED noun — the metal
   -- is what you're picking, so the metal carries the weight. "Withdraw" is 8 chars in a 9-cell
   -- button: EXACTLY one cell of slack, and +1 uses it. At +2 the label spills onto the next button
   -- and DIAMOND's runs off a 36-column screen.
-  for i = 1, #DENOM_COL do
-    local lit = (st.pressIdx == i and st.tick < st.pressUntil)
-    local bg  = lit and GREEN or BLACK
-    local ink = lit and BLACK or WHITE
-    writeIn("Withdraw", 13, DENOM_COL[i] + 1, DENOM_WC, ink, bg)
-    writeIn(rates.DENOMS[i].label, 14, DENOM_COL[i] + 1, DENOM_WC, ink, bg)
-    -- iron/gold prices nudged a cell right: centring a 4-char price in 9 cells lands it a cell left
-    -- of the 3- and 5-char ones, so the column read ragged.
-    local nudge = (i == 2 or i == 3) and 1 or 0
-    writeIn("$" .. rates.DENOMS[i].value, 16, DENOM_COL[i] + nudge, DENOM_WC, ink, bg)
+  if not toast then
+    for i = 1, #DENOM_COL do
+      local lit = (st.pressIdx == i and st.tick < st.pressUntil)
+      local bg  = lit and GREEN or BLACK
+      local ink = lit and BLACK or WHITE
+      writeIn("Withdraw", 13, DENOM_COL[i] + 1, DENOM_WC, ink, bg)
+      writeIn(rates.DENOMS[i].label, 14, DENOM_COL[i] + 1, DENOM_WC, ink, bg)
+      -- iron/gold prices nudged a cell right: centring a 4-char price in 9 cells lands it a cell left
+      -- of the 3- and 5-char ones, so the column read ragged.
+      local nudge = (i == 2 or i == 3) and 1 or 0
+      writeIn("$" .. rates.DENOMS[i].value, 16, DENOM_COL[i] + nudge, DENOM_WC, ink, bg)
+    end
   end
 
   -- qty labels in the TOP cell of the button (row 18)
