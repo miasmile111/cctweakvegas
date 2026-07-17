@@ -352,8 +352,13 @@ Expected: `47 passed, 0 failed` (exact count may differ slightly; **0 failed** i
 
 - [ ] **Step 5: Confirm it is genuinely CC-free**
 
-Run: `grep -nE "peripheral|rednet|os\.|term|redstone|colors|fs\." src/lib/proximity.lua`
-Expected: **no output.** A hit means a CC API leaked into a pure module and the luajit tests are lying about what they cover.
+Run:
+```bash
+luajit -e 'local P = dofile("src/lib/proximity.lua"); print("pure: loads with NO CC globals; DEFAULT_RANGE=" .. P.DEFAULT_RANGE)'
+```
+Expected: `pure: loads with NO CC globals; DEFAULT_RANGE=4`
+
+This is the check that actually *proves* purity — bare luajit has no `peripheral`/`rednet`/`term`, so if the module touched one at load time it would error here. (An earlier version of this plan grepped for CC API names and expected no output. Don't: that grep matches comment prose, and `term` matches the word "de**term**inistic", so its documented pass condition is unreachable and reads as a failure. Grep greps English too.)
 
 - [ ] **Step 6: Commit**
 
@@ -496,11 +501,100 @@ git commit -m "feat(hub): station_pos handler + persisted computerID -> position
 **GATE: do not start until `hub test pos` (Task 1) has come back green in-world.** If it reported a throw, a `nil` at distance, or fuzzed coordinates, **stop and report** — the spec's Plan B (a `player_detector` per station) is the fallback and it is a different design.
 
 **Files:**
-- Modify: `src/hub/hub.lua` (`presenceLoop`, currently lines 174-194)
+- Modify: `src/hub/hub.lua` (`presenceLoop`; also the `presence?` reply in `registrar()`)
+- Modify: `src/lib/idle_logic.lua` (`presenceFor` — **one line**)
+- Modify: `test/test_idle_logic.lua` (it asserts the contract being changed)
 
 **Interfaces:**
 - Consumes: `prox.evaluate`, `prox.edges` (Task 2); `reg.stations` (Task 3).
-- Produces: `{ kind="presence", zone=<computerID>, present=<bool> }` **addressed via `rednet.send`** to that computer ID. The legacy `{ kind="presence", zone="all", present=occ }` **broadcast is unchanged**.
+- Produces: `{ kind="presence", zone=<computerID>, present=<bool> }` **addressed via `rednet.send`** to that computer ID. The legacy `{ kind="presence", zone="all", present=occ }` broadcast still goes out for unregistered stations.
+
+> ### PLAN CORRECTION (2026-07-17) — this task originally could not work. Read before starting.
+>
+> This task first said "keep the legacy broadcast byte-for-byte AND leave `idle_logic.presenceFor`
+> unchanged". **Those two are contradictory**, and the whole-branch review caught it. `presenceFor`
+> matched `msg.zone == "all" or msg.zone == myZone` — the `"all"` clause matches **unconditionally**,
+> so a station registered to zone `5` *still* wakes on the floor-wide broadcast. A player at the hub
+> would wake the cage 1000 blocks away: **the original bug, fully intact**. Step 3 of this plan's own
+> in-world checklist ("walk to the hub → the cage does **not** wake") was unpassable.
+>
+> The owner approved the fix below on 2026-07-17. **Both halves must land in this task**; half of it
+> is worse than neither, because half silently breaks the boot resync instead.
+
+- [ ] **Step 0a: Make `presenceFor` stop treating `"all"` as a wildcard**
+
+In `src/lib/idle_logic.lua`, change the one condition in `presenceFor`:
+
+```lua
+-- A zone name means what it says. This deliberately does NOT special-case "all" as a wildcard:
+-- an UNREGISTERED station's zone IS literally the string "all", so it still matches the hub's
+-- floor-wide broadcast (no regression), while a station registered to its own computer ID stops
+-- matching it. Treating "all" as a wildcard here is what made per-station zones a no-op -- a player
+-- at the hub woke every station on the floor, which is the bug this whole feature exists to kill.
+function M.presenceFor(msg, myZone)
+  if type(msg) ~= "table" or msg.kind ~= "presence" then return nil end
+  if msg.zone == myZone then
+    return msg.present and true or false
+  end
+  return nil
+end
+```
+
+- [ ] **Step 0b: Update the tests that assert the OLD contract**
+
+`test/test_idle_logic.lua` currently asserts a wildcard `"all"` matches a station in zone `"slot1"`. That is exactly the behaviour being removed. Replace the first block:
+
+```lua
+-- presenceFor: a zone name means what it says. "all" is NOT a wildcard -- it is the literal zone an
+-- unregistered station answers to, which is why the floor-wide broadcast still reaches those and
+-- ONLY those.
+t.eq(I.presenceFor({ kind = "presence", zone = "all", present = true }, "all"), true,
+  "unregistered station (zone 'all') wakes on the floor-wide broadcast")
+t.eq(I.presenceFor({ kind = "presence", zone = "all", present = false }, "all"), false,
+  "...and sleeps on it")
+t.eq(I.presenceFor({ kind = "presence", zone = "all", present = true }, 5), nil,
+  "REGISTERED station (zone 5) IGNORES the floor-wide broadcast -- a player at the hub must NOT wake it")
+t.eq(I.presenceFor({ kind = "presence", zone = 5, present = true }, 5), true,
+  "registered station wakes on its OWN zone")
+t.eq(I.presenceFor({ kind = "presence", zone = 5, present = false }, 5), false,
+  "...and sleeps on its own zone")
+t.eq(I.presenceFor({ kind = "presence", zone = 7, present = true }, 5), nil,
+  "another station's zone -> nil (ignore)")
+t.eq(I.presenceFor({ kind = "presence", zone = "slot1", present = true }, "slot1"), true,
+  "a pinned string zone still works")
+t.eq(I.presenceFor({ kind = "presence", zone = "slot2", present = true }, "slot1"), nil,
+  "other zone -> nil (ignore)")
+t.eq(I.presenceFor({ kind = "register" }, "slot1"), nil, "non-presence msg -> nil")
+t.eq(I.presenceFor("hello", "slot1"), nil, "non-table msg -> nil")
+```
+
+Also check the `newPresence` block further down the same file — it feeds `zone = "all"` messages to a handle built with zone `"slot1"` and expects them to match. Those cases must be rewritten to use a matching zone, or they will now fail. Run the file and fix whatever it reports; do not delete a failing case to make it pass — each one encodes a real contract.
+
+- [ ] **Step 0c: Make the hub's `presence?` reply zone-aware**
+
+In `registrar()`, the presence-query branch currently always answers `zone = "all"`. A registered station would get an answer it no longer matches, silently breaking the boot resync that the whole 1000-blocks-out design depends on. It must answer that station's own zone. The station's query already carries `msg.zone` (see `idle_runner.queryPresence`).
+
+`presenceLoop` must therefore share its per-station map with `registrar()`, exactly the way `occupied` already is. Add beside `local occupied = false`:
+
+```lua
+-- Shared with presenceLoop, same reason `occupied` is: the registrar answers `presence?` pulls and
+-- must give a registered station ITS OWN presence, not the floor-wide answer. A station that just
+-- booted (chunk loaded because a player walked up) pulls before it can be pushed to -- that pull is
+-- the entire reason a station 1000 blocks out works at all.
+local zonePresent = {}     -- computerID -> boolean
+```
+
+Replace the presence-query branch with:
+
+```lua
+    elseif idle.isPresenceQuery(msg) then
+      local z = msg.zone
+      if type(z) == "number" and zonePresent[z] ~= nil then
+        rednet.send(sender, { kind = "presence", zone = z, present = zonePresent[z] }, PROTO)
+      else
+        rednet.send(sender, { kind = "presence", zone = "all", present = occupied }, PROTO)
+      end
+```
 
 - [ ] **Step 1: Replace `presenceLoop` wholesale**
 
@@ -525,7 +619,7 @@ local function presenceLoop()
     return
   end
   print(("Presence loop online: isPlayersInRange(%d) + position oracle every %.2fs."):format(DET_RANGE, POLL))
-  local prev, proxOff = {}, false
+  local proxOff, warnedNil = false, false
   local timer = os.startTimer(POLL)
   while true do
     local ev = { os.pullEvent() }
@@ -556,17 +650,29 @@ local function presenceLoop()
             print("=====================================================")
             break
           end
-          -- nil = the player is outside a CAPPED playerDetMaxRange, or logged off mid-poll. Both read
-          -- as "absent", which is why a capped range is silent and why `hub test pos` exists.
-          if type(p) == "table" then positions[name] = p end
+          if type(p) == "table" then
+            positions[name] = p
+          elseif not warnedNil then
+            -- nil for a player who IS online is the ONLY tell that playerDetMaxRange is capped --
+            -- and it is otherwise completely silent: a capped range looks exactly like "nobody is
+            -- there", so distant stations would just never wake and nothing would say why. (It can
+            -- also mean the player logged off mid-poll, which is harmless -- hence a one-time note,
+            -- not a fatal.) The owner verified getPlayerPos out to ~500 blocks, so at -1 this should
+            -- never print; if it starts printing, the cap is real and the stations beyond it are the
+            -- ones going dark.
+            warnedNil = true
+            print(("[proximity] NOTE: getPlayerPos(%s) returned nil for an ONLINE player."):format(name))
+            print("  Harmless if they just logged off. If it repeats, playerDetMaxRange is CAPPED —")
+            print("  stations beyond it will never wake. Run `hub test pos` from a far station.")
+          end
         end
         if not proxOff then
           local now = prox.evaluate(reg.stations, positions, DIM)
-          for _, e in ipairs(prox.edges(prev, now)) do
+          for _, e in ipairs(prox.edges(zonePresent, now)) do
             rednet.send(e.id, { kind = "presence", zone = e.id, present = e.present }, PROTO)
             print(("[zone] #%d -> %s"):format(e.id, e.present and "WAKE" or "SLEEP"))
           end
-          prev = now
+          zonePresent = now   -- shared upvalue: the registrar answers `presence?` pulls from this
         end
       end
 
@@ -586,15 +692,37 @@ Expected: `SYNTAX_OK`
 Run: `grep -nE "det\.(isPlayersInRange|getOnlinePlayers|getPlayerPos)" src/hub/hub.lua`
 Expected: exactly three hits inside `presenceLoop` (plus the two in the `test` blocks). **None of them may sit inside a loop over `reg.stations`.** If a detector call appears in a per-station loop, the task has failed its core constraint.
 
-- [ ] **Step 4: Verify the legacy path is intact**
+- [ ] **Step 4: Verify the legacy path still reaches unregistered stations**
 
 Run: `grep -n 'zone = "all"' src/hub/hub.lua`
-Expected: two hits — the `presenceLoop` broadcast and the `presence?` query reply in `registrar()`. Both unchanged.
+Expected: two hits — the `presenceLoop` broadcast, and the **fallback** arm of the `presence?` reply in `registrar()`. A registered station must no longer be answered `"all"`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the idle_logic tests**
+
+Run: `luajit test/test_idle_logic.lua`
+Expected: `0 failed`. These now encode the new contract — in particular that a **registered** station ignores the floor-wide broadcast. That single assertion is the difference between this feature working and being a no-op.
+
+- [ ] **Step 6: Prove the bug is actually dead (the check the old plan couldn't pass)**
+
+Run:
+```bash
+luajit -e '
+  package.path = "src/lib/?.lua;" .. package.path
+  local I = require("idle_logic")
+  local B = { kind = "presence", zone = "all", present = true }   -- the hub floor-wide broadcast
+  assert(I.presenceFor(B, "all") == true,  "unregistered station must STILL wake on the broadcast")
+  assert(I.presenceFor(B, 5)     == nil,   "registered station must IGNORE the broadcast")
+  assert(I.presenceFor({ kind = "presence", zone = 5, present = true }, 5) == true,
+         "registered station must wake on its own addressed zone")
+  print("per-station zones are real: a player at the hub no longer wakes the cage")
+'
+```
+Expected: `per-station zones are real: a player at the hub no longer wakes the cage`
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/hub/hub.lua
+git add src/hub/hub.lua src/lib/idle_logic.lua test/test_idle_logic.lua
 git commit -m "feat(hub): presenceLoop as a position oracle -- O(players), not O(stations)"
 ```
 

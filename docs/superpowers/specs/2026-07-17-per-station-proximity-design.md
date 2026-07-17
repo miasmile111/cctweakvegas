@@ -201,7 +201,9 @@ for each edge in proximity.edges(prev, now):
   pre-optimize.
 - **The legacy `all` broadcast is untouched**, so every station that hasn't registered a position
   behaves exactly as today. This is the no-regression guarantee: `slot` and `issue` keep working
-  with zero changes.
+  with zero changes. **But see the CORRECTION below** — "untouched broadcast" is only safe *because*
+  `presenceFor` stops treating `"all"` as a wildcard; leaving both as originally specified is what
+  makes the feature a no-op.
 - `getPlayerPos` is wrapped in `pcall`. On throw: print a **loud, once** "PROXIMITY DISABLED —
   getPlayerPos is disabled in the server config", stop per-station evaluation, and keep serving the
   legacy `all` zone. A misconfigured server degrades to today's behaviour, it does not brick.
@@ -227,8 +229,38 @@ unloaded (or that loses GPS later) keeps its zone.
 
 `idle_runner` changes by exactly one line of intent: `cfg.zone` defaults to `os.getComputerID()`
 instead of `"all"` **when a position was registered**, else stays `"all"`.
-`idle_logic.presenceFor(msg, myZone)` already matches `msg.zone == "all" or msg.zone == myZone` —
-**unchanged**. This is the "config-only upgrade" the idle spec promised.
+
+### CORRECTION (2026-07-17, found by the whole-branch review — read this before touching zones)
+
+**This spec originally claimed `idle_logic.presenceFor` was already correct and needed no change:
+"a config-only upgrade". That claim was WRONG, and it would have shipped a feature that does
+nothing.** `presenceFor` matched:
+
+```lua
+if msg.zone == "all" or msg.zone == myZone then
+```
+
+The `"all"` clause matches **unconditionally**. So a registered station answering to zone `5` would
+*still* wake on the hub's floor-wide `zone="all"` broadcast — a player at the hub would wake the cage
+1000 blocks away, which **is the original bug, untouched**. The in-world checklist step "walk to the
+hub → the cage does not wake" is unpassable against the code this spec originally described.
+
+The trap is that the property making the half-built branch safe (every station still matches `"all"`,
+so none can be stranded asleep) is the *same* property that makes the finished feature useless. No
+per-task review can see that fork — each verifies its own diff correctly. This is the cage lesson
+repeating: **a faithful implementation of a wrong plan is a wrong program.**
+
+**The fix has two halves and they must land together:**
+
+1. **`idle_logic.presenceFor` drops the `"all"` clause** → `if msg.zone == myZone then`. This works
+   because an unregistered station's zone *is literally the string* `"all"`, so it still matches the
+   broadcast — no regression — while a registered station stops matching it. `test/test_idle_logic.lua`
+   asserts the old contract and must be updated with it.
+2. **The hub's `presence?` reply (`registrar()`) must answer a registered station with ITS zone**, not
+   `"all"`. Miss this and a registered station's boot-time `queryPresence()` gets an answer it no
+   longer matches — silently killing the boot resync that the entire "stations 1000 blocks out"
+   argument rests on (see "objection is void" above). This means `presenceLoop`'s per-station state
+   must be shared with `registrar()` exactly as `occupied` already is.
 
 ## Data flow
 
