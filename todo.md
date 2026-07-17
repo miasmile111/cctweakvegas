@@ -520,11 +520,28 @@ would it embarrass us?* Anything else is a distraction from opening.
 
 **Known rough edges, in rough priority — brainstorm before building any of them:**
 
-- **The slot's advert screen is a default-palette placeholder** (`slot_advert.lua`: plain COME PLAY /
-  GET MONEY). It is the station's face while idle, which is **most** of the time, and it is the first
-  thing anyone walking the floor sees. The cage's advert got the full treatment; the slot's did not.
-  Golden-standard loop: `kb/monitor-ui-workflow.md` (owner mockup → live preview → subpixel/pixelfont
-  → offline PNG verify → deploy).
+- **The adverts — and the real deliverable under them is a PIXELFONT ALPHABET.** (Owner-scoped
+  2026-07-17: **this is its own session, AFTER the freeze fix is deployed and verified.** Do not
+  cram it behind a bugfix.)
+  - **`pixelfont` has NO LETTERS today.** It holds `M.WIN` (the literal glyphs `W`,`I`,`N`,`:` —
+    drawn for one label), `M.BIG` (digits 0-9, 4×6), and `SIGN_SM`/`SIGN_LG` (the two `$`). That is
+    the whole font. **Both adverts fall back to native CC cell text — which is exactly why they read
+    as default-palette placeholders.** So "restyle the adverts" is really "build an alphabet".
+  - **Why big type is the requirement, not a preference (owner):** an advert is *designed* to be read
+    from **far away** across the floor. Use the biggest font that fits, as much as possible.
+  - **The central tension — canvas width.** Slot = 15×24 cells = **30 × 72 subpixels**. Cage = 36×24
+    cells = **72 × 72**. At `BIG`'s 4-wide + 1 gap that is **6 letters/line on the slot**, 3 at 2×
+    scale. So `MONEY` fits and `COME PLAY` does not. **Owner's call: fitting `MONEY` big beats
+    fitting `COME PLAY` small.** The cage has 2.4× the width — the two stations may not want the
+    same answer, and that is fine.
+  - **Open for that session:** which glyph set (A-Z only? digits/punctuation?), and who draws. The
+    precedent is owner-draws-a-few → Claude extrapolates (owner drew `0` → 1-9 extrapolated; owner
+    drew `W`/`I`/`N`). 26 glyphs by hand is a big ask — suggest the owner draws ~4 that set the style
+    (a curve, a diagonal, a stem: `S`,`A`,`E`,`O`), Claude extrapolates, owner reviews in the preview.
+  - **Cage advert:** already got the full treatment and is *not* a placeholder — the ask there is
+    "some things to clear up", chiefly moving it onto the big font once the alphabet exists.
+  - Golden-standard loop, unchanged: `kb/monitor-ui-workflow.md` (owner mockup → live preview →
+    subpixel/pixelfont → offline PNG verify → deploy).
 - **Nothing tells a new player what any of this IS.** No card, no idea what `$` is, no idea the cage
   exists. The membership card is deliberately optional (README principle 4) — but "optional" only
   works if a player can *discover* it. Consider signage, a `chat_box` bark on approach (AP has one),
