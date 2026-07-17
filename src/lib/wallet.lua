@@ -74,7 +74,12 @@ end
 -- ---- hub round-trip (I/O) --------------------------------------------------
 local unpack = table.unpack or unpack   -- Lua 5.1 (CraftOS) safety
 
--- Drive a blocking rom function that pumps events, WITHOUT losing the caller's events.
+-- Drive a function that pumps events with NO FILTER, WITHOUT losing the caller's events. (Not a
+-- general "any blocking rom function" driver: CC's own rom/apis/parallel.lua compares the filter a
+-- coroutine yields before deciding what to hand it, but this driver ignores the filter entirely --
+-- that is only correct because rednet.lookup, the one function this exists for, calls a bare
+-- os.pullEvent() with a nil filter. A function that actually filters would get fed events it never
+-- asked for.)
 -- rednet.lookup pulls with a bare os.pullEvent() and silently discards everything it does not
 -- recognise (verified in CC:Tweaked rom/apis/rednet.lua) -- including a play loop's pending tick
 -- timer. That is the floppy-swap freeze: the timer never comes back, the loop's next pullEvent
@@ -84,29 +89,28 @@ local unpack = table.unpack or unpack   -- Lua 5.1 (CraftOS) safety
 --
 -- The subtlety: `fn` must not go fetch its own events straight from the real os.pullEvent (that
 -- pulls the OUTER program's events, not ours, and would run fn to completion in one resume without
--- ever handing control back to us). So for the exact duration fn is on-CPU, os.pullEvent IS
--- coroutine.yield -- fn's calls suspend `co` and land right back in the loop below. Only there,
--- outside `co`, do we swap the real os.pullEvent back in to source the actual next event.
--- No os.pullEvent mutation here, and none is needed: INSIDE a coroutine, os.pullEvent IS
--- coroutine.yield(filter) already (that's how CraftOS itself is built -- see rom/apis/parallel.lua,
--- which drives coroutines this exact same way). `fn` calling os.pullEvent() from inside `co` yields
--- straight back to whichever `coroutine.resume(co, ...)` is on the call stack -- which is always us,
--- right here. Swapping the global in and out bought nothing, and worse: it stomps the REAL
--- os.pullEvent's terminate handling (it turns a "terminate" event into `error("Terminated", 0)`) for
--- the whole duration fn runs, silently breaking Ctrl+T for anything pumped through this function.
+-- ever handing control back to us). But no mutation is needed to arrange that: INSIDE a coroutine,
+-- os.pullEvent already IS coroutine.yield(filter) -- that's how CraftOS itself is built (see
+-- rom/apis/parallel.lua, which drives coroutines this exact same way). So `fn` calling os.pullEvent()
+-- from inside `co` yields straight back to whichever coroutine.resume(co, ...) is on the call stack
+-- -- which is always us, right here. We never touch the real os.pullEvent, and we must not: mutating
+-- it would stomp its terminate handling (the real os.pullEvent turns a "terminate" event into
+-- `error("Terminated", 0)`; a bare coroutine.yield does not), silently breaking Ctrl+T for the whole
+-- duration fn runs.
 function M._pumpSafe(fn, ...)
   local co = coroutine.create(fn)
   local stash = {}
   local res = { coroutine.resume(co, ...) }
   while coroutine.status(co) ~= "dead" do
-    if not res[1] then error(res[2], 0) end
     local ev = { os.pullEvent() }
     -- the coroutine's OWN dns traffic is its business; everything else belongs to the caller
     if not (ev[1] == "rednet_message" and ev[4] == "dns") then stash[#stash + 1] = ev end
     res = { coroutine.resume(co, unpack(ev)) }
   end
-  if not res[1] then error(res[2], 0) end
+  -- Hand the caller's events back BEFORE re-raising: if fn errored AFTER we had already stashed
+  -- events, dropping them here would cause the very freeze this function exists to prevent.
   for _, e in ipairs(stash) do os.queueEvent(unpack(e)) end
+  if not res[1] then error(res[2], 0) end
   return unpack(res, 2)
 end
 

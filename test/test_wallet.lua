@@ -254,4 +254,15 @@ do
   t.ok(not ok, "_pumpSafe propagates an error raised inside the coroutine")
 end
 
+-- 8b. THE ERROR PATH MUST NOT EAT THE STASH: an fn that errors AFTER we stashed events would
+-- otherwise cause the very freeze _pumpSafe exists to prevent.
+do
+  local restore, queued = fakeOS({ { "timer", 7 } })
+  local ok = pcall(W._pumpSafe, function() os.pullEvent(); error("boom", 0) end)
+  restore()
+  t.ok(not ok, "error raised after stashing still propagates")
+  t.eq(#queued, 1, "the caller's timer is handed back even on the error path")
+  t.eq(queued[1][2], 7, "and it is the right timer")
+end
+
 t.done()
