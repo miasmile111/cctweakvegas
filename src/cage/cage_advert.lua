@@ -47,9 +47,9 @@ function M.draw(mon)
 
   -- The rate table: one row per denomination. "%-9s%5s" is what keeps the "$" column aligned
   -- regardless of label/value width (cage_rates.DENOMS is the source of truth).
-  -- CEILING: rows 18-21, with the bottom bar at cell row 23 -> at most FOUR denominations. This is
-  -- TIGHTER than the old layout's six, and it is the price of the 2x signage above. cage_rates.lua's
-  -- CEILING note says so; a 5th metal lands on the bar.
+  -- CEILING: rows 18-22, with the bottom bar at cell row 23 -> at most FIVE denominations fit (a 6th
+  -- lands on the bar); four ships with a blank row of breathing room. This is TIGHTER than the old
+  -- layout's six, the price of the 2x signage above. cage_rates.lua's CEILING has the exact geometry.
   mon.setBackgroundColor(colors.black)
   mon.setTextColor(colors.lightGray)
   for i = 1, #rates.DENOMS do
