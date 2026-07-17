@@ -283,11 +283,11 @@ avoids this via `pos=` in cage.cfg; the slot has no cfg and pays it) — a good 
 
 **Verified in-world:** `hub test pos` returns exact positions for a player **500+ blocks** away →
 `enablePlayerPosFunction` is on and `playerDetMaxRange` is NOT the old 100 cap.
-**Still unconfirmed:** `enablePlayerPosRandomError`. Run `hub test pos` **twice while standing still**
-— the error is re-rolled per call, so identical coords = off, differing coords = ON (no F3 compare
-needed). At 500 blocks the fuzz would be ~±76 blocks/axis, which would break remote stations while
-looking fine up close. The hub now warns once if `getPlayerPos` returns nil for an *online* player —
-the only tell that the range is capped, otherwise perfectly silent.
+`enablePlayerPosRandomError` is **off too** — `hub test pos` run twice while standing still gave
+identical coordinates, and the error is re-rolled per call, so that is proof (no F3 compare needed).
+**All three config values confirmed clean; Atlas is on the 1.21.1 defaults.** The hub still warns once
+if `getPlayerPos` returns nil for an *online* player — the only tell that the range is capped, and
+otherwise perfectly silent.
 
 **Three Important findings, none catchable by a per-task review — the session's real lesson.**
 
@@ -333,12 +333,95 @@ the only tell that the range is capped, otherwise perfectly silent.
   out can't hear rednet" objection: a station only needs to listen when a player is near it, and a
   player near it has already loaded its chunk.
 
-**In-world checklist (PENDING):** `hub test pos` ×2 standing still (the randError check) · `update hub`
+**In-world checklist (PENDING):** `update hub`
 + `update cage`, put `pos=` in cage.cfg, reboot · `hub test zones` lists it · walk to the cage → only
 the cage wakes · walk to the hub → the cage does **NOT** wake (the whole point) · walk away → sleeps ·
 reboot the cage while standing at it → wakes (the pull path) · the slot (no `pos=`) still wakes on
 `"all"` → no regression · Nether at the cage's x/z → does **not** wake · hub terminal quiet while
 nobody moves (edge-only).
+
+## GPS constellation — the build guide (owner task, zero code)
+
+**What it buys:** a station learns its **own** position at boot, so a floor of hundreds never needs
+hundreds of hand-typed coordinates. Without it everything still works — a station just needs `pos=`
+in its `.cfg`, or it stays on the floor-wide `"all"` zone. **It is optional infrastructure; nothing
+blocks on it.** Facts + the measurements behind the rules: `[[gps-constellation-geometry]]`.
+
+**Shopping list:** 4 computers + 4 **ender modems**, all in a **force-loaded** chunk (the hub's is
+already force-loaded — put them there).
+
+### The two rules that matter
+
+1. **The 4th host MUST be at a different `y` from the other three.** Three hosts only ever narrow a
+   station's position to a **mirrored pair** about their plane; the 4th breaks the tie only if it sits
+   **off** that plane. Four hosts all at the same y **fail at every distance** — and they fail
+   *silently*, as `gps.locate()` simply returning nil. This is the one way to build it wrong.
+2. **The modem goes on a SIDE of the computer, never on a cable.** `gps host` and `gps.locate` both
+   scan `rs.getSides()` only. A modem on the wired network is invisible to GPS.
+
+Everything else is forgiving. **Horizontal spread buys nothing** — CC's GPS distances are *exact*
+(no measurement noise), so there is no dilution of precision and a constellation inside a single
+16×16 chunk is exact out to 100,000 blocks. Don't scatter them across the map; it gains you nothing.
+They also don't *have* to share a chunk — any force-loaded chunks will do. One chunk is simply enough.
+
+### Layout
+
+Three at one height, spread out (a right angle, not a line — chunk corners are ideal), and the fourth
+**~40 blocks up**:
+
+```
+        D  (+40 y)          three at y=Y, one at y=Y+40
+        ·
+   A ---------- B           A, B, C: NOT in a line (trilaterate rejects near-collinear)
+   |                        D: any x/z; the LIFT is the whole job
+   C
+```
+
++5 y already works to 20,000 blocks; +40 y reaches 100,000. Take the 40 — it's free.
+
+### Steps
+
+1. Place the 4 computers as above, an **ender modem on a side of each**.
+2. For each, get its **own block coordinates**: point at the computer and read F3's
+   **"Targeted Block: X Y Z"** (*not* the player XYZ line — that is where you are standing).
+3. On each computer, make it host **on boot**, so a server restart or chunk reload brings it back:
+   ```
+   edit startup
+   ```
+   one line, with **that computer's** numbers:
+   ```lua
+   shell.run("gps", "host", "105", "64", "-238")
+   ```
+   Ctrl → Save → Exit, then `reboot`. It should print `Opening channel on modem ...` and sit there
+   serving. **That is a running program — leave it running.** A host that isn't running is invisible,
+   and a missing 4th host looks exactly like no GPS at all.
+4. Repeat for all four, each with its own coordinates.
+
+> **Why `startup` and not just running `gps host` by hand:** these must survive a server restart. A
+> dead constellation is **silent** — stations quietly fall back to `"all"`, and nothing announces it.
+> We write no code for this: CC ships `gps host` (`rom/programs/gps.lua`).
+
+### Verify
+
+On any computer with a wireless modem on a side (a station is fine):
+```
+gps locate
+```
+Expect it to print a position within ~2s. Wrong or nil ⇒ re-check rule 1 (are all four at the same
+y?), then rule 2 (modem on a side?), then that all four hosts are actually running with their **own**
+correct coordinates.
+
+### Then: hand the stations over to it
+
+- **Cage:** delete the `pos=` line from `cage.cfg` and reboot. **cfg always wins over discovery**, so
+  while `pos=` is there GPS is never consulted. `hub test zones` should show the same position it did
+  before — now derived, not typed.
+- **Slot:** nothing to do. It has no `.cfg`, so it has been falling back to `"all"`; on its next boot
+  it self-locates and gets a zone of its own. **This is the moment the slot stops waking when someone
+  walks past the hub.**
+- **Every station after this one:** wire it, `update <pkg>`, done. No coordinates, ever.
+- **Bonus:** the 2s `gps.locate` stall on every station boot disappears — that delay was the timeout
+  expiring with no constellation to answer.
 
 ## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
 

@@ -149,11 +149,17 @@ Engineering, Integrated Dynamics, Mekanism, Powah, Storage Drawers.
 
 ## Open questions to verify in-world
 - [ ] Exact registry names via `peripheral.getNames()` (confirm `player_detector` vs `playerDetector`).
-- [x] **`playerDetMaxRange` — ANSWERED 2026-07-17. It is NOT capped on Atlas** (`hub test pos` returns
-      exact positions for a player 500+ blocks out; a 100 cap would have returned nil). **And the
-      default is `-1` (unlimited) in 1.21.1, not 100** — `defineInRange("playerDetMaxRange", -1, -1,
-      Integer.MAX_VALUE)`. The 100 in this file's earlier note was the **pre-1.21 default**, and
-      chasing it wasted real design time: it does not cap our zones, and at -1 the hub's one detector
-      is a **server-wide oracle**, which is what makes per-station proximity possible at all.
+- [x] **Player-detector config on Atlas — ALL THREE ANSWERED 2026-07-17 via `hub test pos`. All clean;
+      Atlas is on the 1.21.1 defaults.** Do not re-litigate these.
+  - **`playerDetMaxRange` is NOT capped** (exact positions returned for a player 500+ blocks out; a
+    100 cap would have returned nil). **The default is `-1` (unlimited) in 1.21.1, not 100** —
+    `defineInRange("playerDetMaxRange", -1, -1, Integer.MAX_VALUE)`. The 100 in this file's earlier
+    note was the **pre-1.21 default**, and chasing it wasted real design time. At -1 the hub's one
+    detector is a **server-wide oracle** — the fact the whole proximity design rests on.
+  - **`enablePlayerPosFunction` is TRUE** — `getPlayerPos` did not throw.
+  - **`enablePlayerPosRandomError` is FALSE** — ran `hub test pos` twice standing still and the
+    coordinates were identical. The error is re-rolled per call (`Math.random()` inside
+    `getPlayerPos`), so **two identical readings while stationary is proof it is off** — no F3
+    comparison needed. That is the cheap test to reuse if this is ever in doubt.
 - [ ] Which of these peripherals are actually enabled/craftable on the server.
 - [ ] CC:T Redstone Relay API (the AP integrator's replacement) — pull from tweaked.cc.
