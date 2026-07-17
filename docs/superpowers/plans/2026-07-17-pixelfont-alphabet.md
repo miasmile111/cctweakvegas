@@ -10,6 +10,13 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-17-pixelfont-alphabet-design.md` — read it first.
 
+> **Post-build correction (2026-07-17):** where this plan (Task 4) says the cage rate-table ceiling
+> is **4** denominations because "a 5th lands on the bar", that arithmetic was wrong and was fixed
+> during Task 4's review. The true geometry: a **5th fits** (row 22, subpixels 64-66) but sits
+> against the bar with no breathing room; a **6th collides** (row 23 = the bar). **Four ships** with a
+> blank row above the bar. The shipped `cage_advert.lua`/`cage_rates.lua` comments are correct; only
+> this plan's original number is stale.
+
 ## Global Constraints
 
 - **Branch is `feat/pixelfont-alphabet`. Nothing goes to `main` until the final merge.** A second session is building multiplayer on this repo concurrently.
