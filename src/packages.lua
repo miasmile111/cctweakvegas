@@ -14,6 +14,7 @@ return {
       { name = "subpixel",     path = "lib/subpixel.lua" },
       { name = "pixelfont",    path = "lib/pixelfont.lua" },
       { name = "idle_logic",   path = "lib/idle_logic.lua" },
+      { name = "proximity",    path = "lib/proximity.lua" },
       { name = "idle_runner",  path = "lib/idle_runner.lua" },
       { name = "slot_logic",   path = "slot/slot_logic.lua" },
       { name = "slot_symbols", path = "slot/slot_symbols.lua" },
@@ -32,6 +33,7 @@ return {
       { name = "subpixel",     path = "lib/subpixel.lua" },
       { name = "pixelfont",    path = "lib/pixelfont.lua" },
       { name = "idle_logic",   path = "lib/idle_logic.lua" },
+      { name = "proximity",    path = "lib/proximity.lua" },
       { name = "idle_runner",  path = "lib/idle_runner.lua" },
       { name = "card",         path = "lib/card.lua" },
       { name = "wallet",       path = "lib/wallet.lua" },
@@ -48,8 +50,9 @@ return {
   pong = {
     station = true,
     files = {
-      { name = "idle_logic",  path = "lib/idle_logic.lua" },
-      { name = "idle_runner", path = "lib/idle_runner.lua" },
+      { name = "idle_logic",   path = "lib/idle_logic.lua" },
+      { name = "proximity",    path = "lib/proximity.lua" },
+      { name = "idle_runner",  path = "lib/idle_runner.lua" },
       { name = "pong_advert", path = "pong/pong_advert.lua" },
       { name = "pong",        path = "pong/pong.lua" },
     },
@@ -62,6 +65,7 @@ return {
     autorun = "hub",
     files = {
       { name = "idle_logic", path = "lib/idle_logic.lua" },
+      { name = "proximity",  path = "lib/proximity.lua" },
       { name = "ledger",     path = "lib/ledger.lua" },
       { name = "hub",        path = "hub/hub.lua" },
     },
