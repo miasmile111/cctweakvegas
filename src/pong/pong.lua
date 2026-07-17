@@ -22,6 +22,33 @@ local PADDLE_STEP = 1      -- cells the paddle moves per tick while its plate is
 local BALL_SPEED  = 0.6    -- cells the ball moves per tick
 -- ----------------------------------------------------------------------------
 
+-- ---- per-station wiring ----------------------------------------------------
+-- pong.cfg is NOT in the package file list, so it survives `update pong` (which OVERWRITES
+-- pong.lua). It is the ONLY place per-station wiring belongs. cfg always wins over discovery:
+-- CC does not hand identically-built stations identical peripheral names.
+--   drives=drive_0,drive_1     # seat order: left paddle first
+local function readCfg()
+  local out = {}
+  if not fs.exists("pong.cfg") then return out end
+  local f = fs.open("pong.cfg", "r")
+  if not f then return out end
+  local txt = f.readAll(); f.close()
+  for k, v in txt:gmatch("([%w_]+)%s*=%s*([^\r\n#]+)") do
+    out[k] = (v:gsub("%s+$", ""))
+  end
+  return out
+end
+
+local function splitList(s)
+  if not s then return nil end
+  local out = {}
+  for item in s:gmatch("[^,%s]+") do out[#out + 1] = item end
+  return #out > 0 and out or nil
+end
+
+local CFG   = readCfg()
+local ANTE  = tonumber(CFG.ante) or 10
+
 local mon = peripheral.find("monitor")
 if not mon then
   error("No monitor found. Attach a monitor (directly or via a wired modem) and rerun.", 0)
@@ -118,6 +145,60 @@ local function draw()
   win.setVisible(true)
 end
 
+-- ===== DEBUG ECON HARNESS ===================================================
+-- Native cell text on purpose. This is a harness for mp_econ, not a game: pong has no win
+-- condition, no advert and no pixelfont alphabet to draw one with. Do not decorate it.
+local econ                                   -- the mp_econ instance for this session
+local GO_W, END_W = 6, 7                     -- button widths on the bottom row
+
+local function btnHit(x, y)
+  if y ~= H then return nil end
+  if x <= GO_W then return "go" end
+  if x > W - END_W then return "end" end
+  return nil
+end
+
+-- top row, left: the seats. The score keeps the centre (draw() already put it there).
+local function drawEcon()
+  local st = econ.status()
+  local parts = {}
+  for i, s in ipairs(st.seats) do
+    local who
+    if s.antedId then who = s.antedId .. "*"          -- * = paid in; the seat is locked to this id
+    elseif s.player then who = s.player
+    else who = "anon" end
+    if s.offline then
+      parts[#parts + 1] = who .. " OFFLINE"
+    elseif s.balance then
+      parts[#parts + 1] = ("%s $%d"):format(who, s.balance)
+    else
+      parts[#parts + 1] = who
+    end
+  end
+  win.setBackgroundColor(colors.black); win.setTextColor(colors.white)
+  win.setCursorPos(1, 1)
+  win.write(table.concat(parts, " | "):sub(1, W))
+  if st.pot > 0 then
+    local p = ("POT $%d"):format(st.pot)
+    win.setCursorPos(math.max(1, W - #p + 1), 1)
+    win.setTextColor(colors.yellow)
+    win.write(p)
+    win.setTextColor(colors.white)
+  end
+end
+
+-- bottom row: [ GO ] ............... [ END ]
+local function drawButtons()
+  local gap = math.max(0, W - GO_W - END_W)
+  win.setCursorPos(1, H)
+  win.setBackgroundColor(colors.gray); win.setTextColor(colors.white)
+  win.write(" GO   ")
+  win.setBackgroundColor(colors.black)
+  win.write(string.rep(" ", gap))
+  win.setBackgroundColor(colors.gray)
+  win.write(" END   ")
+end
+
 local function physics()
   readPlates()
   lp = clamp(lp + lpv * PADDLE_STEP, 1, H - PADDLE_H + 1)
@@ -142,27 +223,82 @@ local function physics()
 end
 
 -- ACTIVE session: pong's physics loop, run by idle_runner while a player is present. Resets the
--- game each entry (fresh scores/ball). Returns "sleep" when the zone empties (no round to finish),
--- or "quit" on the operator's Q.
+-- game each entry (fresh scores/ball). Returns "sleep" when the zone empties, or "quit" on Q.
 local function play(mon, pres)
   ls, rs = 0, 0
   lp = math.floor((H - PADDLE_H) / 2) + 1
   rp = lp
   resetBall(math.random() < 0.5 and -1 or 1)
+
+  econ = require("mp_econ").new{ drives = splitList(CFG.drives), ante = ANTE }
+  local msg = nil                                  -- transient status line (deny reasons)
+
+  local function render()
+    draw()          -- the rally, unchanged
+    drawEcon()
+    drawButtons()
+    if msg then
+      win.setBackgroundColor(colors.black); win.setTextColor(colors.red)
+      win.setCursorPos(1, 2); win.write(msg:sub(1, W))
+      win.setTextColor(colors.white)
+    end
+    win.setVisible(true)
+  end
+
+  -- A live pot must never leave this loop unresolved. On the way out, whoever is ahead takes it --
+  -- which is exactly what "the ante is forfeit" means when the player who walked off was losing.
+  -- Without this, exiting mid-match debits both players and credits nobody: the $ evaporates.
+  local function resolve()
+    if econ.phase == "playing" then econ.finish{ [1] = ls, [2] = rs } end
+  end
+
   local timer = os.startTimer(TICK)
-  draw()
+  render()
 
   while true do
     local ev = { os.pullEvent() }
     if ev[1] == "timer" and ev[2] == timer then
       physics()
-      draw()
-      if pres.gone() then return "sleep" end   -- zone empty: stop (no round to finish)
+      render()
+      if pres.gone() then resolve(); return "sleep" end
       timer = os.startTimer(TICK)
+
+    elseif ev[1] == "monitor_touch" then
+      local hit = btnHit(ev[3], ev[4])
+      if hit == "go" then
+        msg = nil
+        local res, reason, seat = econ.start()
+        if res == "deny" then
+          if reason == "timeout" then msg = "HUB OFFLINE - nobody charged"
+          elseif reason == "already playing" then msg = "MATCH ALREADY RUNNING"
+          else msg = ("SEAT %d: %s - all antes refunded"):format(seat or 0, tostring(reason):upper()) end
+        elseif res == "free" then
+          msg = "FREE RALLY - 2 cards to play for a pot"
+        end
+        ls, rs = 0, 0                              -- a match starts from 0-0
+        resetBall(math.random() < 0.5 and -1 or 1)
+      elseif hit == "end" then
+        local r = econ.finish{ [1] = ls, [2] = rs }
+        if r.potWinner then
+          msg = ("SEAT %d TAKES $%d"):format(r.potWinner, r.potShare[r.potWinner] or 0)
+        else
+          msg = ("SEAT %d WINS (no pot)"):format(r.matchWinner or 0)
+        end
+      end
+      render()
+      timer = os.startTimer(TICK)   -- re-arm unconditionally: a handler that touches the hub runs a
+                                    -- nested event pump, and this loop only re-arms in its timer
+                                    -- branch ([[event-pump-reentrancy]]). The cage does the same.
+
+    elseif ev[1] == "disk" or ev[1] == "disk_eject" then
+      econ.onEvent(ev)
+      render()
+      timer = os.startTimer(TICK)   -- refreshCard hits the hub: same reason as above
+
     elseif ev[1] == "rednet_message" then
       pres.fromEvent(ev)
     elseif ev[1] == "key" and ev[2] == keys.q then
-      return "quit"
+      resolve(); return "quit"
     end
   end
 end
