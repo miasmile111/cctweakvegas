@@ -143,4 +143,112 @@ do
   t.ok(wroteOutbox(), "credit still persists the outbox (creditNow did not break the guarantee)")
 end
 
+-- ---- _pumpSafe: the floppy-swap freeze ------------------------------------
+-- rednet.lookup pulls with a bare os.pullEvent() and DISCARDS what it doesn't recognise, so a
+-- lookup fired from inside slot.lua's tick loop eats the game's timer and the machine freezes.
+-- _pumpSafe drives such a function and hands every foreign event back. See
+-- docs/superpowers/specs/2026-07-17-hub-lookup-pump-freeze-design.md
+
+-- install a fake CraftOS event queue; returns a restore fn
+local function fakeOS(incoming)
+  local realPull, realQueue = os.pullEvent, os.queueEvent
+  local queued = {}
+  local i = 0
+  os.pullEvent = function()
+    i = i + 1
+    if not incoming[i] then error("fake event queue exhausted", 0) end
+    return unpack(incoming[i])
+  end
+  os.queueEvent = function(...) queued[#queued + 1] = { ... } end
+  return function() os.pullEvent, os.queueEvent = realPull, realQueue end, queued
+end
+
+-- A faithful stand-in for rednet.lookup: pulls with no filter and discards everything that is not
+-- its own dns reply -- exactly the loop in rom/apis/rednet.lua that causes the freeze.
+local function dnsLookup()
+  return function()
+    while true do
+      local ev = { os.pullEvent() }
+      if ev[1] == "rednet_message" and ev[4] == "dns" then return "found" end
+    end
+  end
+end
+
+-- 1. THE FREEZE, REPRODUCED: a foreign timer swallowed by the inner fn must come back out
+do
+  local restore, queued = fakeOS({ { "timer", 42 }, { "rednet_message", 3, {}, "dns" } })
+  local r = W._pumpSafe(dnsLookup())
+  restore()
+  t.eq(r, "found", "_pumpSafe returns the inner fn's value")
+  t.eq(#queued, 1, "_pumpSafe re-queues the foreign timer the inner fn discarded")
+  t.eq(queued[1][1], "timer", "re-queued event is the timer")
+  t.eq(queued[1][2], 42, "re-queued timer keeps its id")
+end
+
+-- 2. foreign events come back in arrival order
+do
+  local restore, queued = fakeOS({
+    { "timer", 1 }, { "disk", "left" }, { "monitor_touch", "m", 2, 3 },
+    { "rednet_message", 3, {}, "dns" },
+  })
+  W._pumpSafe(dnsLookup())
+  restore()
+  t.eq(#queued, 3, "all three foreign events handed back")
+  t.eq(queued[1][1], "timer", "order preserved: timer first")
+  t.eq(queued[2][1], "disk", "order preserved: disk second")
+  t.eq(queued[3][1], "monitor_touch", "order preserved: touch third")
+end
+
+-- 3. the coroutine's OWN dns traffic is not handed back (nothing else in the repo speaks dns)
+do
+  local restore, queued = fakeOS({ { "rednet_message", 3, {}, "dns" } })
+  W._pumpSafe(dnsLookup())
+  restore()
+  t.eq(#queued, 0, "dns messages are the lookup's own business, not re-queued")
+end
+
+-- 4. a non-dns rednet_message IS foreign and must be handed back. This is the one that matters for
+-- the economy: an in-flight ccvegas reply must not be eaten by a lookup racing alongside it.
+do
+  local restore, queued = fakeOS({ { "rednet_message", 3, {}, "ccvegas" }, { "rednet_message", 3, {}, "dns" } })
+  W._pumpSafe(dnsLookup())
+  restore()
+  t.eq(#queued, 1, "a ccvegas message is foreign to the lookup")
+  t.eq(queued[1][4], "ccvegas", "re-queued with its protocol intact")
+end
+
+-- 5. an inner fn that returns immediately pumps nothing
+do
+  local restore, queued = fakeOS({})
+  local r = W._pumpSafe(function() return "instant" end)
+  restore()
+  t.eq(r, "instant", "no-pump fn returns straight through")
+  t.eq(#queued, 0, "nothing queued when nothing was pulled")
+end
+
+-- 6. nil return (lookup found no hub) survives the round trip
+do
+  local restore = fakeOS({ { "timer", 1 } })
+  local r = W._pumpSafe(function() os.pullEvent(); return nil end)
+  restore()
+  t.eq(r, nil, "_pumpSafe passes a nil return through (hub not found)")
+end
+
+-- 7. args are forwarded to the inner fn
+do
+  local restore = fakeOS({})
+  local got
+  W._pumpSafe(function(a, b) got = a .. b end, "cc", "vegas")
+  restore()
+  t.eq(got, "ccvegas", "_pumpSafe forwards its varargs")
+end
+
+-- 8. an error inside the coroutine propagates instead of hanging
+do
+  local restore = fakeOS({})
+  local ok = pcall(W._pumpSafe, function() error("boom", 0) end)
+  restore()
+  t.ok(not ok, "_pumpSafe propagates an error raised inside the coroutine")
+end
+
 t.done()

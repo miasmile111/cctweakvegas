@@ -74,6 +74,40 @@ end
 -- ---- hub round-trip (I/O) --------------------------------------------------
 local unpack = table.unpack or unpack   -- Lua 5.1 (CraftOS) safety
 
+-- Drive a blocking rom function that pumps events, WITHOUT losing the caller's events.
+-- rednet.lookup pulls with a bare os.pullEvent() and silently discards everything it does not
+-- recognise (verified in CC:Tweaked rom/apis/rednet.lua) -- including a play loop's pending tick
+-- timer. That is the floppy-swap freeze: the timer never comes back, the loop's next pullEvent
+-- blocks forever, the monitor stops and only a reboot clears it ([[event-pump-reentrancy]]).
+-- os.pullEvent IS coroutine.yield(filter), so we can stand in for the CraftOS scheduler: resume the
+-- function ourselves, feed it every event, and re-queue the ones it dropped on the way out.
+--
+-- The subtlety: `fn` must not go fetch its own events straight from the real os.pullEvent (that
+-- pulls the OUTER program's events, not ours, and would run fn to completion in one resume without
+-- ever handing control back to us). So for the exact duration fn is on-CPU, os.pullEvent IS
+-- coroutine.yield -- fn's calls suspend `co` and land right back in the loop below. Only there,
+-- outside `co`, do we swap the real os.pullEvent back in to source the actual next event.
+function M._pumpSafe(fn, ...)
+  local co = coroutine.create(fn)
+  local realPullEvent = os.pullEvent
+  local stash = {}
+  os.pullEvent = coroutine.yield
+  local res = { coroutine.resume(co, ...) }
+  os.pullEvent = realPullEvent
+  while coroutine.status(co) ~= "dead" do
+    if not res[1] then error(res[2], 0) end
+    local ev = { os.pullEvent() }
+    -- the coroutine's OWN dns traffic is its business; everything else belongs to the caller
+    if not (ev[1] == "rednet_message" and ev[4] == "dns") then stash[#stash + 1] = ev end
+    os.pullEvent = coroutine.yield
+    res = { coroutine.resume(co, unpack(ev)) }
+    os.pullEvent = realPullEvent
+  end
+  if not res[1] then error(res[2], 0) end
+  for _, e in ipairs(stash) do os.queueEvent(unpack(e)) end
+  return unpack(res, 2)
+end
+
 -- rednet.lookup is ITSELF a blocking event pump, so cache the hub id and only look it up when we
 -- don't have one (or after a timeout, in case the hub restarted with a new id). Keeps the hot path
 -- (a mid-round balance refresh) from pumping — and eating — the caller's own events during lookup.
