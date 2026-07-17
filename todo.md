@@ -632,6 +632,18 @@ rule-of-three extraction were **the same piece of work**, which is why this was 
 - **`getMountPath()` on a NETWORK drive is unverified** — the whole seat model assumes two drives on
   one computer both mount. It is a 2-minute in-world check and the design rests on it.
 
+**Deploy attempt 2026-07-17 — pong wouldn't start, no ender modem (`c17d7f8`).** The pong station was
+built **wired-only** (wired modem for the monitor, no ender modem on a side). Pong wakes ONLY on GPS
+proximity, and `gps.locate` needs an **ender modem on a computer SIDE** to self-locate + register a
+zone — wired-only falls to zone `"all"`, normal per-station presence never wakes it, and pong had
+**no fallback** (slot has its lever, cage has `pos=` in cfg). Fixed by adding an **additive local
+redstone wake** (`wake_side=`/`wake_level=` in pong.cfg, default side `left`, mirrors slot's lever):
+step on a plate to wake with no ender modem. **Blocked until an ender modem is added** (owner lacked
+materials): full pot money flow + GPS sleep/wake need the station to reach the remote hub. What the
+local wake unblocks offline: the 2-drive `getMountPath` seat read (seats show `id OFFLINE` off the
+card mirror), the seat UI, and the `HUB OFFLINE` deny path. **In-world verification of the wake +
+seat read is still PENDING** — pushed, not yet tested.
+
 **In-world verification (PENDING):** `update slot` + `update cage` + `update pong`, reboot each ·
 0 cards → free rally, **no regression** · 1 card → free, **no debit** · 2 cards → `GO` → both
 debited, `POT $20` → `END` → higher score credited · **pull a card mid-match → the pot still pays
