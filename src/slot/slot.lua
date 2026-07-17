@@ -204,9 +204,12 @@ local function drawTopFrame(reels, bulbTick, result, status, stakeIdx, dispAmt)
   local L = topLayout()
   topWin.setVisible(false)
   drawTop(topCv, reels, bulbTick, result, stakeIdx, dispAmt)
-  -- header (row 2): "<id>: $<bal>", or INSUFFICIENT / FREE PLAY. bg = gradient slot so it rides it.
+  -- header (row 2): "<id>: $<bal>", or HUB OFFLINE / INSUFFICIENT / FREE PLAY. bg = gradient slot so
+  -- it rides it. OFFLINE is checked FIRST: a hub timeout fails closed like a real deny, but the
+  -- player is not broke and the machine must not say they are.
   local hdr
-  if status.denied then hdr = "INSUFFICIENT"
+  if status.offline then hdr = "HUB OFFLINE"
+  elseif status.denied then hdr = "INSUFFICIENT"
   elseif status.player then hdr = ("%s: $%d"):format(status.player, status.balance or 0)
   else hdr = "FREE PLAY" end
   topWin.setTextColor(WHITE); topWin.setBackgroundColor(GRAD[1])
