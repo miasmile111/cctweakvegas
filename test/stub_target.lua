@@ -9,6 +9,13 @@ function M.new(cols, rows)
   function t.setTextScale() end
   function t.clear() end
   function t.setVisible() end
+
+  -- Additive for the advert harness: adverts write native text and set palette slots.
+  t.writes   = {}
+  t.palette  = {}
+  function t.write(s) t.writes[#t.writes + 1] = { x = t._x, y = t._y, text = s } end
+  function t.setPaletteColour(slot, r, g, b) t.palette[slot] = { r, g, b } end
+  t.setPaletteColor = t.setPaletteColour
   return t
 end
 return M
