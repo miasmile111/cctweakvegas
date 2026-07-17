@@ -1,10 +1,12 @@
 package.path = "src/lib/?.lua;src/slot/?.lua;test/?.lua;" .. package.path
 local t = require("runner")
 
--- ---- stub the two modules sp_econ composes -------------------------------
+-- ---- stub the CORE modules sp_econ composes (via the real card_session) ----
+-- card_session is NOT stubbed: sp_econ's whole job is now to drive it correctly, so it is
+-- exercised for real here and the assertions below are unchanged from before the extraction.
 local stubCard = { _disk = nil }
-function stubCard.read() return stubCard._disk end
-function stubCard.writeMirror(b) stubCard._mirror = b end
+function stubCard.read(drive) return stubCard._disk end
+function stubCard.writeMirror(b, drive) stubCard._mirror = b end
 function stubCard.isCardEvent(ev) return ev[1] == "disk" or ev[1] == "disk_eject" end
 
 local stubWallet = { _query = {}, _bet = {} }
