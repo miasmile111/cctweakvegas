@@ -2,6 +2,7 @@
 -- the presence? query, draws the station's <name>_advert on player-leave, and runs its play() while
 -- present. All lag-critical machinery lives here so a station is just a play file + an advert file.
 local idle = require("idle_logic")
+local prox  = require("proximity")
 local PROTO = "ccvegas"
 
 -- Open EVERY modem, never guess one. "Prefer wired" is wrong the moment a station's PERIPHERALS sit
@@ -20,13 +21,82 @@ local function openAllModems()
   return n
 end
 
--- cfg: { name, monitor, zone?, wake={side,level}?, play=function(mon, pres)->"sleep"|"quit" }
+-- Where am I? gps.locate first, so a floor of hundreds of stations never needs hand-typed
+-- coordinates; `pos=x,y,z` in the station's .cfg is the escape hatch and the answer before the GPS
+-- constellation exists. Neither -> we simply do not register, and stay on the legacy "all" zone.
+--
+-- gps.locate needs a WIRELESS MODEM ON A SIDE OF THE COMPUTER -- it scans rs.getSides() only, never
+-- the cable (spec fact 8). Mounting the ender modem on a wired network (if that even works) would
+-- silently kill GPS here. Keep it on a side.
+--
+-- The constellation must be 3 hosts + a 4th LIFTED OFF THEIR PLANE; four coplanar hosts cannot
+-- resolve trilateration's mirror and gps.locate just returns nil (spec fact 9,
+-- test/spikes/gps_constellation.lua). One force-loaded chunk is plenty -- CC's GPS distances are
+-- exact, so horizontal spread buys nothing.
+local function resolvePos(cfg)
+  local fromCfg = prox.parsePos(cfg.pos)
+  if fromCfg then return fromCfg, "cfg" end
+  if gps then
+    local x, y, z = gps.locate(2)
+    if x then return { x = x, y = y, z = z }, "gps" end
+  end
+  return nil, "none"
+end
+
+-- Tell the hub where we are. Best-effort and non-fatal: a station whose hub is down still plays
+-- (its lever wakes it), it just will not get proximity until the hub hears from it again.
+-- Returns true only if the hub ACKED -- an OLD hub silently ignores station_pos and would otherwise
+-- look identical to success (see todo.md's `hub_version` follow-up).
+--
+-- Note on the event loop below: this runs once at boot, before deepSleep, so there is no caller loop
+-- whose timer it could swallow -- unlike wallet.request, it needs no stash/re-queue
+-- ([[event-pump-reentrancy]]). Do not copy this pattern into a hot path.
+local function registerPos(pos, cfg)
+  local hub = rednet.lookup(PROTO, "hub")
+  if not hub then return false end
+  rednet.send(hub, {
+    kind = "station_pos", computerID = os.getComputerID(), pos = pos,
+    dim = cfg.dim, range = cfg.range, label = os.getComputerLabel(),
+  }, PROTO)
+  local timer = os.startTimer(2)
+  while true do
+    local ev = { os.pullEvent() }
+    if ev[1] == "rednet_message" and type(ev[3]) == "table"
+       and ev[3].kind == "station_pos_ok" then
+      return true
+    elseif ev[1] == "timer" and ev[2] == timer then
+      return false
+    end
+  end
+end
+
+-- cfg: { name, monitor, zone?, pos?, dim?, range?, wake={side,level}?, play=function(mon, pres)->"sleep"|"quit" }
 local function run(cfg)
-  local zone   = cfg.zone or "all"
   local mon    = cfg.monitor
   local advert = require(cfg.name .. "_advert")
 
   local hasRednet = openAllModems() > 0
+
+  -- Zone resolution. cfg.zone pins it (legacy stations, or two computers sharing one zone).
+  -- Otherwise: our own computer ID if the hub knows where we are, else the floor-wide "all".
+  -- The registrar already keys everything by the immutable os.getComputerID(), so reusing it as the
+  -- zone costs no new names, cannot collide, and lets the hub rednet.send straight to us --
+  -- rednet addresses BY computer ID, so per-station presence needs no broadcast at all.
+  local zone = cfg.zone
+  if not zone then
+    zone = "all"
+    if hasRednet then
+      local pos, src = resolvePos(cfg)
+      if pos and registerPos(pos, cfg) then
+        zone = os.getComputerID()
+        print(("[zone] #%d at %d,%d,%d (%s)"):format(zone, pos.x, pos.y, pos.z, src))
+      elseif pos then
+        print("[zone] hub did not ack station_pos (offline, or too old) -> zone 'all'")
+      else
+        print("[zone] no position (no GPS fix, no pos= in cfg) -> zone 'all'")
+      end
+    end
+  end
   local function queryPresence()
     if hasRednet then rednet.broadcast({ kind = "presence?", zone = zone }, PROTO) end
   end

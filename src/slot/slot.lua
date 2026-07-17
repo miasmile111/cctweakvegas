@@ -17,7 +17,10 @@ local SPIN_SIDE  = "back"    -- computer side the lever's redstone feeds
 local SPIN_LEVEL = 13        -- spin when analog signal on SPIN_SIDE reaches this (lever ramps to 15)
 -- Stake ($10/$25/$100) is selected by TAPPING the on-screen stake buttons (monitor_touch). No wiring.
 -- Selection persists across spins and resets to $10 whenever the station goes idle (fresh play()).
-local ZONE = "all"  -- proximity zone this station answers to. "all" = any player in the hub's range.
+-- nil = AUTO: idle_runner registers our GPS position with the hub and we answer to our own computer
+-- ID; with no GPS fix we fall back to the floor-wide "all" (today's behaviour). A slot has no .cfg,
+-- so GPS is the only way it gets a zone of its own — which is exactly what the constellation buys.
+local ZONE = nil
 -- ----------------------------------------------------------------------------
 
 local args = { ... }

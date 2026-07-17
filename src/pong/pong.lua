@@ -167,4 +167,4 @@ local function play(mon, pres)
   end
 end
 
-require("idle_runner").run{ name = "pong", monitor = mon, zone = "all", play = play }
+require("idle_runner").run{ name = "pong", monitor = mon, zone = nil, play = play }

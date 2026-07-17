@@ -57,7 +57,13 @@
 --   droppers=minecraft:dropper_1,minecraft:dropper_2   # only to use SOME of the droppers present
 --   side=back                # redstone out for the shared line — NEVER the modem's side
 --   monitor=monitor_0        # only if two monitors are both 36x24
---   zone=all
+--   pos=105,64,-238         # where this cage IS. Only needed until the GPS constellation exists —
+--                           # with GPS a station finds this out itself. `hub test zones` shows what
+--                           # the hub believes. Without either, the cage stays on the floor-wide
+--                           # "all" zone (i.e. today's behaviour: the hub's range wakes everything).
+--   range=4                 # how close a player must get, in x/z. Default 4 (a 9x9 column).
+--   dim=minecraft:overworld # only if this cage is NOT in the overworld
+--   zone=all                # pin the zone; only to force the legacy floor-wide behaviour
 
 local args = { ... }
 
@@ -85,7 +91,11 @@ local CFG = {
   droppers = nil,        -- nil = every minecraft:dropper on the network
   side     = "back",     -- computer output side feeding the droppers' shared redstone line
   monitor  = nil,        -- nil = the monitor that is 36x24 at scale 0.5 (a 2x2 advanced)
-  zone     = "all",      -- proximity zone this station answers to
+  zone     = nil,        -- nil = AUTO: this computer's ID once the hub knows our position, else "all"
+  pos      = nil,        -- "x,y,z" — only needed until the GPS constellation exists; gps.locate wins nothing
+                         -- if this is set, because cfg ALWAYS wins over discovery
+  dim      = nil,        -- nil = the hub's dimension (minecraft:overworld)
+  range    = nil,        -- nil = proximity.DEFAULT_RANGE (4 blocks in x/z)
 }
 local CFG_FILE = "cage.cfg"
 
@@ -300,7 +310,8 @@ local function loadCfg()
   if not fs.exists(CFG_FILE) then return end
   local f = fs.open(CFG_FILE, "r")
   if not f then return end
-  local scalars = { deposit = true, vault = true, side = true, monitor = true, zone = true }
+  local scalars = { deposit = true, vault = true, side = true, monitor = true, zone = true,
+                    pos = true, dim = true, range = true }
   for line in f.readLine do
     if not line:match("^%s*#") then
       local key, val = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
@@ -916,4 +927,5 @@ end
 
 require("idle_runner").run{
   name = "cage", monitor = mon, zone = CFG.zone, play = play,
+  pos = CFG.pos, dim = CFG.dim, range = tonumber(CFG.range),
 }
