@@ -81,10 +81,17 @@ local function run(cfg)
   -- timeout on every boot while this server has no GPS constellation, via a bare os.pullEvent loop
   -- that silently swallows any redstone event that arrives during that wait (CC:Tweaked's
   -- rom/apis/gps.lua). A lever pulled in that window must not be lost -- capturing wakeLvl here,
-  -- ahead of the blocking calls, means deepSleep can re-check the CURRENT reading against it and
-  -- catch the pull regardless of whether the event survived. Do not move this back down into
-  -- deepSleep -- that's the bug this fixes.
+  -- ahead of the blocking calls, means the FIRST deepSleep can re-check the CURRENT reading against
+  -- it and catch the pull regardless of whether the event survived. Do not move this back down into
+  -- deepSleep -- that's the bug this fixes. This baseline is only ever compared once (see firstSleep
+  -- below); it does not track the lever afterwards, so it going stale past boot is not a concern.
   local wakeLvl = cfg.wake and redstone.getAnalogInput(cfg.wake.side) or 0
+  -- One-shot: the boot-window race above only exists once, between this sample and the FIRST
+  -- deepSleep entry. Every later deepSleep call resamples prevLvl fresh on entry same as always --
+  -- do not let this flag or the wakeLvl check apply past the first sleep, or a lever legitimately
+  -- left high across a play round (Minecraft levers are toggles, not pulses) reads as a fresh pull
+  -- and spuriously re-wakes an empty station the instant play() hands back to deepSleep.
+  local firstSleep = true
 
   -- Zone resolution. cfg.zone pins it (legacy stations, or two computers sharing one zone).
   -- Otherwise: our own computer ID if the hub knows where we are, else the floor-wide "all".
@@ -114,25 +121,25 @@ local function run(cfg)
   local function deepSleep()
     advert.draw(mon)
     queryPresence()                       -- if a player is already here, the hub's reply wakes us
-    -- Re-check against wakeLvl (the baseline sampled up in run(), before resolvePos/registerPos)
-    -- instead of resampling fresh here: pull, don't trust push -- same reasoning as queryPresence()
-    -- re-asking the hub rather than relying on a broadcast that may have been missed. This is what
-    -- makes a redstone event swallowed by gps.locate's boot-time pullEvent loop irrelevant.
-    local lvl = cfg.wake and redstone.getAnalogInput(cfg.wake.side) or 0
-    local rose = cfg.wake and idle.leverRose(wakeLvl, lvl, cfg.wake.level)
-    wakeLvl = lvl
-    if rose then return "wake" end
+    local prevLvl = cfg.wake and redstone.getAnalogInput(cfg.wake.side) or 0
+    if firstSleep then
+      -- Only on the very first deepSleep of this run(): compare against wakeLvl, the baseline
+      -- sampled before resolvePos/registerPos's blocking gps.locate call up in run(). That's the
+      -- only moment a redstone event could have been swallowed by gps.locate's own pullEvent loop,
+      -- so it's the only moment this extra check is needed -- pull, don't trust push, same
+      -- reasoning queryPresence() uses re-asking the hub instead of trusting a maybe-missed
+      -- broadcast. The flag is spent unconditionally right after, win or lose.
+      firstSleep = false
+      if cfg.wake and idle.leverRose(wakeLvl, prevLvl, cfg.wake.level) then return "wake" end
+    end
     while true do
       local ev = { os.pullEvent() }
       if ev[1] == "rednet_message" then
         if idle.presenceFor(ev[3], zone) == true then return "wake" end
       elseif ev[1] == "redstone" and cfg.wake then
-        local l = redstone.getAnalogInput(cfg.wake.side)
-        if idle.leverRose(wakeLvl, l, cfg.wake.level) then
-          wakeLvl = l
-          return "wake"
-        end
-        wakeLvl = l
+        local lvl = redstone.getAnalogInput(cfg.wake.side)
+        if idle.leverRose(prevLvl, lvl, cfg.wake.level) then return "wake" end
+        prevLvl = lvl
       elseif ev[1] == "key" and ev[2] == keys.q then
         return "quit"
       end
