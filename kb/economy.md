@@ -35,7 +35,17 @@ CORE      card.lua · wallet.lua (+outbox) · ledger.lua (hub)                  
   `refund(amount)`, `onEvent(ev)`, `status()`.
 - **`slot/slot_pay.lua`** — the slot's tiny payout script: `STAKE` + `eval(result)`.
 - **`hub/hub.lua`** — owns `ledger.tbl` + the `bet/credit/query/mint/debit` handlers (sole writer).
-- **`issue.lua`** — admin `issue <name> [balance]`: mints a ledger id + writes the floppy.
+- **`issue.lua`** — admin. `issue <name> [balance]` mints a ledger id + writes the floppy;
+  `issue add <amount>` tops up the id already on the inserted card (delta, may be negative — the
+  **sign picks the primitive**: `+` → `wallet.creditNow`, `−` → `wallet.debit`, so a claw-back can
+  never drive a balance below zero, which `ledger.apply` would otherwise happily do). Amounts must be
+  **whole**: `("%d"):format(101.5)` silently prints `101` in Lua 5.1, so a fractional balance would
+  live in the ledger while every screen showed a different number.
+- **`wallet.creditNow`** — `credit`'s admin sibling: same round-trip, but **fails closed and never
+  outboxes**. `credit`'s outbox guarantee is right for a game (a player earned that win, and the
+  station's loop flushes it later) and wrong for `issue`, which is a **one-shot program on a box that
+  never flushes** — the credit would sit queued forever, and a re-run would double-credit if anything
+  ever did flush it. Use `credit` from a station, `creditNow` from a human-driven admin command.
 - **The cage (`cage/`) is the `$` exit** — a kiosk where a card's `$` becomes real metal (droppers)
   and metal becomes `$`, bidirectional and flat-rate. See `todo.md`'s Cage section + the spec/plan
   under `docs/superpowers/`.
@@ -122,6 +132,18 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
    same failure mode. **Not built; the next protocol change should build it.**
 
 ## Open follow-up
+
+- **A TIMEOUT IS AMBIGUOUS, and the outbox treats it as a "no" (latent double-credit).** `wallet.request`
+  gives up after `TIMEOUT = 1.5s`, but the hub may have received the message, applied it and persisted
+  `ledger.tbl` with only the **reply** lost or late — a server hitch stalls a CC computer for seconds
+  (the cage's `cage debug` sees 300ms tick gaps on an *idle* floor). `credit` then **outboxes** it, and
+  the next `flush()` sends it **again** → the win is credited twice. Lesson 1's "persist after each ACK"
+  guards an interrupted *flush*, not this. Same shape for anything that retries a timed-out write.
+  **The fix for the whole family is a request id the hub de-duplicates on** (it already de-dupes rednet
+  by `nMessageID`, but that's transport-level, not application-level). Not built. `issue add` sidesteps
+  it — `wallet.creditNow` never queues, and on a timeout it *asks* the hub what the balance reads
+  rather than claiming to know — but a station's `credit` still has it. Worth doing with the
+  `hub_version` ping (lesson 7), since both are protocol changes.
 
 - **Floppy-swap freeze STILL happens intermittently (open bug, 2026-07-16).** Owner reports the station
   *sometimes* freezes (no crash — monitor stops, program still "running", reboot to clear) when

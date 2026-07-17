@@ -7,6 +7,7 @@ local M = {}
 local PROTO   = "ccvegas"
 local OUTBOX  = "ccvegas_outbox.tbl"
 local TIMEOUT = 1.5   -- seconds to wait for a hub reply
+M.TIMEOUT = TIMEOUT   -- exported so callers can SAY the number when they report a timeout
 
 -- ---- pure outbox helpers (unit-tested) -------------------------------------
 function M._enqueue(list, id, delta)
@@ -23,6 +24,31 @@ function M._drop(list, id, delta)
     end
   end
   return false
+end
+
+-- Parse a user-supplied `$` amount. Returns the number, or nil if it is not one the ledger may ever
+-- see. This is the ONLY validation between a human's typing and a permanent hub write — `ledger.apply`
+-- is `t[id] = t[id] + delta` with no checks of its own — so every clause here is load-bearing:
+--   * not a number     -> tonumber("abc") is nil.
+--   * NOT FINITE       -> tonumber("inf") and tonumber("1e400") are BOTH inf, and inf PASSES an
+--                         integrality test (math.floor(inf) == inf). Sending it would make the hub
+--                         compute `balance + inf` = inf and persist it: that card is poisoned
+--                         forever, unrecoverable, and prints as -9223372036854775808. (nan fails the
+--                         floor test only by accident — nan ~= nan. Don't lean on that.)
+--   * fractional       -> Lua 5.1's ("%d"):format(101.5) SILENTLY yields "101" instead of erroring,
+--                         so a fractional balance would live in the ledger while every screen on the
+--                         floor showed a different, rounded number (the cage draws math.floor).
+--   * absurd magnitude -> past 2^53 a double cannot represent consecutive integers, so the ledger and
+--                         the display would quietly disagree. $1e9 is far beyond any use here.
+-- " 500 ", "5e2" and "0x10" are all finite whole numbers and pass, which is fine.
+M.MAX_AMOUNT = 1e9
+function M._wholeAmount(s)
+  local n = tonumber(s)
+  if not n then return nil end
+  if n ~= n or n == math.huge or n == -math.huge then return nil end   -- nan / +-inf
+  if n ~= math.floor(n) then return nil end
+  if n > M.MAX_AMOUNT or n < -M.MAX_AMOUNT then return nil end
+  return n
 end
 
 -- classify a credit reply. "ok" = hub applied it; "deny" = hub refused (unknown id — retrying can
@@ -120,6 +146,27 @@ function M.credit(id, delta)
   M._enqueue(box, id, delta)
   saveOutbox(box)
   return false, nil, "queued"
+end
+
+-- ADMIN credit: same round-trip as `credit`, but FAILS CLOSED — it never outboxes. Returns
+-- ok, balance, reason ("unknown" | "timeout").
+--
+-- `credit` is guaranteed on purpose: a player *earned* that win, so a hub outage must not lose it and
+-- the outbox is flushed by the station's own loop later. An admin top-up (`issue add`) is the exact
+-- opposite case, and queuing it would be worse than useless in two ways:
+--   1. `issue` is a ONE-SHOT program on an admin box. Nothing there ever calls flush(), so the credit
+--      would sit in ccvegas_outbox.tbl forever and the money would never arrive.
+--   2. The admin sees the failure and RE-RUNS it. The first +500 is still in the outbox, so if
+--      anything ever does flush that computer, the player is credited TWICE.
+-- A human is standing at the terminal and can simply run it again — so report the truth and enqueue
+-- nothing, which is what lets `issue` promise that a re-run is safe.
+function M.creditNow(id, delta)
+  local r = request({ kind = "credit", id = id, delta = delta },
+                    { balance = true, credit_deny = true })
+  local res = M._creditResult(r)                  -- same classifier as `credit`; only the tail differs
+  if res == "ok"   then return true, r.balance end
+  if res == "deny" then return false, nil, r.reason end
+  return false, nil, "timeout"                    -- "queue" -> a hard failure here. Nothing enqueued.
 end
 
 -- try to bank every queued credit; drop each one the hub acks, keep the rest.

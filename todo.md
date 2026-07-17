@@ -58,6 +58,10 @@ passed per-task review + a whole-branch review (deploy/package completeness + pr
 - [x] **Slot payout model** — fixed stake, per-symbol paytable, triple-seven jackpot (`slot_pay`).
 - [x] **Show balance** — economy header (player · balance · stake · win / INSUFFICIENT / FREE PLAY).
 - [x] **Admin card issue** — `issue <name> [balance]` mints ledger id + writes the floppy (hub needs a drive).
+- [x] **Admin card top-up** — `issue add <amount>` moves the balance of the id already on the inserted
+      card (delta, may be negative). Sign picks the primitive (`+`→`wallet.creditNow`, `−`→`wallet.debit`)
+      so a claw-back can't go below zero. No hub change → no reboot. Spec:
+      `docs/superpowers/specs/2026-07-17-issue-topup-design.md`. **In-world verification pending.**
 - [x] **In-world verification** — deployed; mint→insert→bet→win/lose→insufficient→eject(anon)→
       hub-offline-outbox all confirmed working. Hub + slot stations have disk drives.
 
