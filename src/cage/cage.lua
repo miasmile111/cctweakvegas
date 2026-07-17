@@ -769,6 +769,15 @@ local function play(_, pres)
     local tDebit = os.epoch("utc")
     -- money moved -> the button lights green. A DENIED withdraw never gets here, and never flashes.
     pressIdx, pressUntil = i, tick + FLASH_TICKS
+    -- DRAW IT NOW, before the droppers. The caller renders only after withdraw() RETURNS, so this
+    -- flash used to be decided at ~45ms and not appear until ~226ms — the whole tap read as an
+    -- unresponsive monitor that eventually lit up. Everything above this line is cheap (one list +
+    -- the hub round-trip); everything below is ~50ms per dropper of frozen loop. Painting here costs
+    -- nothing (terminal writes are computer-thread) and puts the feedback before the stall instead of
+    -- after it. It is also HONEST: the debit has already succeeded, so green means what it always
+    -- meant — money moved. Do NOT hoist it above the debit to shave the last 45ms: a denied tap would
+    -- then flash "paid" at a player who wasn't.
+    render()
 
     local perDropper = {}
     for d = 1, hw.nDroppers do perDropper[d] = 0 end
