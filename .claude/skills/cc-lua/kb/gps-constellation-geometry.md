@@ -59,6 +59,40 @@ because it averages down measurement noise; CC has no noise, so it is the one le
 takes away. Lift saturates near +100 and Minecraft's height limit caps it anyway; **+40 is already
 ~200× more reach than any real floor needs.**
 
+## A GPS fix is ALWAYS whole numbers — decimals ARE the error message
+
+**Verified in-world 2026-07-17, and it cost a debugging session.** `gps locate` printed
+`Position is -230.17,69.03,318`. A computer sits at an integer block position — the modem reports
+`Vec3.atLowerCornerOf(...)` — so **a correct fix cannot have decimals**. The fractional part is not
+imprecision, it is arithmetic telling you the fixes don't agree.
+
+**The distances are always truth; only the claimed positions can lie.** CC computes distance from
+real block positions (`Math.sqrt(distanceSq)`), with no config, no noise, and no equivalent of AP's
+`playerDetRandomError`. `gps host x y z` broadcasts whatever you *typed*. So when they disagree, the
+typed coordinates are wrong — every time.
+
+**The cause, and it will happen to you: you read the MODEM, not the computer.** The modem is its own
+block stuck to the computer's face. Point at the computer *from that side* and F3's `Targeted Block`
+gives you the **modem's** position, one block off. Sight the computer from a modem-free face.
+
+**How to diagnose it from one screenshot.** `gps locate` runs `gps.locate(2, true)` — debug is already
+on — and prints `<distance> metres from <claimed pos>` for every host. That is a solvable system:
+
+1. **Square each distance.** Clean integers ⇒ the distances are trustworthy (this alone rules out any
+   "is it jitter?" theory; two identical runs confirm it).
+2. **Find two hosts that agree** and solve for the station's true position; it must come out integer.
+3. **Check every claim against it** — `|P − claimed|²` vs measured. The liars pop out.
+4. **Solve each liar's true coordinate** from its own measured distance.
+
+Real case: hosts claimed `A(-231,80,315) B(-228,80,315) C(-231,80,317) D(-231,187,315)`, measured
+d² = `130, 134, 122, 14170`. Station solved to `(-231,69,318)`; A and C checked out; **B was really at
+x=-229 (hosted -228, +1 X) and D at y=188 (hosted 187, −1 Y)**. Corrected, all four matched exactly.
+
+**Why it looked like a precision bug rather than a typo:** B's 1-block error sat on a **3-block
+baseline** and threw x to -230.17; D's identical 1-block error sat on a **119-block** distance and
+moved y by only 0.03. **The same mistake is loud on a short baseline and nearly invisible on a long
+one** — so the *size* of the wrongness tells you nothing about the size of the mistake.
+
 **The traps:**
 
 - **The modem must be on a computer SIDE.** Both `gps.locate` and `gps host` scan only

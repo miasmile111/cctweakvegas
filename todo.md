@@ -394,6 +394,11 @@ Three at one height, spread out (a right angle, not a line — chunk corners are
 1. Place the 4 computers as above, an **ender modem on a side of each**.
 2. For each, get its **own block coordinates**: point at the computer and read F3's
    **"Targeted Block: X Y Z"** (*not* the player XYZ line — that is where you are standing).
+   > **Sight it from a face WITHOUT the modem.** The modem is its own block stuck to the computer, so
+   > pointing at the computer *from that side* puts your crosshair on the **modem** and F3 hands you
+   > a position one block off. This bit us on 2 of the first 4 hosts. See "a GPS fix is ALWAYS whole
+   > numbers" in `[[gps-constellation-geometry]]` — decimals in `gps locate`'s answer mean a host is
+   > lying about where it is, and `gps locate` prints enough to work out *which*.
 3. On each computer, make it host **on boot**, so a server restart or chunk reload brings it back:
    ```
    edit startup
@@ -417,9 +422,20 @@ On any computer with a wireless modem on a side (a station is fine):
 ```
 gps locate
 ```
-Expect it to print a position within ~2s. Wrong or nil ⇒ re-check rule 1 (are all four at the same
-y?), then rule 2 (modem on a side?), then that all four hosts are actually running with their **own**
-correct coordinates.
+Expect a position within ~2s, and **expect it to be whole numbers** — a computer sits at an integer
+block position, so **decimals in the answer are the error message**, not imprecision. It means at
+least one host is broadcasting the wrong coordinates.
+
+- **nil / nothing** ⇒ rule 1 (are all four at the same y? that fails at every distance), then rule 2
+  (modem on a computer side?), then: are all four actually *running*?
+- **Decimals, or a plainly wrong spot** ⇒ a host is lying about its position. `gps locate` already
+  runs in debug mode and prints `<distance> metres from <claimed pos>` per host — that is enough to
+  solve for which one. Square each distance (clean integers ⇒ the distances are fine and it is NOT
+  jitter — there is no GPS equivalent of AP's randomError), find the two hosts that agree, solve the
+  station's true position, then check each claim against it. Worked method + a solved example:
+  `[[gps-constellation-geometry]]`.
+- Note a 1-block error is **loud on a short baseline and nearly invisible on a long one** — so how
+  wrong the answer looks tells you nothing about how big the mistake was.
 
 ### Then: hand the stations over to it
 
