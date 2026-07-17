@@ -9,6 +9,11 @@
 --                                    and what's in the vault. Start here when a cage won't boot.
 --   Run:  cage test drop iron 4   -> shower real metal onto the floor, debiting NOBODY. The one
 --                                    check only the server can answer: do the droppers actually fire?
+--   Run:  cage debug              -> the same kiosk, plus timings on the COMPUTER's terminal: what
+--                                    each tap cost, and any frame gap over 100ms. Start here when the
+--                                    monitor STUTTERS — the cause is main-thread peripheral calls
+--                                    (~50ms of frozen loop each), never the redstone.
+--                                    See kb/main-thread-peripheral-calls-cost-a-tick.md.
 --   Quit: Q on the computer's terminal.
 --
 -- HARDWARE IS DISCOVERED, NOT CONFIGURED. Network names are NOT stable across identically-built
@@ -55,6 +60,16 @@
 --   zone=all
 
 local args = { ... }
+
+-- `cage debug` — the kiosk, unchanged, plus timings on the COMPUTER's terminal (never the monitor,
+-- so a player standing at it sees nothing different). Prints each withdraw's main-thread cost and
+-- any tick longer than 100ms. Every `list`/`pushItems` is a main-thread task that parks this
+-- coroutine until the next game tick, so "how many calls" and "how long was the loop frozen" are the
+-- only two numbers that explain a stuttering monitor. Start here, not at the redstone.
+local DEBUG = (args[1] == "debug")
+local function dbg(fmt, ...)
+  if DEBUG then print(("[dbg] " .. fmt):format(...)) end
+end
 
 local font  = require("pixelfont")
 local rates = require("cage_rates")
@@ -229,10 +244,21 @@ local function drawCage(cv, st)
 
   -- metal buttons: black panel, ingot sprite centred; native label/price overlaid later. A tapped
   -- metal FLASHES green — DEPOSIT's green, so "money moved" is one colour across the whole kiosk.
-  -- (The 1-subpixel left inset on the panel is intentional — it is what the owner approved.)
+  --
+  -- EVERY gradient gap here is 2 subpixels — the outer two as much as the dividers. The panels used
+  -- to run 2..17 and 56..71, leaving the canvas edge columns (x=1, x=72) just ONE subpixel of
+  -- gradient, versus 2 for each divider. On a real monitor that lone subpixel does not survive the
+  -- edge: the left column read as solid black between the red bars, while the money band above —
+  -- whose edge cell is uniform gradient, not a half-and-half split — showed the animation fine. So
+  -- the outer panels give a subpixel back (15 wide vs 16 for the middle pair). The sprites are
+  -- positioned independently and do not move; nothing else notices.
   for i = 1, #DENOM_COL do
-    local lit = (st.pressIdx == i and st.tick < st.pressUntil)
-    cv:fillRect((DENOM_COL[i] - 1) * 2 + 2, L.denomY, DENOM_WC * 2 - 2, L.denomH, lit and GREEN or BLACK)
+    local lit  = (st.pressIdx == i and st.tick < st.pressUntil)
+    local x    = (DENOM_COL[i] - 1) * 2 + 2
+    local w    = DENOM_WC * 2 - 2
+    if i == 1          then x, w = x + 1, w - 1 end   -- leave x=1,2  to the gradient
+    if i == #DENOM_COL then w = w - 1          end   -- leave x=71,72 to the gradient
+    cv:fillRect(x, L.denomY, w, L.denomH, lit and GREEN or BLACK)
     cv:drawSprite((DENOM_COL[i] - 1) * 2 + 6, L.symY, sym.SPRITES[rates.DENOMS[i].key])
   end
 
@@ -723,7 +749,14 @@ local function play(_, pres)
     local denom = rates.DENOMS[i]
     local qty   = rates.QTYS[qtyIdx]
 
-    local have = vault.countItem(hw.vaultList(), denom.item)          -- 1. stock check
+    -- ONE vault listing for the whole tap: the stock check's, handed straight to loadDroppers below.
+    -- `list()` is a main-thread task ≈ a whole game tick with the play loop frozen, so a second one
+    -- is 50ms of dead monitor bought for nothing. Nothing else writes this vault, and pushItems
+    -- reports what really moved, so the shortfall path stays honest even if it goes stale.
+    local tList = os.epoch("utc")
+    local listing = hw.vaultList()
+    local have = vault.countItem(listing, denom.item)                 -- 1. stock check
+    local tStock = os.epoch("utc")
     if have < qty then
       -- a vault deny is a deny: `denied` is what tints the status pink, so all four refusals
       -- (NEED $x / HUB OFFLINE / BAD CARD / VAULT: n) read the same way.
@@ -733,6 +766,7 @@ local function play(_, pres)
 
     local cost = denom.value * qty
     if econ.tryDebit(cost) ~= "ok" then return end                    -- 2. debit (fail closed)
+    local tDebit = os.epoch("utc")
     -- money moved -> the button lights green. A DENIED withdraw never gets here, and never flashes.
     pressIdx, pressUntil = i, tick + FLASH_TICKS
 
@@ -741,7 +775,14 @@ local function play(_, pres)
     local _, nxt = vault.addLoad(perDropper, qty, nextDropper)        -- plan the spread
     nextDropper = nxt                                                 -- advance the rotation
 
-    local loadedPer, loaded = hw.loadDroppers(denom.item, perDropper) -- 3. move
+    local loadedPer, loaded = hw.loadDroppers(denom.item, perDropper, listing)  -- 3. move
+    -- The whole tap is ONE frozen stretch of monitor: every number below is time the play loop spent
+    -- parked on a main-thread task or a hub round-trip, drawing nothing. Expect `load` ≈ 50ms per
+    -- dropper this tap fills, times the number of vault SLOTS it draws from — a fragmented vault
+    -- costs a tick per extra slot boundary, and a shortfall buys one more listing to retry on.
+    local tLoad = os.epoch("utc")
+    dbg("withdraw %s x%d: stock=%dms debit=%dms load=%dms (loaded %d/%d) TOTAL=%dms",
+        denom.key, qty, tStock - tList, tDebit - tStock, tLoad - tDebit, loaded, qty, tLoad - tList)
     -- Shower what LANDED, never `qty`: pulsing for items that were never loaded would drain the
     -- counter against empty droppers and desync the count-down from the metal on the floor.
     for d = 1, #loadedPer do loads[d] = loads[d] + loadedPer[d] end
@@ -767,6 +808,12 @@ local function play(_, pres)
   updateGradient(0)
   render()
   local timer = os.startTimer(TICK)
+  -- `cage debug` only: the gap between rendered frames. The tick is 0.05s, so anything much over
+  -- ~100ms is the loop parked somewhere instead of drawing — which is exactly what a stuttering
+  -- monitor IS. Reporting `owed` alongside says whether the stall lands on the tap or on the shower:
+  -- the shower itself makes no main-thread calls, so a gap with owed>0 and no withdraw line next to
+  -- it means the cause is NOT the droppers.
+  local lastFrame = os.epoch("utc")
 
   while true do
     local ev = { os.pullEvent() }
@@ -815,6 +862,13 @@ local function play(_, pres)
       dispBal = easeToward(dispBal, econ.balance or 0)
 
       render()
+      if DEBUG then
+        local now = os.epoch("utc")
+        if now - lastFrame > 100 then
+          dbg("TICK GAP %dms  owed=%d", now - lastFrame, owed())
+        end
+        lastFrame = now
+      end
       -- Don't sleep mid-shower: the droppers are holding metal the player already paid for, and
       -- deep sleep would strand it (loads resets to 0 on the next wake).
       if pres.gone() and not vault.anyLoaded(loads) then restorePalette(); return "sleep" end

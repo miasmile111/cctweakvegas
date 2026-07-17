@@ -233,10 +233,18 @@ function buildFrame(st){
   // metal buttons: panel fill; sprite centred; native label+price overlaid in frame().
   // A tapped metal FLASHES green — the same green as DEPOSIT, so "money moved" reads as one colour
   // across the whole kiosk.
+  // EVERY gradient gap is 2 subpixels — the outer two as much as the dividers. The panels used to
+  // run right up to x+1, leaving the canvas edge columns only ONE subpixel of gradient; on a real
+  // monitor that lone subpixel does not survive the edge and the left column read as solid black.
+  // (The money band above was fine because its edge cell is uniform gradient, not a half/half
+  // split.) So the outer panels give a subpixel back. The sprites are placed independently.
   for(let i=0;i<4;i++){
     const x=(DENOM_COL[i]-1)*2;
     const lit = (st.pressIdx===i && st.tick<st.pressUntil);
-    fillRect(b,x+1,L.denomY,DENOM_WC*2-2,L.denomH,lit?GREEN:BLACK);
+    let px=x+1, pw=DENOM_WC*2-2;
+    if(i===0) { px+=1; pw-=1; }        // leave subpixels 0,1 to the gradient
+    if(i===3) { pw-=1; }               // leave the last two to the gradient
+    fillRect(b,px,L.denomY,pw,L.denomH,lit?GREEN:BLACK);
     const sp=SPRITES[DENOMS[i].key];
     drawSprite(b,x+Math.floor((DENOM_WC*2-SYM_W)/2),L.symY,sp);
   }

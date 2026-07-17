@@ -89,6 +89,17 @@ another facet of something already written. Keep this index's catalog in sync (o
   monitors = a coin-flip boot) and restore the scale on the ones you reject. Deposit-vs-vault is the
   one thing only a human knows → convention + override. `update` **overwrites the program**, which is
   why per-station wiring belongs in the `.cfg` and nowhere else. Plus the `<station> test` pattern.
+- [[main-thread-peripheral-calls-cost-a-tick]] — `main-thread-peripheral-calls-cost-a-tick.md` —
+  **a stuttering monitor is almost never the redstone.** Monitors don't read redstone at all, and
+  terminal writes are computer-thread + one packet/tick → drawing is ~free. But every `inventory`
+  call (`list`/`pushItems`/`pullItems`/`getItemDetail`) is `mainThread = true`: it parks your
+  coroutine until `task_complete` on the **next game tick**, and a sequential coroutine has only ONE
+  task in flight → **~50ms of frozen play loop per call**. Count calls like bytes. The cage re-listed
+  the vault per dropper = 8 calls ≈ 400ms per tap. Includes the trap in the fix: once you stop
+  re-listing, `pushItems` returning **0 is ambiguous** (target full vs. stale mirror) — guessing
+  either way strands orders; sweep once, and re-list ONLY if short. Plus the 5ms/10ms budgets →
+  `COOLING` (tasks silently take extra ticks), and how to fan out with coroutines without eating
+  your own events.
 - [[event-pump-reentrancy]] — `event-pump-reentrancy.md` — a nested `os.pullEvent` loop (rednet
   round-trip, `rednet.lookup`, `sleep`, `parallel`) called from inside a play loop **eats the outer
   loop's own tick timer** → silent freeze (program "running", reboot to clear). One event queue per
