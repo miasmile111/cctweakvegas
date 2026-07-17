@@ -579,7 +579,14 @@ would it embarrass us?* Anything else is a distraction from opening.
 **Not in the open phase** (parked deliberately — they are how the floor *grows*, not how it opens):
 multiplayer/`mp_econ`, more games, scoreboards, the trading station.
 
-## MP economy engine — BUILT 2026-07-17 ✓ (in-world verification PENDING)
+## MP economy engine — CODE COMPLETE + merged 2026-07-17 ✓ · **ZERO in-world testing** ⚠️
+
+> **Nothing multiplayer has been run in-world — not once.** The engine is built, unit-tested (77
+> mp_econ tests + a whole-branch review), merged to main and pushed, but **no card has been inserted
+> into a real 2-drive pong station, no pot has been anted, nothing.** Every claim below is
+> verified-in-tests-only. The refactors of the two SHIPPED stations (slot, cage) are the highest
+> regression risk and are *also* unverified in-world since the merge. Deploy + walk the checklist
+> before trusting any of it. **This is the whole job of the next MP session's first hour.**
 
 The engine for 2–4 player staked games. Spec:
 `docs/superpowers/specs/2026-07-17-mp-econ-engine-design.md`; plan:
