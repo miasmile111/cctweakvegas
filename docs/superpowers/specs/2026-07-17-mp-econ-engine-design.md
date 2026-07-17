@@ -64,19 +64,23 @@ an extra rule — it is the same rule the economy already lives by.
 Additive. Every existing call site is unaffected (`drive` defaults to nil = first drive = today).
 
 ```lua
-card.drives()                    -- -> { "drive_0", "drive_3" }  drive names WITH a disk, SORTED
-card.read(drive)                 -- -> { id, score } | nil       nil drive = first (unchanged)
-card.readAll()                   -- -> { { drive, id, score }, ... }
+card.drives()                    -- -> { "drive_0", "drive_1" }  ALL drive peripherals, SORTED
+card.read(drive)                 -- -> { id, score } | nil       nil drive = first WITH a disk
+card.readAll()                   -- -> { { drive, id, score }, ... }  only drives holding a card
 card.write(id, score, drive)     -- -> true | false, reason
 card.writeMirror(score, drive)   -- -> true | false, reason
 card.isCardEvent(ev)             -- unchanged
 ```
 
+- **`drives()` returns EVERY drive, disk or not** — because **a drive is a seat, and an empty seat
+  still exists.** (An earlier draft filtered to drives holding a disk; that is right for `readAll`
+  and wrong for seat discovery, where it would make a cardless seat vanish from the station rather
+  than show up as an anonymous player.) `readAll()` does the filtering.
 - **`drives()` sorts by name** so seat order is stable across reboots. Names themselves are NOT
   stable across identically-built stations (`[[station-hardware-discovery]]`) — that is what the
   cfg override is for; sorting only guarantees *this* station is consistent with itself.
-- `drives()` returns only drives with a disk present AND a mount path. An empty drive is a seat with
-  no card, not an error.
+- `read(nil)` scans for the first drive with a disk AND a mount path — today's `mountPath()`
+  behaviour exactly, so every existing caller is unaffected.
 
 ## `card_session.lua` — the extraction
 
@@ -88,10 +92,19 @@ local s = card_session.new{ drive = nil }   -- nil = first drive (sp_econ, cage_
 s.player     -- id string | nil (anonymous)
 s.balance    -- last known hub balance | nil
 s.offline    -- hub unreachable (NOT the same as broke)
-s.refresh()  -- read card -> wallet.query -> mirror write; sets player/balance/offline
-s.onEvent(ev)-- card.isCardEvent(ev) -> refresh()
-s.status()   -- { player, balance, offline }
+s.refresh()      -- read card -> wallet.query -> mirror write; sets player/balance/offline
+s.onEvent(ev)    -- a card event FOR THIS DRIVE -> refresh()
+s.noteHub(reason)-- record a hub call the CALLER made: offline = (reason == "timeout")
+s.setBalance(b)  -- displayed balance + card mirror, after a hub write the caller made
+s.status()       -- { player, balance, offline }
 ```
+
+- **`onEvent` filters by drive.** A `disk` event carries the drive's name (`ev[2]`); a session bound
+  to `drive_1` ignores `drive_0`'s. Without this, one card insert at a 4-seat station fires **four**
+  `wallet.query` round-trips — three of them re-reading a card that did not change.
+- **`noteHub` is why `offline` can live in the session** rather than being duplicated per gateway.
+  `sp_econ.tryBet` and `cage_econ.tryDebit` both make hub calls the session did not make, and both
+  must render the result honestly; they hand the reason back instead of keeping a second flag.
 
 `new()` calls `wallet.flush()` once (bank anything outboxed while the hub was down) and `refresh()`.
 
@@ -143,14 +156,21 @@ pot = 0
 | Call | Contract |
 | --- | --- |
 | `e.onEvent(ev)` | Fold into every seat's session. Call for EVERY event in the play loop. |
-| `e.canStart()` | `true` when `>= minSeats` seats are occupied (carded **or** anon). |
-| `e.start()` | The GO edge. Returns `"staked"` \| `"free"` \| `"deny"`, reason. |
+| `e.cardedCount()` | How many seats hold a readable card. |
+| `e.canStake()` | `cardedCount() >= minSeats`. For the UI only — **GO is always live.** |
+| `e.start()` | The GO edge. Returns `"staked"` \| `"free"` \| `"deny"`, reason, seatIndex. |
 | `e.finish(scores)` | Resolve. `scores` = `{ [seatIndex] = number }`. Returns a result table. |
 | `e.status()` | `{ phase, pot, seats = { { player, balance, offline, anted } } }` |
 
 There is deliberately **no `abort()`/`voidMatch()`**. It would have zero callers — the
 rule-of-three trap in reverse, a policy guessed rather than proven. A match that must end early ends
 via `finish()` with the scores as they stand, which is what "the ante is forfeit" already means.
+
+> **An anonymous seat is invisible, so "occupancy" cannot gate the GO button.** A seat is a drive; a
+> human standing at one with no card emits nothing the computer can read. So there is no
+> `canStart()` quorum — **GO is always live**, and `start()` decides staked-vs-free from the only
+> thing the station can actually observe: how many cards are in. `minSeats` therefore means *the
+> minimum number of CARDED seats that makes a pot*, not a quorum of bodies.
 
 ### `start()` — the ante
 
