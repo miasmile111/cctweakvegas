@@ -9,8 +9,13 @@
 -- feet/eye y rule (spec fact 5), which we never inherit because we never ask AP to do the matching.
 local M = {}
 
-M.DEFAULT_RANGE  = 4   -- blocks in x/z: a 9x9 column. A player at the machine, not merely in the room.
-M.DEFAULT_YRANGE = 3   -- blocks in y: enough for a tall station, tight enough to ignore the floor above.
+-- Owner-set 2026-07-17, after the first constellation went live. A BOX, so range 10 is a 21x21
+-- column, not a circle -- stations closer than ~20 blocks apart will both wake for one player. That
+-- is fine and costs nothing (matching is pure Lua; only the rednet EDGE is sent), and on a casino
+-- floor it is arguably right: walk down a row and the row lights up.
+M.DEFAULT_RANGE  = 10  -- blocks in x/z: a 21x21 column. Walk-up distance, not "somewhere in the room".
+M.DEFAULT_YRANGE = 3   -- blocks in y: deliberately NOT widened with range -- it is what stops the
+                       -- floor above (or below) from waking a station you are nowhere near.
 
 -- Accept a cfg `pos=x,y,z` string (or an already-good table) -> {x,y,z} | nil.
 function M.parsePos(v)

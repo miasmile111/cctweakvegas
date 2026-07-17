@@ -175,8 +175,12 @@ M.evaluate(stations, positions)   -- -> { [computerID] = present }
 M.edges(prev, now)                -- -> { {id=<computerID>, present=<bool>}, ... }  (changes only)
 ```
 
-Zone shape is **ours** now, not AP's: an axis-aligned box, `range` (default 4) in x/z and `yRange`
-(default 3) in y. Simple to reason about, simple to test, and it makes fact (5) a non-issue.
+Zone shape is **ours** now, not AP's: an axis-aligned box, `range` (**default 10**, owner-set
+2026-07-17 once the first constellation was live) in x/z and `yRange` (default 3) in y. Simple to
+reason about, simple to test, and it makes fact (5) a non-issue. It is a **box, not a circle**, so
+range 10 is a 21×21 column and stations under ~20 blocks apart both wake for one player — intended,
+and free (matching is pure Lua; only the rednet edge is sent). `yRange` is deliberately **not** scaled
+with `range`: it is what keeps the floor above from waking a station you are nowhere near.
 
 ### 2. `src/hub/hub.lua` — `presenceLoop` rewritten
 

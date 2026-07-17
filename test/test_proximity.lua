@@ -25,13 +25,16 @@ t.eq(P.parsePos({ x = 1, y = 2 }), nil, "parsePos rejects an incomplete table")
 
 -- near: an axis-aligned box. Default range 4 in x/z, 3 in y. Boundaries are INCLUSIVE.
 t.ok(P.near(st(0, 64, 0), pp(0, 64, 0), OVER), "player on the station -> near")
-t.ok(P.near(st(0, 64, 0), pp(4, 64, 4), OVER), "at the x/z boundary (4) -> near")
-t.ok(not P.near(st(0, 64, 0), pp(5, 64, 0), OVER), "one past x boundary -> not near")
-t.ok(not P.near(st(0, 64, 0), pp(0, 64, 5), OVER), "one past z boundary -> not near")
+t.ok(P.near(st(0, 64, 0), pp(10, 64, 10), OVER), "at the x/z boundary (10) -> near")
+t.ok(not P.near(st(0, 64, 0), pp(11, 64, 0), OVER), "one past x boundary -> not near")
+t.ok(not P.near(st(0, 64, 0), pp(0, 64, 11), OVER), "one past z boundary -> not near")
 t.ok(P.near(st(0, 64, 0), pp(0, 67, 0), OVER), "at the y boundary (3) -> near")
 t.ok(not P.near(st(0, 64, 0), pp(0, 68, 0), OVER), "one past y boundary -> not near (floor above)")
+-- y is NOT widened along with range: a player 10 blocks away and 4 up is on another floor, not here.
+t.ok(not P.near(st(0, 64, 0), pp(10, 68, 10), OVER), "far corner but one floor up -> not near")
 t.ok(P.near(st(0, 64, 0), pp(-4, 61, -4), OVER), "negative corner -> near")
-t.ok(P.near(st(0, 64, 0, { range = 10 }), pp(9, 64, 0), OVER), "range override widens x/z")
+-- NB: the override values must differ from DEFAULT_RANGE, or these assert nothing.
+t.ok(P.near(st(0, 64, 0, { range = 20 }), pp(15, 64, 0), OVER), "range override widens x/z beyond the default")
 t.ok(not P.near(st(0, 64, 0, { range = 1 }), pp(2, 64, 0), OVER), "range override narrows x/z")
 t.ok(P.near(st(0, 64, 0, { yRange = 20 }), pp(0, 80, 0), OVER), "yRange override widens y")
 

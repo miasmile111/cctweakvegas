@@ -61,7 +61,8 @@
 --                           # with GPS a station finds this out itself. `hub test zones` shows what
 --                           # the hub believes. Without either, the cage stays on the floor-wide
 --                           # "all" zone (i.e. today's behaviour: the hub's range wakes everything).
---   range=4                 # how close a player must get, in x/z. Default 4 (a 9x9 column).
+--   range=10                # how close a player must get, in x/z. Default 10 (a 21x21 column — it is
+--                           # a BOX, not a circle). Vertical reach is separate and fixed at 3.
 --   dim=minecraft:overworld # only if this cage is NOT in the overworld
 --   zone=all                # pin the zone; only to force the legacy floor-wide behaviour
 
