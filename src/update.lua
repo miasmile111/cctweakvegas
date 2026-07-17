@@ -172,7 +172,7 @@ if nModems == 0 or (needsDrive and not drive) then
 end
 
 -- -------------------------------------------------------- install the files --
-local installedNow, stations, failed = {}, {}, 0
+local installedNow, stations, autoruns, failed = {}, {}, {}, 0
 for _, pkg in ipairs(requested) do
   local def = PACKAGES[pkg]
   if not def then
@@ -193,6 +193,11 @@ for _, pkg in ipairs(requested) do
     end
     installedNow[pkg] = true
     if def.station then stations[#stations + 1] = pkg end
+    -- what this package should boot into. A station auto-runs its own game; infra opts in
+    -- with `autorun = "<prog>"` (the hub does — a server restart must not leave it dead).
+    if def.autorun or def.station then
+      autoruns[#autoruns + 1] = def.autorun or pkg
+    end
   end
 end
 
@@ -247,12 +252,14 @@ if #stations > 0 then
       print("Registered. This station is now: " .. label)
     end
   end
+end
 
-  -- auto-run this station's game on boot + self-heal (runs whether or not registration
-  -- succeeded — the game is playable unnamed). Uses the first station package installed.
-  enableAutorun(stations[1])
-  if #stations > 1 then
-    print("NOTE: multiple station packages — auto-running '" .. stations[1] ..
+-- auto-run on boot + self-heal (for a station: runs whether or not registration succeeded —
+-- the game is playable unnamed). Uses the first autorun-capable package installed.
+if #autoruns > 0 then
+  enableAutorun(autoruns[1])
+  if #autoruns > 1 then
+    print("NOTE: multiple auto-run packages — booting '" .. autoruns[1] ..
           "'. Edit .station to change.")
   end
 end

@@ -1,7 +1,10 @@
 -- packages.lua — package -> file manifest. Fetched fresh from the repo by `update`.
 --
 -- A package groups the files a station needs, and whether installing it makes this
--- computer a named station (station = true -> gets a unique label like slot2).
+-- computer a named station (station = true -> needs a disk drive, registers with the hub
+-- for a unique label like slot2, and boots into its game).
+-- `autorun = "<prog>"` is the boot-into part on its own, for infra that is NOT a station:
+-- the hub has no drive and no instance number, but must still come back after a restart.
 -- Each file: { name = <in-world filename>, path = <repo path under src/, default name..".lua"> }.
 
 return {
@@ -52,9 +55,11 @@ return {
     },
   },
 
-  -- Infrastructure, not a player station (no instance label).
+  -- Infrastructure, not a player station (no drive, no instance label) — but it must
+  -- reboot into itself: a server restart that leaves the hub dead takes the floor with it.
   hub = {
     station = false,
+    autorun = "hub",
     files = {
       { name = "idle_logic", path = "lib/idle_logic.lua" },
       { name = "ledger",     path = "lib/ledger.lua" },

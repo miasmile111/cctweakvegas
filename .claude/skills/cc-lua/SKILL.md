@@ -97,8 +97,13 @@ design: `docs/superpowers/specs/2026-07-16-station-identity-and-deploy-design.md
    cache-buster (defeats raw.githubusercontent's ~5-min CDN cache), overwriting (no `wget`).
 3. **Registers with the hub** — rednet proto `ccvegas`, hub hosts hostname `hub` → assigns a
    unique label (`slot2`, or `slot2+pong1`). Hub offline → loud fail, files still install.
-4. **Enables auto-run** (station packages) — writes a marked `startup` supervisor that boots the
-   game + self-heals; break out with a key at boot / Ctrl+T / a key in the 3s post-exit window.
+4. **Enables auto-run** — writes a marked `startup` supervisor (program name in `.station`) that
+   boots the program + self-heals; break out with a key at boot / Ctrl+T / a key in the 3s
+   post-exit window. Station packages get it implicitly; infra opts in with `autorun = "<prog>"`
+   in `packages.lua` (the **hub** does — a server restart must not leave the registrar dead).
+   `station = true` means three things at once — needs a disk drive, registers for an instance
+   label, auto-runs — which is why the hub is `station = false` + `autorun`, not a station: it
+   has no drive, and it's a singleton that would be looking itself up before it's running.
 
 **Programs:** `update`, `hub` (v0 registrar — run on an always-loaded computer + modem),
 `mkinstaller` (mints installer floppies), plus the games. Packages defined in `src/packages.lua`.
