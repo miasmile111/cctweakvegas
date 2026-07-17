@@ -359,10 +359,20 @@ already force-loaded — put them there).
 2. **The modem goes on a SIDE of the computer, never on a cable.** `gps host` and `gps.locate` both
    scan `rs.getSides()` only. A modem on the wired network is invisible to GPS.
 
-Everything else is forgiving. **Horizontal spread buys nothing** — CC's GPS distances are *exact*
-(no measurement noise), so there is no dilution of precision and a constellation inside a single
-16×16 chunk is exact out to 100,000 blocks. Don't scatter them across the map; it gains you nothing.
-They also don't *have* to share a chunk — any force-loaded chunks will do. One chunk is simply enough.
+Everything else is forgiving. **Making A→B / A→C longer buys literally nothing — measured, not
+assumed** (`test/spikes/gps_constellation.lua` asserts it). At a fixed +40y lift, growing the triangle
+from 5 blocks to 10,000 blocks — **2,000×** — leaves the reach at 200,000 blocks, unchanged. Lift
+alone moves it 50× (+5y → 10,000; +100y → 500,000, then saturating).
+
+Why, and it is the one real-GPS intuition that **inverts** here: A, B and C define a *plane*, and three
+exact distances always narrow to a **mirrored pair reflected across it**. A bigger triangle does not
+move the plane, so the mirror is identical — only the 4th host's distance *off* the plane separates the
+two candidates. Baseline length is the lever in real GPS purely because it averages down *measurement
+noise*; CC has none, so exactness takes that lever away. Lift saturates near +100 and the world height
+limit caps it anyway — **+40 is already ~200× more reach than any station will ever need.**
+
+They also don't *have* to share a chunk — any force-loaded chunks will do. One chunk is simply enough,
+which is the useful part: **one chunk to force-load.**
 
 ### Layout
 

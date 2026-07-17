@@ -39,6 +39,26 @@ hosts at a chunk's corners plus a fourth lifted:
 A chunk is 16×16 but ~384 tall, so the lift is free. **Build rule: 3 hosts at the chunk's corners + 1
 lifted ~40 blocks.** All four inside the hub's already-force-loaded chunk.
 
+**"Would a longer A→B / A→C help?" — measured: NO. Not even slightly.** Holding the lift at +40 and
+growing the horizontal baseline:
+
+| A→B = A→C | exact out to |
+| --- | --- |
+| 5 blocks | 200,000 |
+| 15 blocks | 200,000 |
+| 100 blocks | 200,000 |
+| 1,000 blocks | 200,000 |
+| 10,000 blocks | 200,000 |
+
+A **2,000× bigger triangle changes the reach by zero**, while lift alone moves it 50× (+5 → 10,000
+vs +100 → 500,000, then saturating). **The mechanism:** A, B and C define a *plane*, and three exact
+distances always narrow the answer to a **mirrored pair reflected across that plane**. Enlarging the
+triangle does not move the plane, so the mirror is identical — only the 4th host's **distance off the
+plane** separates the two candidates for `narrow()`. Baseline length is the lever in *real* GPS purely
+because it averages down measurement noise; CC has no noise, so it is the one lever the exactness
+takes away. Lift saturates near +100 and Minecraft's height limit caps it anyway; **+40 is already
+~200× more reach than any real floor needs.**
+
 **The traps:**
 
 - **The modem must be on a computer SIDE.** Both `gps.locate` and `gps host` scan only

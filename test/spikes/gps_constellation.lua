@@ -146,4 +146,22 @@ for _, case in ipairs({
     ("4th host +%d y stays exact out to %d blocks"):format(case.lift, case.reach))
 end
 
+-- "Wouldn't a LONGER A->B / A->C help?" -- the obvious question, and the answer is no. Hold the lift
+-- and grow the triangle 2000x: the reach does not move a single block. A, B and C define a PLANE, and
+-- three exact distances always narrow to a mirrored pair reflected across it; enlarging the triangle
+-- does not move the plane, so the mirror is unchanged. Only the 4th host's distance OFF the plane
+-- separates the candidates for narrow(). Baseline length is the lever in real GPS purely because it
+-- averages down measurement noise -- CC has none, so exactness takes that lever away. This asserts the
+-- build rule ("spread vertically, not horizontally") stays true rather than staying merely written down.
+do
+  local reach = 200000
+  for _, span in ipairs({ 5, 15, 100, 1000, 10000 }) do
+    local hosts = { v(0, 100, 0), v(span, 100, 0), v(0, 100, span), v(7, 140, 7) }
+    local target = v(reach, 64, -reach * 0.8)
+    local got = locate(hosts, target)
+    t.ok(got ~= nil and errOf(got, target) < 0.05,
+      ("A->B = A->C = %d blocks reaches %d -- horizontal span is irrelevant"):format(span, reach))
+  end
+end
+
 t.done()
