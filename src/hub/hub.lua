@@ -309,41 +309,59 @@ local function presenceLoop()
       occupied = occ
 
       -- ---- per-station zones ----
-      if not proxOff and next(reg.stations) ~= nil then
-        local positions = {}
-        local names = det.getOnlinePlayers()
-        for _, name in ipairs(names) do
-          -- pcall: getPlayerPos THROWS when enablePlayerPosFunction = false (spec fact 3). Unguarded,
-          -- that kills the hub, and the hub is the one machine the whole floor depends on.
-          local ok, p = pcall(det.getPlayerPos, name)
-          if not ok then
-            proxOff = true
-            print("=====================================================")
-            print(" PER-STATION PROXIMITY DISABLED")
-            print(" getPlayerPos is disabled in the server config")
-            print(" (enablePlayerPosFunction = false). Run `hub test pos`.")
-            print(" Falling back to the floor-wide 'all' zone.")
-            print("=====================================================")
-            break
+      if next(reg.stations) ~= nil then
+        local now
+        if proxOff then
+          -- Degraded, but HONEST: with no positions we cannot say who is at WHICH station, so every
+          -- registered station follows the hub's own floor-wide answer -- which is exactly the
+          -- pre-feature behaviour. We cannot just let the "all" broadcast do it: presenceFor no
+          -- longer treats "all" as a wildcard, so a registered station ignores it and would sleep
+          -- forever. The cage has no lever; that would brick it.
+          now = {}
+          for id in pairs(reg.stations) do now[id] = occ end
+        else
+          local positions = {}
+          local names = det.getOnlinePlayers()
+          for _, name in ipairs(names) do
+            -- pcall: getPlayerPos THROWS when enablePlayerPosFunction = false (spec fact 3). Unguarded,
+            -- that kills the hub, and the hub is the one machine the whole floor depends on.
+            local ok, p = pcall(det.getPlayerPos, name)
+            if not ok then
+              proxOff = true
+              print("=====================================================")
+              print(" PER-STATION PROXIMITY DISABLED")
+              print(" getPlayerPos is disabled in the server config")
+              print(" (enablePlayerPosFunction = false). Run `hub test pos`.")
+              print(" Registered stations now follow the hub's own detector")
+              print(" range instead of their real position -- same as before")
+              print(" per-station zones existed: anyone near the HUB wakes ALL")
+              print(" of them.")
+              print("=====================================================")
+              break
+            end
+            if type(p) == "table" then
+              positions[name] = p
+            elseif not warnedNil then
+              -- nil for a player who IS online is the ONLY tell that playerDetMaxRange is capped --
+              -- and it is otherwise completely silent: a capped range looks exactly like "nobody is
+              -- there", so distant stations would just never wake and nothing would say why. (It can
+              -- also mean the player logged off mid-poll, which is harmless -- hence a one-time note,
+              -- not a fatal.) The owner verified getPlayerPos out to ~500 blocks, so at -1 this should
+              -- never print; if it starts printing, the cap is real and the stations beyond it are the
+              -- ones going dark.
+              warnedNil = true
+              print(("[proximity] NOTE: getPlayerPos(%s) returned nil for an ONLINE player."):format(name))
+              print("  Harmless if they just logged off. If it repeats, playerDetMaxRange is CAPPED —")
+              print("  stations beyond it will never wake. Run `hub test pos` from a far station.")
+            end
           end
-          if type(p) == "table" then
-            positions[name] = p
-          elseif not warnedNil then
-            -- nil for a player who IS online is the ONLY tell that playerDetMaxRange is capped --
-            -- and it is otherwise completely silent: a capped range looks exactly like "nobody is
-            -- there", so distant stations would just never wake and nothing would say why. (It can
-            -- also mean the player logged off mid-poll, which is harmless -- hence a one-time note,
-            -- not a fatal.) The owner verified getPlayerPos out to ~500 blocks, so at -1 this should
-            -- never print; if it starts printing, the cap is real and the stations beyond it are the
-            -- ones going dark.
-            warnedNil = true
-            print(("[proximity] NOTE: getPlayerPos(%s) returned nil for an ONLINE player."):format(name))
-            print("  Harmless if they just logged off. If it repeats, playerDetMaxRange is CAPPED —")
-            print("  stations beyond it will never wake. Run `hub test pos` from a far station.")
+          if proxOff then
+            now = nil   -- latched on THIS poll: skip; next poll takes the degraded arm above
+          else
+            now = prox.evaluate(reg.stations, positions, DIM)
           end
         end
-        if not proxOff then
-          local now = prox.evaluate(reg.stations, positions, DIM)
+        if now then
           for _, e in ipairs(prox.edges(zonePresent, now)) do
             rednet.send(e.id, { kind = "presence", zone = e.id, present = e.present }, PROTO)
             print(("[zone] #%d -> %s"):format(e.id, e.present and "WAKE" or "SLEEP"))

@@ -205,8 +205,11 @@ for each edge in proximity.edges(prev, now):
   `presenceFor` stops treating `"all"` as a wildcard; leaving both as originally specified is what
   makes the feature a no-op.
 - `getPlayerPos` is wrapped in `pcall`. On throw: print a **loud, once** "PROXIMITY DISABLED —
-  getPlayerPos is disabled in the server config", stop per-station evaluation, and keep serving the
-  legacy `all` zone. A misconfigured server degrades to today's behaviour, it does not brick.
+  getPlayerPos is disabled in the server config", and stop reading positions. Registered stations do
+  **not** go dark: every one of them is driven from the hub's own floor-wide detector reading instead
+  (the same `occ` the legacy `all` zone uses), addressed to its own zone so it still matches
+  `presenceFor`. A misconfigured server degrades to today's behaviour — anyone near the hub wakes every
+  station — it does not brick.
 - `DIM` (default `"minecraft:overworld"`) filters positions. Stations are assumed to be in it unless
   their cfg says otherwise. There is no CC API for "what dimension am I in", so this is config —
   but per fact (7) a successful `gps.locate()` already proves the constellation's dimension.
@@ -286,7 +289,7 @@ repeating: **a faithful implementation of a wrong plan is a wrong program.**
 
 | Failure | Behaviour |
 |---|---|
-| `getPlayerPos` throws (config off) | Loud once; per-station proximity disabled; legacy `all` zone still served |
+| `getPlayerPos` throws (config off) | Loud once; per-station matching stops, but every registered station is still sent an addressed `presence` from the hub's own `occ` reading — degraded to legacy behaviour, not stranded |
 | `getPlayerPos` returns `nil` (player left mid-poll, or out of a capped range) | Treated as absent. **The capped-range case is silent** — hence the blocking spike |
 | Station never registers a position | Stays on the legacy `all` zone. Works exactly as today |
 | Hub offline | No station wakes on approach (**already true today**); the local lever edge still wakes a station — the existing safety net |
