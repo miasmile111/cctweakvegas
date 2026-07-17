@@ -48,6 +48,46 @@ end
 rednet.host(PROTO, "hub")
 print(("Rednet open on %d modem(s): %s"):format(#modems, table.concat(modems, ", ")))
 
+-- `hub test pos` — THE SPIKE. Per-station proximity reads player POSITIONS, and three Advanced
+-- Peripherals config values can each silently break that. All three default in our favour, but
+-- pre-1.21 AP defaulted playerDetMaxRange to 100 (it is -1 now), so nothing here is assumed.
+-- Run this ONCE standing at the hub and ONCE from a station ~1000 blocks out — a capped range looks
+-- exactly like "nobody is there", which is the failure this tool exists to make loud.
+-- See docs/superpowers/specs/2026-07-17-per-station-proximity-design.md facts (2) and (3).
+if args[1] == "test" and args[2] == "pos" then
+  local det = peripheral.find("player_detector")
+  if not det then
+    print("No 'player_detector' found. Check the block is on the wired network.")
+    return
+  end
+  local names = det.getOnlinePlayers()
+  print(("getOnlinePlayers() -> %d: %s"):format(#names, table.concat(names, ", ")))
+  if #names == 0 then print("Nobody online?? Stand in the world and re-run."); return end
+  for _, n in ipairs(names) do
+    local ok, p = pcall(det.getPlayerPos, n)
+    if not ok then
+      print(("  %s: THREW: %s"):format(n, tostring(p)))
+      print("  => enablePlayerPosFunction = FALSE. Per-station proximity CANNOT work.")
+      print("  => Ask for it to be enabled, or fall back to Plan B (detector per station).")
+    elseif type(p) ~= "table" then
+      print(("  %s: returned %s"):format(n, tostring(p)))
+      print("  => nil = you are OUTSIDE playerDetMaxRange. It is CAPPED; ask for -1, or Plan B.")
+    else
+      print(("  %s: x=%s y=%s z=%s"):format(n, tostring(p.x), tostring(p.y), tostring(p.z)))
+      print(("     dim=%s"):format(tostring(p.dimension)))
+      if p.dimension == nil then
+        print("  => no `dimension` field: morePlayerInformation = FALSE.")
+        print("  => Ask for TRUE, else a player in the Nether can wake the floor.")
+      end
+    end
+  end
+  print("")
+  print("CHECK: compare the x/z above against F3.")
+  print("Off by tens of blocks => enablePlayerPosRandomError = TRUE => remote stations WILL NOT work.")
+  print("Re-run this from ~1000 blocks out. nil there = capped range.")
+  return
+end
+
 if args[1] == "test" then
   local det = peripheral.find("player_detector")
   if not det then
