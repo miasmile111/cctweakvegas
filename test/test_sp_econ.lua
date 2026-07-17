@@ -46,6 +46,19 @@ do
   t.ok(not e.status().offline, "no card -> anonymous free play, not an offline error")
 end
 
+-- ---- ejecting a card WHILE offline clears offline (anonymous free play is not a hub error) ----
+-- Without a starting offline=true this asserts nothing: fresh state is already false.
+do
+  stubCard._disk = { id = "alice", score = 500 }
+  stubWallet._query = { balance = nil, reason = "timeout" }
+  local e = newEcon()
+  t.ok(e.status().offline, "precondition: starts offline with a card in")
+  stubCard._disk = nil
+  e.onEvent({ "disk_eject", "left" })
+  t.ok(not e.status().offline, "card ejected while offline -> offline cleared")
+  t.eq(e.status().player, nil, "and the player is anonymous again")
+end
+
 -- ---- tryBet: THE LIE. A hub timeout must NOT read as INSUFFICIENT ----
 do
   stubCard._disk = { id = "alice", score = 500 }
@@ -67,15 +80,17 @@ do
   t.ok(not e.status().offline, "insufficient is NOT offline -- the hub answered")
 end
 
--- ---- a successful bet clears both flags ----
+-- ---- a successful bet clears a STALE offline (hub went down, then came back) ----
+-- Must start offline, or this test passes against a tryBet that never clears the flag at all.
 do
   stubCard._disk = { id = "alice", score = 500 }
-  stubWallet._query = { balance = 500, reason = nil }
+  stubWallet._query = { balance = nil, reason = "timeout" }
   local e = newEcon()
+  t.ok(e.status().offline, "precondition: starts offline")
   stubWallet._bet = { ok = true, balance = 490 }
-  t.eq(e.tryBet(10), "staked", "funded bet stakes the round")
-  t.ok(not e.status().offline, "successful bet clears offline")
-  t.ok(not e.status().denied, "successful bet clears denied")
+  t.eq(e.tryBet(10), "staked", "funded bet stakes the round once the hub is back")
+  t.ok(not e.status().offline, "a successful bet clears the stale offline")
+  t.ok(not e.status().denied, "and leaves denied clear")
 end
 
 -- ---- the hub coming back clears offline on the next card read ----

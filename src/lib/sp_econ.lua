@@ -105,7 +105,13 @@ end
 -- default plain-text header for games that don't render their own.
 function M.drawHeader(mon, s)
   mon.setCursorPos(1, 1)
-  if s.denied then
+  if s.offline then
+    -- offline first: a hub timeout fails a bet closed the same way insufficient funds does
+    -- (tryBet returns "deny" either way), but offline/denied are mutually exclusive flags --
+    -- telling a player with money in the bank that they're INSUFFICIENT is the exact lie
+    -- this module exists to avoid, so offline must win the branch order.
+    mon.write("HUB OFFLINE")
+  elseif s.denied then
     mon.write("INSUFFICIENT")
   elseif s.player then
     mon.write(("%s  $%d  stake %d"):format(s.player, s.balance or 0, s.stake))
