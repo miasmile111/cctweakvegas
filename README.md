@@ -119,6 +119,7 @@ contraption**, or **hybrid**.
 | **Slot machine**       | v2 ✓    | Lever-armed reels; now bets a stake + pays a per-symbol paytable via the economy. |
 | **Hub server**         | v1 ✓    | Registrar + score ledger (`bet/credit/query/mint`, persisted, sole writer). |
 | **Idle / lag model**   | ✓       | 3-tier idle; shared `lib/idle_runner` every station reuses. See `docs/`. |
+| **Per-station proximity** | ✓ (in-world pending) | Hub = position oracle: **O(players), not O(stations)**. A player at the cage wakes the cage, not the floor. Stations self-locate via `gps.locate` (`pos=` cfg fallback); deep sleep stays a true block. |
 | **Membership cards / economy** | core ✓ (in-world pending) | `lib/ledger·card·wallet·sp_econ` + `issue`; bet-and-pay slot. Layered SP/MP-agnostic. Spec in `docs/`. |
 | **Cage / diegetic sink** | v1 ✓    | `$` ↔ metal kiosk (`src/cage/`), in-world verified. Hardware self-discovers; `wallet.debit`+`credit_deny` core additions. **The `$` exit — the economy is now a loop.** |
 | **Scoreboards**        | planned | Rednet display subscribers around the floor (own spec).           |

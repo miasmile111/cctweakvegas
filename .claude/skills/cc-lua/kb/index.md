@@ -104,3 +104,19 @@ another facet of something already written. Keep this index's catalog in sync (o
   round-trip, `rednet.lookup`, `sleep`, `parallel`) called from inside a play loop **eats the outer
   loop's own tick timer** → silent freeze (program "running", reboot to clear). One event queue per
   computer. Fix: stash + `os.queueEvent` the foreign events back; cache blocking lookups.
+- [[unloaded-chunk-is-the-cheapest-sleep]] — `unloaded-chunk-is-the-cheapest-sleep.md` — a computer in
+  an **unloaded chunk is CLOSED, not sleeping**: zero cost, cheaper than any `os.pullEvent` deep sleep,
+  and chunk load reboots it into `startup` (`serverTick` sees `on = startOn` from NBT). So **chunk
+  loading is already a coarse proximity sensor** and you only need to build the fine one. Kills the
+  "a station 1000 blocks out can't hear rednet" objection — it only needs to listen when a player is
+  near, and a player near it has already loaded its chunk (it then *pulls* presence on boot). Corollary:
+  the hub is the one thing that must stay force-loaded; anything at boot runs on EVERY chunk load, so
+  boot-time blocking calls silently eat events.
+- [[gps-constellation-geometry]] — `gps-constellation-geometry.md` — CC's GPS distances are **exact**
+  (`WirelessNetwork` → `Math.sqrt(distanceSq)`), so there is **no dilution of precision** and horizontal
+  spread buys nothing: a constellation inside **one 16×16 chunk** is exact out to 100,000 blocks — as
+  long as the **4th host is LIFTED off the other three's plane** (coplanar fails at any distance, mirror
+  unresolvable; collinear fails too). Measured, 13 tests. Ender modems work (same-dimension packets carry
+  a distance even interdimensionally), CC ships `gps host` so it is **zero code**, but: the modem must be
+  on a computer **SIDE** (`rs.getSides()`, never the cable), a host must be force-loaded (so don't make
+  every station one), and `gps.locate(2)` burns 2s eating events when no constellation exists.

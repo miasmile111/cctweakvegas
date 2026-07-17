@@ -245,52 +245,100 @@ withdraw, outboxed deposit) → eject mid-shower.
   `pushItems`) pump the event queue and eat a pending tick timer? tweaked.cc is silent on timing.
   `cage.lua` re-arms the timer after every touch handler to guarantee liveness regardless.
 
-## → NEXT: per-station proximity ("is a player near THIS station?") — owner-chosen 2026-07-17
+## Per-station proximity — BUILT 2026-07-17 ✓ (in-world verification PENDING)
 
-**The floor is currently ONE zone, and that is the whole problem.** `hub.lua`'s `presenceLoop` finds a
-single `player_detector`, polls `isPlayersInRange(DET_RANGE)` and broadcasts
-`{kind="presence", zone="all", present=occ}`. Every station matches `zone == "all"`, so a player near
-the **hub** wakes **every** station, and a player at the cage wakes nothing unless the hub can see
-them. (This is why the cage sat on its advert during the v1 session — the GUI was never reached.)
+The floor was ONE zone: `hub.lua` broadcast `{zone="all"}` and every station matched, so a player at
+the **hub** woke **every** station and a player at the **cage** woke nothing. (That is why the cage
+sat on its advert for the whole v1 session — its GUI was never reached.) Now the hub is a
+**position oracle** and each station wakes on its own.
+Spec: `docs/superpowers/specs/2026-07-17-per-station-proximity-design.md`;
+plan: `docs/superpowers/plans/2026-07-17-per-station-proximity.md`. All 6 tasks + per-task reviews +
+a whole-branch review; three Important findings fixed (below).
 
-**Most of the plumbing already exists and is simply unused:**
+**The design, and why it is not the obvious one.** A `player_detector` per station was the first
+answer and it was wrong: it is **O(stations)** — 10 slots = 10 main-thread calls/sec forever, 100 =
+100 — and it *degrades deep sleep*, because a station with a local detector must poll instead of
+blocking. Instead the hub asks `getOnlinePlayers()` + `getPlayerPos()` **per player** — **O(players),
+independent of station count** — and matches zones in pure Lua (`lib/proximity.lua`, 53 unit tests).
+Stations keep a true zero-cost `os.pullEvent` deep sleep. Owner's call; he was right.
 
-- `idle_logic.presenceFor(msg, myZone)` already matches `msg.zone == "all" or msg.zone == myZone`.
-- `idle_runner` already takes `cfg.zone` and passes a `pres` handle to `play()`.
-- `cage.cfg` already has a `zone=` key (defaults `all`); `cage.lua` already reads it.
+**Cost:** `2 + P` main-thread calls per 0.3s poll (P = online players), never per station. P is every
+player online *server-wide* (at `playerDetMaxRange = -1`) — fine for a friends floor; revisit past
+~20 concurrent. If `proxOff` latches it drops to 1 call/poll.
 
-So the work is **hub-side**: learn where players are, learn where stations are, broadcast per-zone
-instead of one global `all`. **No station rewrite** — a station just stops defaulting to `all`.
+**Stations self-locate.** `gps.locate()` at boot → `pos=x,y,z` in `<station>.cfg` → neither = stay on
+the legacy `"all"` zone (not an error). Zone = `os.getComputerID()`: already unique, already the
+registrar's key, and rednet addresses BY computer ID, so per-station presence needs no broadcast.
 
-**The two halves to design:**
+**The GPS constellation is a BUILD task, not code — and it is cheap.** CC ships `gps host <x> <y> <z>`;
+we wrote none of it. **Four computers in the hub's force-loaded chunk: three at the chunk's corners,
+ONE LIFTED ~40 blocks off their plane.** Measured (`test/spikes/gps_constellation.lua`, 13 tests):
+CC's GPS distances are **exact** (no measurement noise), so there is no dilution of precision and
+horizontal spread buys **nothing** — a one-chunk constellation is exact out to 100,000 blocks with a
++40y lift, and even +5y clears 20,000. Four **coplanar** hosts fail at ANY distance (trilateration's
+mirror is unresolvable); collinear fails too. **The ender modem must stay on a computer SIDE** —
+`gps.locate` scans `rs.getSides()` only, never the cable, so moving it onto the network kills GPS.
+Until the constellation exists, `gps.locate(2)` burns its full **2s on every station boot** (the cage
+avoids this via `pos=` in cage.cfg; the slot has no cfg and pays it) — a good reason to build it.
 
-1. **Where is the player?** `kb/advanced-peripherals.md` has the API: `getPlayerPos(name)` →
-   `{x,y,z,dimension,...}`, `getPlayersInRange(range)`, `getPlayersInCoords(p1,p2)` (box),
-   `getPlayersInCubic(w,h,d)` (centred on the detector), and cheap `isPlayersInRange(range)`.
-   **Check `dimension`** — a player at the same x/z in the Nether must not wake the floor.
-2. **Where is the station?** Either a `pos=x,y,z` line per station `.cfg` (dead simple, no new
-   hardware, but hand-maintained and drifts when a machine moves), or CC:T's real **`gps` API** —
-   `gps.locate()` needs a **constellation of 4 GPS host computers** with known coordinates. That is
-   the "GPS system" proper: a station learns its own position at boot and registers it with the hub,
-   which then owns a `zone → box` map. Costs 4 computers + a `gps` package; buys self-configuration
-   that matches how the rest of the floor already discovers its own hardware
-   (`[[station-hardware-discovery]]`).
+**Verified in-world:** `hub test pos` returns exact positions for a player **500+ blocks** away →
+`enablePlayerPosFunction` is on and `playerDetMaxRange` is NOT the old 100 cap.
+**Still unconfirmed:** `enablePlayerPosRandomError`. Run `hub test pos` **twice while standing still**
+— the error is re-rolled per call, so identical coords = off, differing coords = ON (no F3 compare
+needed). At 500 blocks the fuzz would be ~±76 blocks/axis, which would break remote stations while
+looking fine up close. The hub now warns once if `getPlayerPos` returns nil for an *online* player —
+the only tell that the range is capped, otherwise perfectly silent.
 
-**Open questions to settle first:**
+**Three Important findings, none catchable by a per-task review — the session's real lesson.**
 
-- `playerDetMaxRange` on the Atlas Server (config; `-1` = infinite + multidim). Already an unverified
-  item in `kb/advanced-peripherals.md` — it **caps every zone size** and so constrains the design.
-  Verify in-world *before* designing around a range.
-- One detector on the hub, or one per station? Per-station is simpler logic (each polls its own
-  `isPlayersInRange`, no coordinates and no GPS needed at all) but costs an AP block per station and
-  gives up the hub-authoritative shape. **Worth pricing before assuming GPS is needed** — it may make
-  the entire GPS half unnecessary.
-- **Poll cost — read `[[main-thread-peripheral-calls-cost-a-tick]]` FIRST.** Almost certainly the AP
-  detector's methods are main-thread too (`@LuaFunction(mainThread = true)`), i.e. **~50ms of frozen
-  computer each**, and a naive `for each player: getPlayerPos()` every poll would be N calls per tick
-  on the hub — the exact bug just fixed in the cage, in the one place the whole floor depends on.
-  Prefer one cheap `getPlayersInRange`/`getPlayersInCoords` per poll over per-player position calls,
-  and **measure** (`cage debug` is the pattern). Verify the mainThread claim against the AP source.
+1. **The plan itself made the feature a no-op**, and every task would have passed review building it.
+   The spec claimed this was "a config-only upgrade: `presenceFor` unchanged". But `presenceFor`
+   matched `msg.zone == "all"` **unconditionally**, so a station registered to zone 5 *still* woke on
+   the floor-wide broadcast — a player at the hub still woke the cage 1000 blocks away, **the exact
+   bug the feature exists to kill**. The plan's own checklist step ("walk to the hub → the cage does
+   not wake") was unpassable against the code the plan specified. The trap: the property that makes a
+   half-built branch safe (everything still matches `"all"`, nothing stranded) is the **same** property
+   that makes the finished feature useless. Fix: `presenceFor` drops the `"all"` clause — an
+   unregistered station's zone *is literally* `"all"`, so it still matches (no regression) while a
+   registered one stops. **Coupled half:** the hub's `presence?` reply must then answer a registered
+   station with ITS zone, or the boot resync the whole 1000-blocks-out design rests on dies silently.
+2. **Adding GPS at boot lost lever pulls.** `slot.lua` is the only station with a wake lever. Its zone
+   went auto, so every boot ran `gps.locate(2)` *before* `deepSleep` sampled the lever — and CC's
+   `gps.locate` is a bare `os.pullEvent()` loop that **discards** the redstone event. Worse, `prevLvl`
+   then sampled the lever **already high**, so `leverRose(15,15,13)` was false forever: dead until the
+   player toggled twice. Stash/re-queue does NOT fix it (it saves the event, not the baseline).
+   Fix: sample the lever *before* the blocking calls and re-check on entry — **pull, don't trust push**,
+   the same shape as `queryPresence()`. That first fix then caused a *spurious* wake on the ordinary
+   "walk up, spin, leave" path (a MC lever is a TOGGLE and stays high; the presence wake path never
+   updated the baseline) → made it a **one-shot** for the first sleep after boot only.
+3. **`proxOff` bricked every registered station.** On a `getPlayerPos` throw the hub latched and fell
+   back to the `"all"` broadcast — which registered stations now *ignore*. No pushes, and no pulls
+   either (`zonePresent` never populated). The cage has no lever: **bricked**, while the hub printed
+   "Falling back to the floor-wide 'all' zone" — a promise it could not keep. Fix: drive registered
+   stations from the hub's own `occ` (genuinely the pre-feature behaviour, delivered to the zone they
+   actually listen on).
+
+**Reusable facts pulled from mod source (do not re-derive):**
+
+- **Every AP `player_detector` method is `mainThread = true`** — *all* of them, including the "cheap"
+  `isPlayersInRange`. See `[[main-thread-peripheral-calls-cost-a-tick]]`. Count the calls.
+- **`playerDetMaxRange` defaults to `-1` in 1.21.1, not 100** (pre-1.21 default — the KB's old
+  unverified item was chasing a stale number). At -1 the hub's detector sees the **whole server**.
+- **`getPlayerPos` does NOT dimension-filter** (range/box queries do, for free). The hub must — a
+  player at the same x/z in the Nether would otherwise wake the floor. It is gated three ways:
+  `enablePlayerPosFunction` (throws if off), `enablePlayerPosRandomError`, `morePlayerInformation`.
+- **An unloaded chunk's computer is CLOSED, and reboots into `startup` on chunk load.** So a remote
+  station costs **literally nothing** when nobody is near — better than deep sleep — and chunk loading
+  is already a coarse (~simulation-distance) proximity gate. It also kills the "stations 1000 blocks
+  out can't hear rednet" objection: a station only needs to listen when a player is near it, and a
+  player near it has already loaded its chunk.
+
+**In-world checklist (PENDING):** `hub test pos` ×2 standing still (the randError check) · `update hub`
++ `update cage`, put `pos=` in cage.cfg, reboot · `hub test zones` lists it · walk to the cage → only
+the cage wakes · walk to the hub → the cage does **NOT** wake (the whole point) · walk away → sleeps ·
+reboot the cage while standing at it → wakes (the pull path) · the slot (no `pos=`) still wakes on
+`"all"` → no regression · Nether at the cage's x/z → does **not** wake · hub terminal quiet while
+nobody moves (edge-only).
 
 ## → NEXT queue (owner-set 2026-07-16, roughly in priority order)
 

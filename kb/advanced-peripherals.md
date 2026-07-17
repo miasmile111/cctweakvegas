@@ -19,7 +19,27 @@ Peripherals attach to a computer over a **wired modem** and are found with
 Centralize on the **hub** (always chunk-loaded): one detector = one always-running proximity
 loop for the whole floor. Stations stay asleep; hub tells them who's near which zone.
 
-Block: `player_detector`. Range cap via config `playerDetMaxRange` (-1 = infinite w/ multidim).
+Block: `player_detector`. Range cap via config `playerDetMaxRange` (**default `-1` = unlimited** in
+1.21.1; verified not capped on Atlas — see Open questions).
+
+> **EVERY method below is `@LuaFunction(mainThread = true)`** — *all* of them, including the "cheap"
+> `isPlayersInRange`. Verified by reading `PlayerDetectorPeripheral.java` (AP `release/1.21.1`). Each
+> call parks your coroutine ~50ms; see `[[main-thread-peripheral-calls-cost-a-tick]]`. **The call
+> count is the budget** — this is why `hub.lua` polls `getOnlinePlayers` + `getPlayerPos` **per
+> player** (O(players)) rather than a query per station (O(stations)).
+>
+> **`getPlayerPos` is the odd one out and needs care:**
+> - It **throws** if `enablePlayerPosFunction = false` → always `pcall` it. Unguarded in the hub's
+>   loop, it kills the hub and with it the whole floor.
+> - It is the **only** query that does NOT dimension-filter. Range/box queries filter for free
+>   (`CoordUtil`: `if (range != -1 && player.level() != world) return false`), but at `maxRange = -1`
+>   with `playerDetMultiDimensional` (default true) `getPlayerPos` returns players in **any**
+>   dimension — so a player at the same x/z in the Nether will wake an Overworld station unless you
+>   check the `dimension` field yourself.
+> - `enablePlayerPosRandomError` (default false) fuzzes positions past 100 blocks by up to 1000.
+>   `morePlayerInformation` (default true) is what supplies `dimension`.
+> - **AP ranges are SQUARES, not spheres:** `|x-bx| <= range && |z-bz| <= range` (Chebyshev in x/z)
+>   plus a feet/eye y rule. `range 8` is a 17×17 column.
 
 **Methods**
 - `getPlayerPos(username) -> table|nil` (alias `getPlayer`) — full player object:
@@ -129,6 +149,11 @@ Engineering, Integrated Dynamics, Mekanism, Powah, Storage Drawers.
 
 ## Open questions to verify in-world
 - [ ] Exact registry names via `peripheral.getNames()` (confirm `player_detector` vs `playerDetector`).
-- [ ] Is `playerDetMaxRange` set on Atlas Server? (caps our zone sizes.)
+- [x] **`playerDetMaxRange` — ANSWERED 2026-07-17. It is NOT capped on Atlas** (`hub test pos` returns
+      exact positions for a player 500+ blocks out; a 100 cap would have returned nil). **And the
+      default is `-1` (unlimited) in 1.21.1, not 100** — `defineInRange("playerDetMaxRange", -1, -1,
+      Integer.MAX_VALUE)`. The 100 in this file's earlier note was the **pre-1.21 default**, and
+      chasing it wasted real design time: it does not cap our zones, and at -1 the hub's one detector
+      is a **server-wide oracle**, which is what makes per-station proximity possible at all.
 - [ ] Which of these peripherals are actually enabled/craftable on the server.
 - [ ] CC:T Redstone Relay API (the AP integrator's replacement) — pull from tweaked.cc.
