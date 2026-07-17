@@ -2,13 +2,23 @@ package.path = "src/lib/?.lua;src/slot/?.lua;src/pong/?.lua;test/?.lua;" .. pack
 local t = require("runner")
 local I = require("idle_logic")
 
--- presenceFor: matches my zone, "all", ignores others / non-presence
-t.eq(I.presenceFor({ kind = "presence", zone = "all", present = true }, "slot1"), true,
-  "zone 'all' present=true -> true")
-t.eq(I.presenceFor({ kind = "presence", zone = "all", present = false }, "slot1"), false,
-  "zone 'all' present=false -> false")
+-- presenceFor: a zone name means what it says. "all" is NOT a wildcard -- it is the literal zone an
+-- unregistered station answers to, which is why the floor-wide broadcast still reaches those and
+-- ONLY those.
+t.eq(I.presenceFor({ kind = "presence", zone = "all", present = true }, "all"), true,
+  "unregistered station (zone 'all') wakes on the floor-wide broadcast")
+t.eq(I.presenceFor({ kind = "presence", zone = "all", present = false }, "all"), false,
+  "...and sleeps on it")
+t.eq(I.presenceFor({ kind = "presence", zone = "all", present = true }, 5), nil,
+  "REGISTERED station (zone 5) IGNORES the floor-wide broadcast -- a player at the hub must NOT wake it")
+t.eq(I.presenceFor({ kind = "presence", zone = 5, present = true }, 5), true,
+  "registered station wakes on its OWN zone")
+t.eq(I.presenceFor({ kind = "presence", zone = 5, present = false }, 5), false,
+  "...and sleeps on its own zone")
+t.eq(I.presenceFor({ kind = "presence", zone = 7, present = true }, 5), nil,
+  "another station's zone -> nil (ignore)")
 t.eq(I.presenceFor({ kind = "presence", zone = "slot1", present = true }, "slot1"), true,
-  "my zone -> true")
+  "a pinned string zone still works")
 t.eq(I.presenceFor({ kind = "presence", zone = "slot2", present = true }, "slot1"), nil,
   "other zone -> nil (ignore)")
 t.eq(I.presenceFor({ kind = "register" }, "slot1"), nil, "non-presence msg -> nil")
@@ -43,13 +53,15 @@ do
   local pr = I.newPresence("slot1")
   t.ok(pr.present, "newPresence starts present")
   t.ok(not pr.gone(), "not gone initially")
-  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "all", present = false }, "ccvegas" })
-  t.ok(not pr.present, "present=false msg -> not present")
+  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "slot1", present = false }, "ccvegas" })
+  t.ok(not pr.present, "present=false msg on MY zone -> not present")
   t.ok(pr.gone(), "gone() true after leave")
-  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "all", present = true }, "ccvegas" })
-  t.ok(pr.present, "present=true msg -> present again")
+  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "slot1", present = true }, "ccvegas" })
+  t.ok(pr.present, "present=true msg on MY zone -> present again")
   pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "slot2", present = false }, "ccvegas" })
   t.ok(pr.present, "other-zone msg ignored")
+  pr.fromEvent({ "rednet_message", 5, { kind = "presence", zone = "all", present = false }, "ccvegas" })
+  t.ok(pr.present, "floor-wide 'all' broadcast is NOT a wildcard -- a pinned-zone station ignores it")
   pr.fromEvent({ "timer", 1 })
   t.ok(pr.present, "non-presence event ignored")
 end

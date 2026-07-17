@@ -3,9 +3,14 @@
 local M = {}
 
 -- Is this rednet value a presence update for my zone? Returns the present boolean, or nil to ignore.
+-- A zone name means what it says. This deliberately does NOT special-case "all" as a wildcard:
+-- an UNREGISTERED station's zone IS literally the string "all", so it still matches the hub's
+-- floor-wide broadcast (no regression), while a station registered to its own computer ID stops
+-- matching it. Treating "all" as a wildcard here is what made per-station zones a no-op -- a player
+-- at the hub woke every station on the floor, which is the bug this whole feature exists to kill.
 function M.presenceFor(msg, myZone)
   if type(msg) ~= "table" or msg.kind ~= "presence" then return nil end
-  if msg.zone == "all" or msg.zone == myZone then
+  if msg.zone == myZone then
     return msg.present and true or false
   end
   return nil

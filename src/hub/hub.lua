@@ -190,6 +190,11 @@ print("Listening for station registrations (Ctrl+T to stop)...")
 
 -- shared occupancy: presenceLoop writes it each poll; registrar reads it to answer presence? queries
 local occupied = false
+-- Shared with presenceLoop, same reason `occupied` is: the registrar answers `presence?` pulls and
+-- must give a registered station ITS OWN presence, not the floor-wide answer. A station that just
+-- booted (chunk loaded because a player walked up) pulls before it can be pushed to -- that pull is
+-- the entire reason a station 1000 blocks out works at all.
+local zonePresent = {}     -- computerID -> boolean
 
 local function registrar()
   while true do
@@ -262,28 +267,91 @@ local function registrar()
     elseif type(msg) == "table" and msg.kind == "query" and type(msg.id) == "string" then
       rednet.send(sender, { kind = "balance", id = msg.id, balance = ledger.balance(scores, msg.id) }, PROTO)
     elseif idle.isPresenceQuery(msg) then
-      rednet.send(sender, { kind = "presence", zone = "all", present = occupied }, PROTO)
+      local z = msg.zone
+      if type(z) == "number" and zonePresent[z] ~= nil then
+        rednet.send(sender, { kind = "presence", zone = z, present = zonePresent[z] }, PROTO)
+      else
+        rednet.send(sender, { kind = "presence", zone = "all", present = occupied }, PROTO)
+      end
     end
   end
 end
 
+-- The hub's one forever-loop, and the floor's only proximity cost.
+--
+-- Per poll: isPlayersInRange (1 call, the legacy "all" zone) + getOnlinePlayers (1 call) +
+-- getPlayerPos per online player (P calls). That is `2 + P` -- it does NOT grow with the number of
+-- stations, which is the whole reason this design exists. Every one of those is mainThread = true
+-- (~50ms of parked coroutine each, see [[main-thread-peripheral-calls-cost-a-tick]]), so the call
+-- count is the budget. Matching is pure Lua and free. NEVER add a per-station peripheral call here.
+--
+-- Known bound, named not fixed: P is every player online SERVER-WIDE (playerDetMaxRange = -1), not
+-- just the ones near the floor. Fine for a close-friends server; if this ever runs 20+ concurrent
+-- players, raise POLL or gate on getPlayersInRange first. Do not pre-optimise.
 local function presenceLoop()
   local det = peripheral.find("player_detector")
   if not det then
     print("No player detector attached — presence disabled (registrar only).")
     return
   end
-  print(("Presence loop online: isPlayersInRange(%d) every %.2fs."):format(DET_RANGE, POLL))
+  print(("Presence loop online: isPlayersInRange(%d) + position oracle every %.2fs."):format(DET_RANGE, POLL))
+  local proxOff, warnedNil = false, false
   local timer = os.startTimer(POLL)
   while true do
     local ev = { os.pullEvent() }
     if ev[1] == "timer" and ev[2] == timer then
+      -- ---- legacy "all" zone: byte-for-byte the old behaviour, for stations with no position ----
       local occ = det.isPlayersInRange(DET_RANGE) and true or false
       if idle.occupancyChanged(occupied, occ) then
         rednet.broadcast({ kind = "presence", zone = "all", present = occ }, PROTO)
         print(occ and "[presence] occupied -> WAKE" or "[presence] empty -> SLEEP")
       end
-      occupied = occ                    -- keep shared state current so registrar can answer queries
+      occupied = occ
+
+      -- ---- per-station zones ----
+      if not proxOff and next(reg.stations) ~= nil then
+        local positions = {}
+        local names = det.getOnlinePlayers()
+        for _, name in ipairs(names) do
+          -- pcall: getPlayerPos THROWS when enablePlayerPosFunction = false (spec fact 3). Unguarded,
+          -- that kills the hub, and the hub is the one machine the whole floor depends on.
+          local ok, p = pcall(det.getPlayerPos, name)
+          if not ok then
+            proxOff = true
+            print("=====================================================")
+            print(" PER-STATION PROXIMITY DISABLED")
+            print(" getPlayerPos is disabled in the server config")
+            print(" (enablePlayerPosFunction = false). Run `hub test pos`.")
+            print(" Falling back to the floor-wide 'all' zone.")
+            print("=====================================================")
+            break
+          end
+          if type(p) == "table" then
+            positions[name] = p
+          elseif not warnedNil then
+            -- nil for a player who IS online is the ONLY tell that playerDetMaxRange is capped --
+            -- and it is otherwise completely silent: a capped range looks exactly like "nobody is
+            -- there", so distant stations would just never wake and nothing would say why. (It can
+            -- also mean the player logged off mid-poll, which is harmless -- hence a one-time note,
+            -- not a fatal.) The owner verified getPlayerPos out to ~500 blocks, so at -1 this should
+            -- never print; if it starts printing, the cap is real and the stations beyond it are the
+            -- ones going dark.
+            warnedNil = true
+            print(("[proximity] NOTE: getPlayerPos(%s) returned nil for an ONLINE player."):format(name))
+            print("  Harmless if they just logged off. If it repeats, playerDetMaxRange is CAPPED —")
+            print("  stations beyond it will never wake. Run `hub test pos` from a far station.")
+          end
+        end
+        if not proxOff then
+          local now = prox.evaluate(reg.stations, positions, DIM)
+          for _, e in ipairs(prox.edges(zonePresent, now)) do
+            rednet.send(e.id, { kind = "presence", zone = e.id, present = e.present }, PROTO)
+            print(("[zone] #%d -> %s"):format(e.id, e.present and "WAKE" or "SLEEP"))
+          end
+          zonePresent = now   -- shared upvalue: the registrar answers `presence?` pulls from this
+        end
+      end
+
       timer = os.startTimer(POLL)
     end
   end
