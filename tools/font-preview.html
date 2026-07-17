@@ -1,0 +1,372 @@
+<meta charset="utf-8">
+<title>pixelfont — glyph specimen &amp; advert screens</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif;
+         background: #14171c; color: #e6e8eb; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 32px 0 10px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  h3 { font-size: 13px; margin: 20px 0 8px; color: #9aa0a6; text-transform: uppercase; letter-spacing: .05em; }
+  .note { background: #2a1f0e; border: 1px solid #5a4410; border-radius: 6px; padding: 10px 14px;
+          margin: 12px 0 8px; color: #d9c48a; max-width: 900px; }
+  .note code { color: #f0d98a; }
+  .grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .cell canvas { image-rendering: pixelated; background: #0b0d10; border: 1px solid #23262b; }
+  .cap { font: 11px monospace; color: #9aa0a6; }
+  .cap b { color: #e6e8eb; }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .screen { display: flex; flex-direction: column; gap: 6px; }
+  .screen canvas { image-rendering: pixelated; border: 2px solid #23262b; }
+  .screen .cap { font-size: 12px; }
+  .stripwrap { overflow-x: auto; padding-bottom: 8px; }
+  .pair { color: #d98a8a; }
+</style>
+
+<h1>pixelfont — glyph specimen &amp; advert screens</h1>
+<div class="note">
+  This page is a <b>transcription</b> of <code>src/lib/pixelfont.lua</code>'s glyph tables. It is a
+  review surface only — <b>not</b> in the <code>src/</code> deploy loop, and it renders nothing the
+  game reads. If you redraw a glyph here you must carry the change back into the Lua by hand; the JS
+  <code>BIG</code> table below is a verbatim paste of the Lua rows so a diff between them stays readable.
+</div>
+
+<h2>Panel 1 — Specimen</h2>
+<p class="cap">On-pixels white, off-pixels dark grey (so a glyph's box is visible). Each glyph is
+shown at 1× and 2×, labelled with its width in subpixels. A subpixel = one 8-px block here; on the
+real monitor a subpixel is ~square.</p>
+
+<h3>Letters</h3>
+<div class="grid" id="letters"></div>
+<h3>Digits (owner-drawn, shipped — shown for comparison)</h3>
+<div class="grid" id="digits"></div>
+<h3>Punctuation &amp; space</h3>
+<div class="grid" id="punct"></div>
+<h3>The $ glyphs and the WIN: label (their own tables)</h3>
+<div class="grid" id="special"></div>
+
+<h3>Running text — glyphs judged next to each other (this is where fonts fail)</h3>
+<div class="stripwrap" id="strips"></div>
+
+<h3>Confusable pairs, side by side — the known risks (see the review notes)</h3>
+<div class="stripwrap" id="pairs"></div>
+<p class="cap"><span class="pair">S↔5 differ at 2 of 24 px · I↔T at 2 (bottom row only) · G↔6 at 1 ·
+O↔0 by the slash · M↔N by width.</span> Look hard at these from a step back.</p>
+
+<h2>Panel 2 — Advert screens (left: raw subpixels · right: encodeCell monitor-truth)</h2>
+<p class="cap">The right panel of each pair collapses every 2×3 cell to the 2 colours a real monitor
+can show (fg + bg), via a port of <code>subpixel.lua</code>'s <code>encodeCell</code> — that is what
+actually renders in-world. The cage's rate table is native cell-text, drawn as an HTML overlay
+because native <code>write</code> is not subpixel and not subject to <code>encodeCell</code>.</p>
+<div class="row" id="screens"></div>
+
+<script>
+"use strict";
+// ---- glyph tables: VERBATIM paste of src/lib/pixelfont.lua ------------------
+const BIG = {
+  "0": ["####","#..#","#.##","##.#","#..#","####"],
+  "1": [".##.","..#.","..#.","..#.","..#.","..#."],
+  "2": ["####","...#","####","#...","#...","####"],
+  "3": ["####","...#",".###","...#","...#","####"],
+  "4": ["#..#","#..#","####","...#","...#","...#"],
+  "5": ["####","#...","####","...#","...#","####"],
+  "6": ["####","#...","####","#..#","#..#","####"],
+  "7": ["####","...#","..#.",".#..",".#..",".#.."],
+  "8": ["####","#..#","####","#..#","#..#","####"],
+  "9": ["####","#..#","####","...#","...#","####"],
+  "A": ["####","#..#","####","#..#","#..#","#..#"],
+  "B": ["###.","#..#","###.","#..#","#..#","###."],
+  "C": ["####","#...","#...","#...","#...","####"],
+  "D": ["###.","#..#","#..#","#..#","#..#","###."],
+  "E": ["####","#...","####","#...","#...","####"],
+  "F": ["####","#...","####","#...","#...","#..."],
+  "G": ["####","#...","#.##","#..#","#..#","####"],
+  "H": ["#..#","#..#","####","#..#","#..#","#..#"],
+  "I": ["####",".##.",".##.",".##.",".##.","####"],
+  "J": ["####","..#.","..#.","..#.","#.#.",".##."],
+  "K": ["#..#","#.#.","##..","##..","#.#.","#..#"],
+  "L": ["#...","#...","#...","#...","#...","####"],
+  "M": ["#...#","##.##","#.#.#","#...#","#...#","#...#"],
+  "N": ["#..#","##.#","##.#","#.##","#.##","#..#"],
+  "O": ["####","#..#","#..#","#..#","#..#","####"],
+  "P": ["####","#..#","####","#...","#...","#..."],
+  "Q": ["####","#..#","#..#","#.##","####","...#"],
+  "R": ["####","#..#","####","##..","#.#.","#..#"],
+  "S": [".###","#...","####","...#","...#","###."],
+  "T": ["####",".##.",".##.",".##.",".##.",".##."],
+  "U": ["#..#","#..#","#..#","#..#","#..#","####"],
+  "V": ["#..#","#..#","#..#","#..#",".##.",".##."],
+  "W": ["#...#","#...#","#...#","#.#.#","##.##","#...#"],
+  "X": ["#..#","#..#",".##.",".##.","#..#","#..#"],
+  "Y": ["#..#","#..#",".##.",".##.",".##.",".##."],
+  "Z": ["####","...#","..#.",".#..","#...","####"],
+  "!": ["#","#","#","#",".","#"],
+  ":": [".","#",".",".","#","."],
+  "-": ["....","....","####","....","....","...."],
+  ".": [".",".",".",".",".","#"],
+  ",": ["..","..","..","..",".#","#."],
+  " ": ["...","...","...","...","...","..."],
+};
+const SIGN_SM = { "$": ["..#..",".###.","#.#.#","#.#..",".##..","..##.","..#.#","#.#.#",".###.","..#.."] };
+const SIGN_LG = { "$": ["...#...","...#...","..###..",".#####.","##.#.#.","##.#...",".####..",
+                        "..####.","...#.##","##.#.##",".#####.","..###..","...#...","...#..."] };
+const WIN = {
+  "W": ["#...#","#.#.#","#.#.#",".#.#."],
+  "I": ["###",".#.",".#.","###"],
+  "N": ["#..#","##.#","#.##","#..#"],
+  ":": [".","#",".","#"],
+};
+
+// ---- CC default palette (colour number -> RGB) -----------------------------
+const CC = {
+  1: [240,240,240],      // white
+  16: [222,222,108],     // yellow
+  128: [76,76,76],       // grey / gray
+  256: [153,153,153],    // lightGray
+  8192: [57,123,68],     // green
+  16384: [204,76,76],    // red
+  32768: [17,17,17],     // black
+};
+// slot_style gradient — same math as slot_style.gradientRGB, pinned at phase 0
+const GRAD = [2048, 512, 8, 1024, 64];
+const GRAD_DEEP = [0.00, 0.10, 0.65], GRAD_TEAL = [0.00, 0.75, 0.65];
+function gradientRGB(i, phase) {           // i is 1-based, matching the Lua
+  const a = 0.5 + 0.5 * Math.sin(phase + i * 0.9);
+  return [GRAD_DEEP[0] + (GRAD_TEAL[0]-GRAD_DEEP[0])*a,
+          GRAD_DEEP[1] + (GRAD_TEAL[1]-GRAD_DEEP[1])*a,
+          GRAD_DEEP[2] + (GRAD_TEAL[2]-GRAD_DEEP[2])*a];
+}
+// palette used by the slot screen: stock colours + the 5 gradient slots at phase 0
+function slotPalette() {
+  const p = Object.assign({}, CC);
+  for (let i = 1; i <= GRAD.length; i++) {
+    const [r,g,b] = gradientRGB(i, 0);
+    p[GRAD[i-1]] = [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+  }
+  return p;
+}
+
+// ---- a tiny subpixel canvas: buf[y][x] = colour number ---------------------
+function Canvas(wCells, hCells) {
+  const w = wCells*2, h = hCells*3;
+  const buf = [];
+  for (let y = 0; y < h; y++) { buf.push(new Array(w).fill(32768)); }  // black
+  return {
+    w, h, cols: wCells, rows: hCells, buf,
+    setPixel(x, y, c) { x=Math.floor(x); y=Math.floor(y);
+      if (x<1||y<1||x>w||y>h) return; buf[y-1][x-1] = c; },   // 1-indexed like Lua
+    fillRect(x, y, ww, hh, c) { for (let dy=0; dy<hh; dy++) for (let dx=0; dx<ww; dx++) this.setPixel(x+dx,y+dy,c); },
+    clear(c) { for (let y=0;y<h;y++) for (let x=0;x<w;x++) buf[y][x]=c; },
+  };
+}
+
+// ---- pixelfont draw ports (1-indexed, matching the Lua exactly) ------------
+function glyphW(font, ch) { const g = font[ch]; return g ? g[0].length : 0; }
+function textWidth(font, str, gap, scale) { gap=gap||1; scale=scale||1;
+  let w=0; for (const ch of str) w += glyphW(font,ch)*scale + gap; return w-gap; }
+function drawGlyph(cv, font, ch, x, y, color, scale) { scale=scale||1;
+  const g = font[ch]; if (!g) return;
+  for (let r=0;r<g.length;r++) for (let c=0;c<g[r].length;c++) {
+    if (g[r][c] === "#") for (let dy=0;dy<scale;dy++) for (let dx=0;dx<scale;dx++)
+      cv.setPixel(x + c*scale + dx, y + r*scale + dy, color);
+  }
+}
+function drawText(cv, font, str, x, y, color, gap, scale) { gap=gap||1; scale=scale||1;
+  let cx=x; for (const ch of str) { drawGlyph(cv,font,ch,cx,y,color,scale); cx += glyphW(font,ch)*scale + gap; } }
+function drawCentered(cv, font, str, y, color, gap, scale) { gap=gap||1; scale=scale||1;
+  const w = textWidth(font,str,gap,scale); drawText(cv,font,str,Math.floor((cv.w-w)/2)+1,y,color,gap,scale); }
+function bulb(cv, x, y, seed, tick) { cv.fillRect(x,y,2,2, ((seed+tick)%2===0)?16:128); }  // 16=YELLOW 128=GREY
+
+// ---- encodeCell port (from subpixel.lua) -----------------------------------
+// c = [topL,topR,midL,midR,botL,botR] colour numbers. Returns {code, F, B} where
+// code's bit i (i=0..4) set => subpixel i shows F; subpixel 5 (botR) always shows B.
+function encodeCell(c) {
+  const counts = {}; for (const v of c) counts[v] = (counts[v]||0)+1;
+  let bg=c[0], best=-1; for (const k in counts) if (counts[k]>best) { best=counts[k]; bg=+k; }
+  let fg=bg; for (const v of c) if (v!==bg) { fg=v; break; }
+  const bits=[1,2,4,8,16]; let low5=0; for (let i=0;i<5;i++) if (c[i]===fg) low5+=bits[i];
+  let code, F, B;
+  if (c[5]===fg) { code = 31-low5; F=bg; B=fg; } else { code = low5; F=fg; B=bg; }
+  return { code, F, B };
+}
+
+// ---- rendering to an actual <canvas>, at a chosen block size ---------------
+function paintRaw(buf, palette, block) {
+  const h = buf.length, w = buf[0].length;
+  const cv = document.createElement("canvas"); cv.width=w*block; cv.height=h*block;
+  const ctx = cv.getContext("2d");
+  for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+    const rgb = palette[buf[y][x]] || [255,0,255];   // magenta = unmapped colour = a bug
+    ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`; ctx.fillRect(x*block,y*block,block,block);
+  }
+  return cv;
+}
+// collapse to encodeCell truth, then repaint
+function paintTruth(canvasObj, palette, block) {
+  const { buf, cols, rows } = canvasObj;
+  const out = []; for (let y=0;y<rows*3;y++) out.push(new Array(cols*2).fill(32768));
+  for (let cy=0;cy<rows;cy++) for (let cx=0;cx<cols;cx++) {
+    const c = [ buf[cy*3][cx*2], buf[cy*3][cx*2+1], buf[cy*3+1][cx*2], buf[cy*3+1][cx*2+1],
+                buf[cy*3+2][cx*2], buf[cy*3+2][cx*2+1] ];
+    const { code, F, B } = encodeCell(c);
+    const bits=[1,2,4,8,16];
+    for (let i=0;i<5;i++) { const dy=Math.floor(i/2), dx=i%2;
+      out[cy*3+dy][cx*2+dx] = (code & bits[i]) ? F : B; }
+    out[cy*3+2][cx*2+1] = B;   // botR always shows B
+  }
+  return paintRaw(out, palette, block);
+}
+
+// ---- specimen helpers ------------------------------------------------------
+const SPEC_ON = 1, SPEC_OFF = 32770;   // 32770 = a fake "dark grey box" colour for the specimen
+const SPEC_PAL = { 1:[240,240,240], 32770:[42,46,52], 32768:[42,46,52] };
+function specimenCell(font, ch, scale, label) {
+  // draw one glyph on its own mini-canvas sized to the glyph
+  const gw = glyphW(font, ch) || (font===BIG?3:1), rows = font[ch] ? font[ch].length : 6;
+  const block = scale===1 ? 7 : 6;
+  const cw = gw*scale, ch2 = rows*scale;
+  const cnv = document.createElement("canvas"); cnv.width=cw*block; cnv.height=ch2*block;
+  const ctx = cnv.getContext("2d");
+  // background (off) box — dashed for the space so it's visible
+  ctx.fillStyle = "rgb(42,46,52)"; ctx.fillRect(0,0,cnv.width,cnv.height);
+  const g = font[ch];
+  if (g) for (let r=0;r<g.length;r++) for (let c=0;c<g[r].length;c++)
+    if (g[r][c]==="#") { ctx.fillStyle="rgb(240,240,240)";
+      for (let dy=0;dy<scale;dy++) for (let dx=0;dx<scale;dx++)
+        ctx.fillRect((c*scale+dx)*block,(r*scale+dy)*block,block,block); }
+  if (ch===" ") { ctx.strokeStyle="#5a5f66"; ctx.setLineDash([3,3]); ctx.strokeRect(1,1,cnv.width-2,cnv.height-2); }
+  const wrap = document.createElement("div"); wrap.className="cell";
+  wrap.appendChild(cnv);
+  const cap = document.createElement("div"); cap.className="cap";
+  cap.innerHTML = `<b>${label}</b> ${scale}× w${glyphW(font,ch)}`;
+  wrap.appendChild(cap);
+  return wrap;
+}
+function fillGrid(id, font, chars) {
+  const el = document.getElementById(id);
+  for (const ch of chars) { for (const sc of [1,2]) {
+    const label = ch===" " ? "SP" : ch;
+    el.appendChild(specimenCell(font, ch, sc, label));
+  } }
+}
+// a running-text strip drawn on one canvas
+function strip(font, str, scale, block) {
+  block = block || 6;
+  const w = textWidth(font, str, 1, scale), h = 6*scale;
+  const cnv = document.createElement("canvas"); cnv.width=(w+2)*block; cnv.height=(h+2)*block;
+  const ctx = cnv.getContext("2d"); ctx.fillStyle="rgb(11,13,16)"; ctx.fillRect(0,0,cnv.width,cnv.height);
+  let cx = 1+1;
+  for (const chr of str) { const g=font[chr];
+    if (g) for (let r=0;r<g.length;r++) for (let c=0;c<g[r].length;c++)
+      if (g[r][c]==="#") { ctx.fillStyle="rgb(240,240,240)";
+        for (let dy=0;dy<scale;dy++) for (let dx=0;dx<scale;dx++)
+          ctx.fillRect((cx-1+c*scale+dx)*block,(1+r*scale+dy)*block,block,block); }
+    cx += glyphW(font,chr)*scale + 1;
+  }
+  cnv.style.imageRendering="pixelated"; cnv.style.background="#0b0d10";
+  cnv.style.border="1px solid #23262b"; cnv.style.display="block"; cnv.style.marginBottom="8px";
+  return cnv;
+}
+
+// ---- build panel 1 ---------------------------------------------------------
+fillGrid("letters", BIG, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+fillGrid("digits",  BIG, "0123456789");
+fillGrid("punct",   BIG, "!:-., ");
+{
+  const sp = document.getElementById("special");
+  sp.appendChild(specimenCell(SIGN_SM, "$", 1, "$sm"));
+  sp.appendChild(specimenCell(SIGN_LG, "$", 1, "$lg"));
+  for (const ch of ["W","I","N",":"]) sp.appendChild(specimenCell(WIN, ch, 2, "WIN."+ch));
+}
+{
+  const s = document.getElementById("strips");
+  for (const [txt,sc] of [["THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG",1],
+                          ["METAL IN - CASH OUT",2],["GET MONEY",2],
+                          ["0123456789",2],["ABCDEFGHIJKLM",1],["NOPQRSTUVWXYZ",1]])
+    s.appendChild(strip(BIG, txt, sc));
+}
+{
+  const p = document.getElementById("pairs");
+  for (const txt of ["S5 S5 S5","IT IT IT","G6 G6 G6","O0 O0 O0","MN MN MN"])
+    p.appendChild(strip(BIG, txt, 2));
+}
+
+// ---- build panel 2: the two advert screens ---------------------------------
+// SLOT — port of slot_advert.lua's layout() + draw(), phase-0 static gradient.
+function Rl(row) { return (row-1)*3+1; }
+function drawSlot() {
+  const cv = Canvas(15, 24);   // 30x72 subpixels
+  const RED=16384, WHITE=1;
+  const L = { topBarY:Rl(1), botBarY:Rl(23), getY:Rl(4), moneyY:Rl(10), signY:Rl(14),
+              sideTop:Rl(3), sideBot:Rl(22) };
+  // static gradient bands (bandFill): ceil(h/5) per band
+  const bandH = Math.ceil(cv.h/5);
+  for (let b=0;b<5;b++) cv.fillRect(1, 1+b*bandH, cv.w, bandH, GRAD[b]);
+  cv.fillRect(1, L.topBarY, cv.w, 6, RED);
+  cv.fillRect(1, L.botBarY, cv.w, 6, RED);
+  for (let x=6; x<=cv.w-2; x+=4) { bulb(cv,x,L.topBarY+2,Math.floor(x/4),0); bulb(cv,x,L.botBarY+2,Math.floor(x/4),0); }
+  for (let y=L.sideTop; y<=L.sideBot; y+=4) { bulb(cv,1,y,Math.floor(y/4),0); bulb(cv,cv.w-1,y,Math.floor(y/4),0); }
+  drawCentered(cv, BIG, "GET", L.getY, WHITE, 1, 2);
+  drawCentered(cv, BIG, "MONEY", L.moneyY, WHITE, 1, 1);
+  const signW = textWidth(SIGN_LG, "$", 1, 1);
+  drawGlyph(cv, SIGN_LG, "$", Math.floor((cv.w-signW)/2)+1, L.signY, WHITE, 1);
+  return cv;
+}
+// CAGE — port of cage_advert.lua's layout + draw (subpixel layer only; rate table is an overlay).
+function drawCage() {
+  const cv = Canvas(36, 24);   // 72x72 subpixels
+  const RED=16384, WHITE=1, BLACK=32768;
+  cv.clear(BLACK);
+  cv.fillRect(1, Rl(1), cv.w, 6, RED);
+  cv.fillRect(1, Rl(7), cv.w, 6, RED);
+  cv.fillRect(1, Rl(23), cv.w, 6, RED);
+  drawCentered(cv, BIG, "THE CAGE", Rl(3),  WHITE, 1, 2);
+  drawCentered(cv, BIG, "METAL IN", Rl(9),  WHITE, 1, 2);
+  drawCentered(cv, BIG, "CASH OUT", Rl(14), WHITE, 1, 2);
+  return cv;
+}
+const RATE_ROWS = [["COPPER",25],["IRON",100],["GOLD",250],["DIAMOND",1000]];  // cage_rates.DENOMS
+function pad(label,val) { const l=(label+"        ").slice(0,9); const v=("    $"+val).slice(-5); return l+v; }
+
+function addScreen(container, title, cv, palette, block, overlay) {
+  const wrap = document.createElement("div"); wrap.className="screen";
+  const cap = document.createElement("div"); cap.className="cap"; cap.innerHTML="<b>"+title+"</b>";
+  wrap.appendChild(cap);
+  const pair = document.createElement("div"); pair.className="row";
+  // raw
+  const rawBox = document.createElement("div"); rawBox.className="screen";
+  const rawLbl = document.createElement("div"); rawLbl.className="cap"; rawLbl.textContent="raw subpixels";
+  const rawWrap = document.createElement("div"); rawWrap.style.position="relative";
+  rawWrap.appendChild(paintRaw(cv.buf, palette, block));
+  if (overlay) rawWrap.appendChild(overlay(block));
+  rawBox.appendChild(rawLbl); rawBox.appendChild(rawWrap); pair.appendChild(rawBox);
+  // truth
+  const trBox = document.createElement("div"); trBox.className="screen";
+  const trLbl = document.createElement("div"); trLbl.className="cap"; trLbl.textContent="encodeCell (monitor-truth)";
+  const trWrap = document.createElement("div"); trWrap.style.position="relative";
+  trWrap.appendChild(paintTruth(cv, palette, block));
+  if (overlay) trWrap.appendChild(overlay(block));
+  trBox.appendChild(trLbl); trBox.appendChild(trWrap); pair.appendChild(trBox);
+  wrap.appendChild(pair); container.appendChild(wrap);
+}
+// native rate-table overlay for the cage: 4 rows of monospace text over the black band.
+function cageOverlay(block) {
+  const cellW = 2*block, cellH = 3*block;           // one character cell in px
+  const div = document.createElement("div");
+  div.style.position="absolute"; div.style.left="0"; div.style.top="0";
+  div.style.font = (cellH*0.9)+"px/"+cellH+"px monospace"; div.style.color="rgb(153,153,153)";
+  div.style.whiteSpace="pre"; div.style.pointerEvents="none";
+  let html="";
+  for (let i=0;i<RATE_ROWS.length;i++) {
+    const rowCell = 17 + (i+1);            // RATE_ROW0=17, row i(1-based) at 17+i
+    const top = (rowCell-1)*cellH, left = (12-1)*cellW;   // RATE_COL=12
+    html += `<div style="position:absolute;left:${left}px;top:${top}px">${pad(RATE_ROWS[i][0],RATE_ROWS[i][1])}</div>`;
+  }
+  div.innerHTML = html;
+  return div;
+}
+
+const screens = document.getElementById("screens");
+addScreen(screens, "SLOT — 30×72 (15×24 cells)", drawSlot(), slotPalette(), 7, null);
+addScreen(screens, "CAGE — 72×72 (36×24 cells)", drawCage(), CC, 6, cageOverlay);
+</script>
