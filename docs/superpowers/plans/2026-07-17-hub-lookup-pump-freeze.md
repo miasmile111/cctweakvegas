@@ -58,7 +58,13 @@ local function fakeOS(incoming)
   local realPull, realQueue = os.pullEvent, os.queueEvent
   local queued = {}
   local i = 0
+  -- Model CraftOS faithfully: os.pullEvent YIELDS when called inside a coroutine (that is the whole
+  -- mechanism _pumpSafe stands on). Only the driver, on the main thread, pops a canned event.
+  -- In Lua 5.1/LuaJIT coroutine.running() is nil on the main thread and the coroutine otherwise.
+  -- A fake that returns flatly instead of yielding does NOT model CraftOS: the pumped fn would then
+  -- consume every canned event inside a single resume() and never hand control back to the driver.
   os.pullEvent = function()
+    if coroutine.running() then return coroutine.yield() end
     i = i + 1
     if not incoming[i] then error("fake event queue exhausted", 0) end
     return unpack(incoming[i])
@@ -193,6 +199,13 @@ end
 
 Note: `M._pumpSafe` is defined with `function M.` (not `local function`) so the tests can reach it,
 matching the file's existing `_`-prefixed helper convention.
+
+**Do NOT mutate `os.pullEvent` inside `_pumpSafe`.** It is unnecessary — inside a coroutine
+`os.pullEvent` already *is* `coroutine.yield(filter)`, which yields to whoever resumed it (us). It is
+the same pattern CC's own `rom/apis/parallel.lua` uses. Mutating it would also silently break Ctrl+T,
+because the real `os.pullEvent` turns a `terminate` event into `error("Terminated", 0)` and bare
+`coroutine.yield` does not. If a test appears to require the mutation, **the test's fake is wrong**,
+not this function.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
