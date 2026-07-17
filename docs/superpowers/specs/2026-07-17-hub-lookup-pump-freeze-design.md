@@ -219,6 +219,16 @@ The bug's own repro, now that we know the trigger:
    and the header reads `HUB OFFLINE`.
 4. Pull the lever while offline → the pull is denied and the header says `HUB OFFLINE`, **not**
    `INSUFFICIENT`.
-5. Bring the hub back. Within ~5s (the backoff) the header returns to `<id>: $<bal>` with no reboot.
+5. Bring the hub back, then **interact** — pull the lever, or re-swap the card. The header returns to
+   `<id>: $<bal>` and the round plays. No reboot.
+   > **`HUB OFFLINE` is sticky until you interact, by design.** Nothing polls the hub. `offline` is
+   > cleared only by `refreshCard` (a `disk`/`disk_eject` event) or a successful `tryBet` — and
+   > `sp_econ.onEvent` ignores `rednet_message` (`card.isCardEvent` matches disk events only). So a
+   > standing player sees a stale `HUB OFFLINE` until they touch the machine. A fresh `econ` is built
+   > per `play()` (`slot.lua:256`), so sleep→wake also clears it.
+   > **Do NOT "fix" this with a poller.** A failed lookup costs ~1.5s of stalled play loop and the
+   > backoff is 5s: polling would mean a ~30% duty cycle of frozen reels, which is a worse machine
+   > than a stale word. An idle offline station currently pumps *nothing* — `getHub` is only ever
+   > reached from a card event, a lever pull, or a settle. That is the right trade.
 6. Confirm a win banked while offline still lands (the outbox path is untouched — this is a
    regression check, not a new promise).

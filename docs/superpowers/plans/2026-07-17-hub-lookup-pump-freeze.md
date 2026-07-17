@@ -612,7 +612,13 @@ Per the spec. The bug's own repro, now that the trigger is known:
 3. Swap the floppy at the slot, repeatedly. **Pre-fix: freeze.** Post-fix: reels keep animating, the
    header reads `HUB OFFLINE`.
 4. Pull the lever while offline → denied, header says `HUB OFFLINE`, **not** `INSUFFICIENT`.
-5. Bring the hub back. Within ~5s (the backoff) the header returns to `<id>: $<bal>`, no reboot.
+5. Bring the hub back, then **interact** — pull the lever or re-swap the card. Header returns to
+   `<id>: $<bal>` and the round plays. No reboot.
+   > **`HUB OFFLINE` is sticky until you interact, by design — not a bug.** Nothing polls: `offline`
+   > clears only via `refreshCard` (disk events) or a successful `tryBet`, and `sp_econ.onEvent`
+   > ignores `rednet_message`. Sleep→wake also clears it (fresh `econ` per `play()`, `slot.lua:256`).
+   > **Do NOT add a poller** — ~1.5s stall per 5s backoff = a ~30% duty cycle of frozen reels, worse
+   > than a stale word. An idle offline station pumps nothing at all today.
 6. Regression check: a win banked while the hub was down still lands (the outbox path is untouched).
 
 ## KB follow-up (do this at wrap-up, not during implementation)

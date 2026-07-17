@@ -491,6 +491,11 @@ would it embarrass us?* Anything else is a distraction from opening.
 - **`hub_version` / ping** — a station cannot distinguish "no hub" from "hub too old", so both read
   HUB OFFLINE. Cost real debugging time twice now. Cheap, and every future protocol change has this
   failure mode.
+- **A `bet_deny{reason="unknown"}` still renders `INSUFFICIENT`** (`sp_econ.lua:65-66`) — the same
+  lie-class the freeze fix killed, one slot over. A card whose ledger id was deleted (`hub.lua:246`)
+  tells the player they are broke rather than that the card is dead. Pre-existing; the `offline`
+  machinery now makes it a 2-line fix (a third state), so it is cheap to close. Found by the
+  hub-lookup branch's whole-branch review, filed not fixed (out of that branch's scope).
 
 **Not in the open phase** (parked deliberately — they are how the floor *grows*, not how it opens):
 multiplayer/`mp_econ`, more games, scoreboards, the trading station.
