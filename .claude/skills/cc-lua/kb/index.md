@@ -57,7 +57,10 @@ another facet of something already written. Keep this index's catalog in sync (o
 - [[monitor-ui]] — `monitor-ui.md` — hard-won graphics pitfalls: the "too long without yielding"
   watchdog, fractional-coord `setPixel` crash, palette animation + dark-colours-read-as-black,
   no native clipping, window+`setVisible` flicker-free draw, multi-file re-import traps, analog
-  lever input. *(A bundle — draw entries out of it as they're revisited.)*
+  lever input, edge-cell sprite squash. **Native text ALWAYS layers over the whole subpixel canvas**
+  (z-order is "all subpixel, then all native" — a subpixel popup can't cover native labels; gate them
+  or draw the popup native). **An idle advert may reuse the play screen's palette slots** (they never
+  run at once; play re-sets its palette on wake). *(A bundle — draw entries out of it as they're revisited.)*
 - [[monitor-ui-workflow]] — `monitor-ui-workflow.md` — **the golden-standard loop for building any
   monitor UI**: owner draws in `tools/monitor-mockup.html` → export JSON → decode (per-cell dominant
   colour + raw-subpixel for fonts) → iterate in the live `tools/slot-preview.html` (renders the real

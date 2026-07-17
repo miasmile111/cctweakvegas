@@ -120,6 +120,49 @@ This page bundles several findings; split any one out into its own `kb/` entry i
 - **Catch it offline:** render the `encodeCell` (monitor-truth) layer to PNG, not just the raw buffer —
   the raw buffer hides this because it isn't collapsed to 2 colours/cell. See [[monitor-ui-workflow]].
 
+## Native cell-text ALWAYS layers over the whole subpixel canvas — a subpixel "popup" can't cover it
+
+- **Symptom:** a popup / toast / modal drawn into the subpixel canvas renders *under* other on-screen
+  text — the buttons and their labels punch straight through the box. (In-world 2026-07-17: the cage's
+  empty-deposit toast — a subpixel panel over the metals — had the native `Withdraw / COPPER / $25`
+  button labels bleeding across it.)
+- **Cause:** a monitor frame is composed in **two passes, never interleaved**. First the subpixel
+  canvas: `cv:render()` blits *every* cell. Then native `win.write`/`blit` overlays (headers, button
+  labels, the toast's own text) are written on top. **Native text always lands above the entire
+  subpixel layer, regardless of draw order *within* the subpixel pass.** So a panel drawn "last" in
+  the subpixel layer still sits under any native text written after `render()`. Z-order on a CC
+  monitor is exactly **"all subpixel, then all native"** — you cannot put a subpixel thing on top of
+  a native thing.
+- **The trap that hid it:** the toast *did* have a subpixel panel (it correctly blanked the button
+  **art** — bevels, gradient) and the toast's *own* text was native-drawn last (so that showed on
+  top). It only leaked on the rows the toast text didn't cover, so it looked like a partial glitch,
+  not a layer inversion.
+- **Fix — win at the native layer, one of two ways:** (a) draw the overlay's box **and** text as
+  native cell-text, written last, so the whole thing is in the top pass; or (b) **suppress the native
+  overlays that fall inside the overlay's region while it's up** — gate them on the popup flag. The
+  cage does (b): `if not toast then <draw the button labels> end`. Audit *every* native write's row
+  against the panel's bounds — a single ungated `write` in that band is the whole bug.
+- **Rule:** plan any "over everything" element at the **native** layer, or blank the natives beneath
+  it. A subpixel-only overlay covers subpixel art and nothing else.
+
+## An idle advert can safely redefine palette slots the ACTIVE screen owns
+
+- **Claim:** a station's static idle advert may `setPaletteColour` the same slots the play screen's
+  animated gradient uses, and give the idle face the *same* look, with no corruption. (In-world
+  2026-07-17: the cage advert took the cage's own green→gold "casino" gradient as a static backdrop,
+  reusing `cage.lua`'s 4 gradient slots.)
+- **Why it's safe:** the advert and the play loop **never run at the same time** — `idle_runner` draws
+  the advert once on entering deep sleep, then blocks; the play loop runs only while a player is
+  present. On wake, the play loop re-applies its palette (a per-tick `updateGradient`), so it never
+  inherits the advert's static values. On sleep, the advert redraws and re-sets its own. Each owns the
+  slots while it's on screen. Precondition: the play screen must **re-set** its palette on entry (per
+  tick or on wake), not assume boot-time defaults — both slot and cage do.
+- **Corollary for offline PNG verify:** two stations' adverts reuse the same slot *numbers* for
+  *different* gradients (the slot's blue→teal vs the cage's green→gold), so one hard-coded colour map
+  can't render both. Have the harness **capture each screen's actual `setPaletteColour` calls** (the
+  stub records them) and render with those. See [[monitor-ui-workflow]].
+
 ## Related
 
 - [[subpixel-drawing]] — the 2×3 teletext encoding this canvas is built on.
+- [[monitor-ui-workflow]] — the build/verify loop; the PNG harness that captures per-screen palette.

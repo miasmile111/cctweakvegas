@@ -520,10 +520,19 @@ would it embarrass us?* Anything else is a distraction from opening.
 
 **Known rough edges, in rough priority — brainstorm before building any of them:**
 
-- ~~**The adverts — and the real deliverable under them is a PIXELFONT ALPHABET.**~~ **BUILT
-  2026-07-17** (`feat/pixelfont-alphabet`; spec + plan in `docs/superpowers/`). **In-world
-  verification is PENDING and is the owner's** — `update slot` + `update cage`, then walk up to each
-  station, walk away, and read the idle face *from across the floor* (the whole point).
+- ~~**The adverts — and the real deliverable under them is a PIXELFONT ALPHABET.**~~ **BUILT +
+  IN-WORLD VERIFIED 2026-07-17** (`feat/pixelfont-alphabet`, merged to main; spec + plan in
+  `docs/superpowers/`). Owner confirmed both idle faces read well from across the floor ("perfect");
+  the confusable pairs (`S`/`5`, `I`/`T`) are "not bad in context" — left as-is.
+  - **Cage advert got an owner-driven second pass** (2026-07-17): `THE CAGE` title + its banner bar
+    dropped; `METAL IN` / `CASH OUT` lifted ~12% higher; background is now the cage's **own** green→gold
+    "casino" gradient, sampled static (matches the active screen). Safe on the shared palette — advert
+    and play never run at once, and the play loop re-sets those slots on wake. See
+    `[[monitor-ui]]` ("an idle advert may reuse the play screen's palette slots").
+  - **Cage empty-deposit toast fixed** (2026-07-17): the withdraw button labels (native text) were
+    bleeding over the toast panel (subpixel). Root cause + rule now in `[[monitor-ui]]` — native cell-
+    text always layers over the whole subpixel canvas; a subpixel popup can't cover it. Gated the
+    labels while the toast is up. **In-world confirmation of this one fix is pending (owner's).**
   - **`pixelfont` now has an alphabet.** A-Z + `! : - . ,` + a **space** went into `M.BIG` (one table
     with the digits, so a mixed string like `COPPER $25` is one `drawText` call and every existing
     call site is untouched). Base 4 wide, `M`/`W` at 5 — matches the owner's square slashed digits.
