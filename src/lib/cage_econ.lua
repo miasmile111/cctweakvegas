@@ -1,24 +1,24 @@
 -- cage_econ.lua — the cage's economy gateway: a card session plus hub debit/credit, driven from
--- the station's play() loop. Sibling of sp_econ, on the same card+wallet core.
+-- the station's play() loop. Sibling of sp_econ, on the same card_session+wallet core.
 --
 -- Why not sp_econ? That gateway is bet/settle-shaped (a wager round with a paytable). The cage has
--- no round, no result and no house evaluation — it debits and it credits. Both gateways need the
--- same card-session machinery (re-read on disk events, mirror writes, outbox flush, capture the id
--- at commit), so they share the core, not each other. When mp_econ becomes the third instance,
--- THAT is when lib/card_session.lua gets extracted — three callers prove the shape, two guess it.
+-- no round, no result and no house evaluation — it debits and it credits. Both need the same card
+-- SESSION, so they share that (lib/card_session), not each other.
 --
 -- Reuses the modem idle_runner already opened; never opens rednet itself.
-local card   = require("card")
-local wallet = require("wallet")
+local card_session = require("card_session")
+local wallet       = require("wallet")
 
 local M = {}
 
--- cfg.zone is accepted for symmetry with the station's zone (unused today; MP will use it).
+-- cfg.drive = which drive holds the card (nil = the first one).
+-- cfg.zone is accepted for symmetry with the station's zone (unused today).
 function M.new(cfg)
   cfg = cfg or {}
+  local sess = card_session.new{ drive = cfg.drive }   -- flushes the outbox on entry
+
   local self = {
-    player  = nil,   -- id string, or nil (anonymous — buttons inert, never a gate)
-    balance = nil,   -- last known hub balance for player
+    session = sess,
     denied  = false,
     msg     = nil,   -- status line for the UI
     debitedId = nil, -- id the last successful tryDebit charged; refund() credits THIS, not the
@@ -26,25 +26,10 @@ function M.new(cfg)
                      -- whoever paid it. (sp_econ's stakedId lesson, kb/economy.md.)
   }
 
-  wallet.flush()     -- bank any deposits queued while the hub was down, on entry
-
-  local function refreshCard()
-    self.denied, self.msg = false, nil
-    local c = card.read()
-    if c then
-      self.player = c.id
-      local b = wallet.query(c.id)     -- hub is truth; fall back to the card mirror if offline
-      self.balance = b or c.score
-      if b then card.writeMirror(b) end
-    else
-      self.player, self.balance = nil, nil
-    end
-  end
-  refreshCard()
-
   -- fold a raw os event into state. Call for EVERY event in the play loop.
   function self.onEvent(ev)
-    if card.isCardEvent(ev) then refreshCard() end
+    if sess.isCardEvent(ev) then self.denied, self.msg = false, nil end
+    sess.onEvent(ev)
   end
 
   -- Take `amount` off the card. Fail-closed: anything but "ok" means NO items may move.
@@ -52,17 +37,26 @@ function M.new(cfg)
   -- stock check -> debit -> move.
   function self.tryDebit(amount)
     self.denied, self.msg = false, nil
-    if not self.player then self.msg = "INSERT CARD"; return "nocard" end
-    local ok, bal, reason = wallet.debit(self.player, amount)
+    if not sess.player then self.msg = "INSERT CARD"; return "nocard" end
+    local ok, bal, reason = wallet.debit(sess.player, amount)
     if ok then
-      self.balance = bal
-      self.debitedId = self.player     -- capture at commit: refund() must not follow the live card
-      card.writeMirror(bal)
+      sess.noteHub(nil)
+      self.debitedId = sess.player     -- capture at commit: refund() must not follow the live card
+      sess.setBalance(bal)
       return "ok"
     end
-    if bal ~= nil then self.balance = bal end   -- deny reply carries current balance
+    if bal ~= nil then sess.balance = bal end   -- deny reply carries current balance
+    sess.noteHub(reason)
     self.denied = true
-    self.msg = (reason == "timeout") and "HUB OFFLINE" or ("NEED $" .. amount)
+    -- Three states, not two. A deleted ledger id is not a broke player, and saying "NEED $100" to
+    -- someone holding a dead card is the same lie about money that `offline` exists to prevent.
+    if sess.offline then
+      self.msg = "HUB OFFLINE"
+    elseif reason == "unknown" then
+      self.msg = "BAD CARD"
+    else
+      self.msg = "NEED $" .. amount
+    end
     return "deny"
   end
 
@@ -70,19 +64,20 @@ function M.new(cfg)
   -- balance is reflected locally, so a deposit is never lost (wallet.credit's contract).
   function self.deposit(amount)
     self.denied, self.msg = false, nil
-    if not self.player then self.msg = "INSERT CARD"; return nil end
-    local ok, bal, reason = wallet.credit(self.player, amount)
+    if not sess.player then self.msg = "INSERT CARD"; return nil end
+    local ok, bal, reason = wallet.credit(sess.player, amount)
     if ok and bal then
-      self.balance = bal
-      card.writeMirror(bal)
+      sess.noteHub(nil)
+      sess.setBalance(bal)
     elseif reason == "unknown" then          -- credit_deny: this card's id is gone from the ledger
       self.denied, self.msg = true, "BAD CARD"
       return nil
     else
-      self.balance = (self.balance or 0) + amount   -- queued to outbox; reflect locally
+      sess.noteHub("timeout")
+      sess.balance = (sess.balance or 0) + amount   -- queued to outbox; reflect locally
       self.msg = "HUB OFFLINE"
     end
-    return self.balance
+    return sess.balance
   end
 
   -- Give money back after a move came up short. Credits the id that was DEBITED, not whoever is in
@@ -91,20 +86,21 @@ function M.new(cfg)
   function self.refund(amount)
     if amount <= 0 or not self.debitedId then return end
     local ok, bal = wallet.credit(self.debitedId, amount)
-    local live = (self.debitedId == self.player)
+    local live = (self.debitedId == sess.player)
     if ok and bal then
-      if live then self.balance = bal; card.writeMirror(bal) end
+      if live then sess.setBalance(bal) end
     elseif live then
-      self.balance = (self.balance or 0) + amount   -- outboxed; reflect locally
+      sess.balance = (sess.balance or 0) + amount   -- outboxed; reflect locally
     end
     self.msg = "REFUNDED $" .. amount
   end
 
   function self.status()
     return {
-      player  = self.player,
-      balance = self.balance,
+      player  = sess.player,
+      balance = sess.balance,
       denied  = self.denied,
+      offline = sess.offline,
       msg     = self.msg,
     }
   end

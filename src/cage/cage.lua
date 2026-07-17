@@ -665,7 +665,8 @@ local function drawFrame(st, econ)
 
   -- header row 2: the player, and the status. No station name — the player is standing at it.
   -- Both clear the bulb lanes (col 3 on the left; the status ends at col 35 on the right).
-  writeAt(econ.player, 2, 3, WHITE, bandAt(2))
+  -- player/balance now live on cage_econ's card_session, not on self -- read them via status().
+  writeAt(econ.status().player, 2, 3, WHITE, bandAt(2))
   local status = econ.msg or (st.paying and ("PAYING " .. st.owed) or nil)
   if status then
     writeAt(status, 2, mw - #status, econ.denied and PINK or WHITE, bandAt(2))
@@ -715,7 +716,7 @@ local function play(_, pres)
   local pressIdx, pressUntil = 0, 0
   local depUntil, toastUntil = 0, 0
   local dispBal = 0
-  local lastPlayer = econ.player
+  local lastPlayer = econ.status().player
 
   -- loads[i] = items dropper i still owes the floor; nextDropper = where the next tap's round-robin
   -- starts, so consecutive taps keep the rotation even instead of always reloading dropper 1.
@@ -737,11 +738,12 @@ local function play(_, pres)
   end
 
   local function state()
+    local est = econ.status()   -- player/balance live on the session now, not on econ itself
     return {
-      hasCard    = econ.player ~= nil,
+      hasCard    = est.player ~= nil,
       tick       = tick,
       dispBal    = dispBal,
-      balTarget  = econ.balance or 0,
+      balTarget  = est.balance or 0,
       qtyIdx     = qtyIdx,
       pressIdx   = pressIdx,
       pressUntil = pressUntil,
@@ -877,10 +879,11 @@ local function play(_, pres)
         end
       end
 
-      if econ.player ~= lastPlayer then      -- a fresh card starts its count-up from zero
-        lastPlayer, dispBal = econ.player, 0
+      local est = econ.status()              -- player/balance live on the session, not on econ
+      if est.player ~= lastPlayer then       -- a fresh card starts its count-up from zero
+        lastPlayer, dispBal = est.player, 0
       end
-      dispBal = easeToward(dispBal, econ.balance or 0)
+      dispBal = easeToward(dispBal, est.balance or 0)
 
       render()
       if DEBUG then
@@ -902,7 +905,7 @@ local function play(_, pres)
       os.cancelTimer(timer); timer = os.startTimer(TICK)
     elseif ev[1] == "monitor_touch" then
       -- No card => the controls aren't on screen, so there is nothing to tap.
-      if econ.player then
+      if econ.status().player then
         local kind, i = hitTest(ev[3], ev[4])
         if kind == "qty" then qtyIdx = i
         elseif kind == "denom" then withdraw(i)
