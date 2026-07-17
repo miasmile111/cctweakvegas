@@ -165,9 +165,13 @@ local function request(msg, kinds)
   return result
 end
 
+-- Returns balance, reason. `reason` is "timeout" when the hub did not answer -- nil balance alone is
+-- ambiguous (hub down vs. unknown id) and callers render those very differently. Additive: every
+-- existing single-return caller is unaffected.
 function M.query(id)
   local r = request({ kind = "query", id = id }, { balance = true })
-  return r and r.balance or nil
+  if not r then return nil, "timeout" end
+  return r.balance, nil
 end
 
 -- fail closed: deny or timeout both return a falsey ok so the caller does not spin for stakes.

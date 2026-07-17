@@ -16,6 +16,7 @@ function M.new(cfg)
     balance = nil,   -- last known hub balance for player
     lastWin = 0,
     denied  = false,
+    offline = false,  -- hub unreachable: the header must say so, not accuse the player of being broke
     round   = nil,   -- "staked" | "free" | nil : current round's bet outcome
     stakedId = nil,   -- id that was debited this round; settle credits THIS, not the live card
     stakedStake = nil,   -- stake debited this round; settle evals payout against THIS
@@ -28,11 +29,13 @@ function M.new(cfg)
     local c = card.read()
     if c then
       self.player = c.id
-      local b = wallet.query(c.id)      -- hub is truth; fall back to the card mirror if offline
+      local b, reason = wallet.query(c.id)   -- hub is truth; fall back to the card mirror if offline
+      self.offline = (reason == "timeout")
       self.balance = b or c.score
       if b then card.writeMirror(b) end
     else
       self.player, self.balance = nil, nil
+      self.offline = false                   -- no card is anonymous free play, not a hub error
     end
   end
   refreshCard()
@@ -48,14 +51,20 @@ function M.new(cfg)
     self.denied = false
     if not self.player then self.round = "free"; return "free" end
     local st = stake or self.pay.STAKE
-    local ok, bal = wallet.bet(self.player, st)
+    local ok, bal, reason = wallet.bet(self.player, st)   -- 3rd return was being DROPPED here
     if ok then
+      self.offline = false
       self.balance = bal; card.writeMirror(bal)
       self.round = "staked"; self.stakedId = self.player; self.stakedStake = st
       return "staked"
     end
     if bal ~= nil then self.balance = bal end   -- deny reply carries current balance
-    self.denied = true; self.round = nil
+    -- A hub timeout and a real insufficient-funds deny BOTH fail closed -- that does not change.
+    -- But they are not the same thing, and telling a player with $500 that they are INSUFFICIENT is
+    -- a lie the machine tells about money. Keep them apart for the header.
+    self.offline = (reason == "timeout")
+    self.denied = not self.offline
+    self.round = nil
     return "deny"
   end
 
@@ -86,6 +95,7 @@ function M.new(cfg)
       stake   = self.pay.STAKE,
       lastWin = self.lastWin,
       denied  = self.denied,
+      offline = self.offline,
     }
   end
 
