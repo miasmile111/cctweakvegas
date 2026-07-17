@@ -458,6 +458,56 @@ least one host is broadcasting the wrong coordinates.
 - **Bonus:** the 2s `gps.locate` stall on every station boot disappears — that delay was the timeout
   expiring with no constellation to answer.
 
+## Floppy-swap freeze — ROOT-CAUSED + FIXED 2026-07-17 ✓ (in-world verification PENDING)
+
+The standing bug is dead. Merged + pushed (`aee8715`). Spec:
+`docs/superpowers/specs/2026-07-17-hub-lookup-pump-freeze-design.md`; plan:
+`.../plans/2026-07-17-hub-lookup-pump-freeze.md`. 4 tasks, per-task + whole-branch review, 382 tests.
+
+**It was `rednet.lookup`, and it was never a mystery once we read the rom.** From CC's own
+`rom/apis/rednet.lua` (blob `8107a46`), `lookup` runs `local event, p1, p2, p3 = os.pullEvent()` —
+**no filter** — and silently discards every event that is not a dns reply or its own timer. Default
+timeout **2s**. So: hub unreachable → card swap → `disk` event → `sp_econ.refreshCard` →
+`wallet.query` → `getHub` → **2 full seconds of eating events**, including `slot.lua`'s pending tick
+timer. `slot.lua` re-arms its timer *only in the timer branch*, and the swap arrived on the `disk`
+branch. Timer gone, nothing re-arms it, next `os.pullEvent` blocks forever. Frozen, no crash, reboot
+to clear — **and intermittent, because it tracked whether the hub's chunk happened to be loaded.**
+
+> **The owner's fix (force-load the hub + reboot it) removed the TRIGGER, not the bug** — and it was
+> a genuinely good call, it made the floor usable. But a hub reboot, a server restart, or a chunk
+> unload re-arms it, and a public floor swaps cards constantly. Worse, `wallet.lua`'s
+> `if result == nil then hubId = nil end` drops a good hub id after **any** timeout, so a single
+> server hitch re-armed the pump *even against a healthy force-loaded hub*.
+
+**The three-part fix** (drop any one and the bug lives): `_pumpSafe` drives `lookup` as a coroutine
+and re-queues what it drops · cache the hit · **back off the miss** (`LOOKUP_BACKOFF = 5`).
+**A cache alone was never enough** — it only populates when the lookup *succeeds*, so it was absent
+in exactly the case that froze. That gap is now written into `[[event-pump-reentrancy]]`, whose old
+advice ("cache blocking lookups") was followed exactly and still let this through.
+
+**It also killed a lie.** `wallet.bet` already returned `reason="timeout"`; `sp_econ` **dropped the
+third return** and set `denied`, so a hub-down slot rendered **`INSUFFICIENT`** at a player holding
+$500. Now `sp_econ.offline` is threaded through and the header says **`HUB OFFLINE`**. Fail-closed on
+money is unchanged — only what the player is *told* changed.
+
+**`HUB OFFLINE` is sticky until you interact, BY DESIGN — do not "fix" it with a poller.** Nothing
+polls: `offline` clears via `refreshCard` (disk events), a successful `tryBet`, or sleep→wake (a fresh
+`econ` per `play()`). A failed lookup stalls the loop ~1.5s and the backoff is 5s, so polling = a
+**~30% duty cycle of frozen reels** — a worse machine than a stale word. An idle offline station
+pumps *nothing*.
+
+**In-world verification (PENDING — the only thing left):** it requires **deliberately breaking the
+hub** (stop `hub.lua` or unload its chunk), because the chunkload fix normally prevents that state.
+`update slot`, reboot, insert card · break the hub · **swap the floppy repeatedly → pre-fix this
+froze; now the reels keep animating and the header reads `HUB OFFLINE`** · pull the lever while
+offline → denied, says `HUB OFFLINE`, **not** `INSUFFICIENT` · bring the hub back, pull the lever or
+re-swap → recovers, no reboot · a win banked while offline still lands (outbox regression check).
+
+**Two Minors filed, not fixed:** `rednet.lookup`'s 3rd `timeout` arg landed in CC:Tweaked **1.118.0**
+and the server's jar version is not pinned anywhere in the repo — on an older build the arg is
+silently dropped and the hitch is 2s, not 1.5s (harmless; worth one in-world check). And the
+`bet_deny{reason="unknown"}` lie, filed in the OPEN list above.
+
 ## → NEXT: **the OPEN phase** — polish the floor until it can take real players (owner-set 2026-07-17)
 
 **The build phase is over. Everything needed to open exists and works in-world:** the economy is a
@@ -482,10 +532,9 @@ would it embarrass us?* Anything else is a distraction from opening.
 - **Getting a card is an admin action.** `issue <name>` runs on the hub. To open, a player needs a
   path to their first card that does not involve the owner typing. Own brainstorm; the trading
   station (parked, below) may be the same machinery.
-- **Floppy-swap freeze (open bug, #2 below).** A station *sometimes* freezes on a card swap. This is
-  the one item that is not polish: a public floor will hit it far more often than we do. Repro +
-  root-cause per `kb/economy.md`; likely a nested `os.pullEvent` still reachable from
-  `sp_econ.onEvent`/`disk_eject`. See `[[event-pump-reentrancy]]`.
+- ~~**Floppy-swap freeze (open bug, #2 below).**~~ **ROOT-CAUSED + FIXED 2026-07-17** (in-world
+  verification pending — see the section below). It was `rednet.lookup`, and the owner's
+  hub-chunkloading had already removed the *trigger*.
 - **Verify the proximity checklist end to end** (todo's proximity section) — the walk-to-the-hub test
   in particular. It is the difference between "built" and "known good".
 - **`hub_version` / ping** — a station cannot distinguish "no hub" from "hub too old", so both read
@@ -518,10 +567,7 @@ multiplayer/`mp_econ`, more games, scoreboards, the trading station.
      `droppers` handle table in `cage_hw` (the wrap loop is the real fail-loud preflight).
 1. **General multiplayer capabilities** — the core is already SP/MP-agnostic (`lib/ledger·card·wallet`).
    Build `lib/mp_econ` (multi-card pot / interactive wagers) + a first 2–4-player game or MP mode. Own spec.
-2. **Economy bug — floppy-swap freeze (open).** Station *sometimes* freezes (no crash; reboot to clear)
-   when swapping floppy disks; the `1a7d9d7` fix helped but didn't eliminate it. Repro + root-cause per
-   `kb/economy.md` "Open follow-up" (likely a nested `os.pullEvent`/rednet path still reachable from
-   `sp_econ.onEvent`/`disk_eject`). See `[[event-pump-reentrancy]]`.
+2. ~~**Economy bug — floppy-swap freeze (open).**~~ **FIXED 2026-07-17** — see the section below.
 3. **Slot advert-screen UI session** — the idle `slot_advert.lua` (COME PLAY / GET MONEY) is a plain
    default-palette screen. Give it the full treatment via the golden-standard loop (`kb/monitor-ui-workflow.md`):
    owner mockup → `tools/slot-preview.html`-style preview → subpixel art / `pixelfont` → deploy. It's the

@@ -103,7 +103,12 @@ another facet of something already written. Keep this index's catalog in sync (o
 - [[event-pump-reentrancy]] — `event-pump-reentrancy.md` — a nested `os.pullEvent` loop (rednet
   round-trip, `rednet.lookup`, `sleep`, `parallel`) called from inside a play loop **eats the outer
   loop's own tick timer** → silent freeze (program "running", reboot to clear). One event queue per
-  computer. Fix: stash + `os.queueEvent` the foreign events back; cache blocking lookups.
+  computer. Fix: stash + `os.queueEvent` the foreign events back (**before** any re-raise), and for a
+  lookup you don't own, drive it as a **coroutine** (`pumpSafe`) — `os.pullEvent` inside a coroutine
+  IS `coroutine.yield`, so never mutate it (that's a no-op in CC and it breaks Ctrl+T). **A cache is
+  NOT enough** — it only helps when the lookup *succeeds*; the miss path needs a **backoff**, and
+  that gap is what made the floppy-swap freeze survive the first fix. Root-caused from the rom source
+  2026-07-17: `lookup` pulls with **no filter** and discards everything, 2s default.
 - [[unloaded-chunk-is-the-cheapest-sleep]] — `unloaded-chunk-is-the-cheapest-sleep.md` — a computer in
   an **unloaded chunk is CLOSED, not sleeping**: zero cost, cheaper than any `os.pullEvent` deep sleep,
   and chunk load reboots it into `startup` (`serverTick` sees `on = startOn` from NBT). So **chunk

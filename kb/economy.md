@@ -145,15 +145,33 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
   rather than claiming to know — but a station's `credit` still has it. Worth doing with the
   `hub_version` ping (lesson 7), since both are protocol changes.
 
-- **Floppy-swap freeze STILL happens intermittently (open bug, 2026-07-16).** Owner reports the station
-  *sometimes* freezes (no crash — monitor stops, program still "running", reboot to clear) when
-  **switching out floppy disks**. The `1a7d9d7` fix (stash+re-queue foreign events, cache the hub id —
-  see lesson 3 above and `[[event-pump-reentrancy]]`) reduced but did **not** eliminate it. Likely a
-  remaining nested-`os.pullEvent` / blocking-call path reachable from the `disk`/`disk_eject` handler
-  (`sp_econ.onEvent` → `card.read` → `wallet.query`/`rednet.lookup`), or a `disk_eject` firing mid-`bet`
-  round-trip. **Next-session repro:** rapid insert/eject during attract vs during a spin's result
-  window; log every event the play loop sees around a swap; check whether `wallet.request`/`rednet`
-  round-trips can still be entered from `onEvent`. Fix so a swap never blocks the tick timer.
+- ~~**Floppy-swap freeze STILL happens intermittently (open bug, 2026-07-16).**~~ **ROOT-CAUSED +
+  FIXED 2026-07-17** (`aee8715`; in-world verification pending). The 2026-07-16 hypothesis above was
+  **half right and half wrong**, and the wrong half is the lesson.
+  - **Right:** it *was* a blocking call reachable from the `disk`/`disk_eject` handler, exactly along
+    the guessed path (`sp_econ.onEvent` → `refreshCard` → `wallet.query`).
+  - **Wrong:** it was **not** a *remaining nested `os.pullEvent` we had failed to stash*. It was
+    **`rednet.lookup` itself** — `getHub`, one line *above* `request`'s carefully-stashed loop. The
+    `1a7d9d7` fix cached the hub id to avoid exactly this... **and a cache only populates when the
+    lookup SUCCEEDS.** With the hub unreachable, `hubId` stayed nil and every call re-ran a full 2s
+    pump. The mitigation was absent in precisely the case that froze.
+  - **Why it was intermittent:** it tracked whether the **hub's chunk was loaded**, nothing else. The
+    owner force-loading the hub removed the trigger and the freeze "went away" — but a hub reboot,
+    server restart or chunk unload re-arms it, and `wallet.lua`'s `if result == nil then hubId = nil
+    end` re-armed it after any single timeout even against a healthy hub.
+  - **Verified from the rom, not guessed:** `rom/apis/rednet.lua` `lookup` pulls with a **bare
+    `os.pullEvent()`** (no filter) and silently discards everything unrecognised. 2s default.
+  - **Fix:** `wallet._pumpSafe` drives `lookup` as a coroutine and re-queues what it drops; cache the
+    hit; **back off the miss** (`LOOKUP_BACKOFF = 5`). All three needed. See
+    `[[event-pump-reentrancy]]`, whose "cache blocking lookups" advice was followed *exactly* and
+    still let this through — now corrected there.
+  - **Bonus fix — a lie:** `wallet.bet` already returned `reason="timeout"` and `sp_econ` **dropped
+    the third return**, so a hub-down slot told a player holding $500 they were `INSUFFICIENT`.
+    `sp_econ.offline` now threads it through → the header says `HUB OFFLINE`. Fail-closed on money is
+    unchanged; only what the player is told changed. `wallet.query` gained a matching `reason` second
+    return (additive — a nil balance alone cannot distinguish hub-down from unknown-id).
+  - **Still open, same family:** a `bet_deny{reason="unknown"}` renders `INSUFFICIENT` at a player
+    whose ledger id was deleted. Filed in `todo.md`; ~2 lines now that `offline` exists.
 - ~~**F2 (latent):** a `credit` to an *unknown* id is treated as acked (hub replies `balance=nil`) →
   win silently dropped.~~ **FIXED (cage task).** The hub now replies `credit_deny{id, reason="unknown"}`;
   `wallet.credit`/`wallet.flush` classify it via `wallet._creditResult` as a terminal `"deny"` —
