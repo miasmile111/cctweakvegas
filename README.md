@@ -123,7 +123,7 @@ contraption**, or **hybrid**.
 | **Membership cards / economy** | core ✓ (in-world pending) | `lib/ledger·card·wallet·sp_econ` + `issue`; bet-and-pay slot. Layered SP/MP-agnostic. Spec in `docs/`. |
 | **Cage / diegetic sink** | v1 ✓    | `$` ↔ metal kiosk (`src/cage/`), in-world verified. Hardware self-discovers; `wallet.debit`+`credit_deny` core additions; idle advert on the `pixelfont` alphabet (in-world pending). **The `$` exit — the economy is now a loop.** |
 | **Scoreboards**        | planned | Rednet display subscribers around the floor (own spec).           |
-| **Multiplayer economy**| planned | `lib/mp_econ`: multi-card pot / wagers; core already supports it (own spec). |
+| **Multiplayer economy**| engine ✓ (in-world pending) | `lib/card_session` (one card on one drive) + `lib/mp_econ` (N seats, ante→pot→payout). A seat is a drive; anon seats play but never win the pot. Pong is a debug harness only. |
 | **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |
 
 Each component gets its own detail as it's built (its `src/` files, its `todo.md` section).

@@ -579,6 +579,51 @@ would it embarrass us?* Anything else is a distraction from opening.
 **Not in the open phase** (parked deliberately — they are how the floor *grows*, not how it opens):
 multiplayer/`mp_econ`, more games, scoreboards, the trading station.
 
+## MP economy engine — BUILT 2026-07-17 ✓ (in-world verification PENDING)
+
+The engine for 2–4 player staked games. Spec:
+`docs/superpowers/specs/2026-07-17-mp-econ-engine-design.md`; plan:
+`docs/superpowers/plans/2026-07-17-mp-econ-engine.md`. **Pong is a debug harness, not a game** —
+native text, no art, no advert, and `END` resolves the match because pong has no win condition.
+
+**The unlock: a card session is ONE CARD ON ONE DRIVE.** Bound to `drive = nil` it is the
+single-card behaviour slot and the cage always had (zero regression); bind N to N named drives and
+it is multiplayer. So `card.read()`-takes-the-first-drive (the blocker) and the `sp_econ`/`cage_econ`
+rule-of-three extraction were **the same piece of work**, which is why this was one branch.
+
+- **`card.drives()` returns EVERY drive, disk or not** — a drive is a seat, and an empty seat still
+  exists. Filtering to drives-with-a-disk (the first draft) makes a cardless player vanish from the
+  station instead of showing up as an anonymous seat.
+- **There is no occupancy quorum, because an anonymous player is INVISIBLE.** A human standing at a
+  cardless seat emits nothing a computer can read, so GO is always live and `start()` decides
+  staked-vs-free from the only observable fact: how many cards are in. `minSeats` means *carded*
+  seats, not bodies.
+- **Owner-set policy:** ante is forfeit · seats lock at ante (a card inserted mid-match is a
+  spectator) · anon seats play but never win the pot, and when an anon takes the match the **best
+  carded seat** takes the money · touch `GO`.
+- **The drift died:** `cage_econ` folded hub-unreachable and insufficient-funds into one `msg`, so a
+  dead ledger id read as `NEED $100` at a player who wasn't broke. Now three states
+  (`HUB OFFLINE`/`BAD CARD`/`NEED $n`), and `cage_econ` has tests for the first time.
+- **No protocol change** — a pot is existing `debit` + `credit`, so **no `update hub`**, and none of
+  `kb/economy.md` lesson 7's hub-too-old trap.
+
+**New gaps this opened, filed not fixed:**
+- **A chunk unload or crash mid-match evaporates the pot.** An unloaded chunk's computer is CLOSED,
+  not sleeping (`[[unloaded-chunk-is-the-cheapest-sleep]]`), so no exit path runs, `finish` never
+  happens, and the debited $ is gone. The window is small (a player present means the chunk is
+  loaded) and the fix is a persisted pot journal like `wallet`'s outbox, replayed at boot.
+  **Must be closed before an MP game takes real players.**
+- **`getMountPath()` on a NETWORK drive is unverified** — the whole seat model assumes two drives on
+  one computer both mount. It is a 2-minute in-world check and the design rests on it.
+
+**In-world verification (PENDING):** `update slot` + `update cage` + `update pong`, reboot each ·
+0 cards → free rally, **no regression** · 1 card → free, **no debit** · 2 cards → `GO` → both
+debited, `POT $20` → `END` → higher score credited · **pull a card mid-match → the pot still pays
+the anted id** · a *different* card mid-match → spectator gets nothing · seat 2 insufficient → `GO` →
+**seat 1 not out of pocket** · hub down → `GO` → `HUB OFFLINE`, not `INSUFFICIENT`, nobody debited ·
+**walk away mid-match → the pot resolves** · **slot + cage still work** (the extraction touched two
+shipped stations — this is the regression that matters most).
+
 ## Backlog (behind the OPEN phase — owner-set 2026-07-16, roughly in priority order)
 
 0. ~~**Build the cage**~~ — **DONE + IN-WORLD VERIFIED 2026-07-17.** See the Cage section above.
@@ -587,16 +632,18 @@ multiplayer/`mp_econ`, more games, scoreboards, the trading station.
    - **`hub_version` / ping in the protocol** — a station can't distinguish "no hub" from "hub too
      old to know this message", so both read HUB OFFLINE (cost real debugging time this session).
      Every future protocol change has this failure mode. See `kb/economy.md` lesson 7.
-   - **Extract `lib/card_session.lua`** — `sp_econ` + `cage_econ` are instances 1 and 2 of the same
-     card-session machinery; `mp_econ` is the rule-of-three trigger (see #1 below).
+   - ~~**Extract `lib/card_session.lua`**~~ — **DONE 2026-07-17** with `mp_econ` (the rule-of-three
+     trigger). `cage_econ`'s `msg`-string drift was reconciled onto `sp_econ`'s `offline`, which
+     closed the "`NEED $x` for a dead card id" lie listed below.
    - **`cage test drop` doesn't exercise `play()`'s pulse path** — it pairs its edges, so it stayed
      green through a bug that lost 1 tap in 3. Any future hardware self-test should drive the real
      code path or say plainly what it doesn't cover.
    - Cosmetic, filed not fixed: `cage_econ.refund()` shows "REFUNDED $x" to whoever's card is in the
      drive (not necessarily the payer); `tryDebit` says "NEED $x" even for a dead card id; the dead
      `droppers` handle table in `cage_hw` (the wrap loop is the real fail-loud preflight).
-1. **General multiplayer capabilities** — the core is already SP/MP-agnostic (`lib/ledger·card·wallet`).
-   Build `lib/mp_econ` (multi-card pot / interactive wagers) + a first 2–4-player game or MP mode. Own spec.
+1. ~~**General multiplayer capabilities**~~ — **ENGINE BUILT 2026-07-17.** See the section above.
+   What is left is a real MP *game* (pong is a harness): its own brainstorm→spec→build, and it must
+   close the pot-journal gap first.
 2. ~~**Economy bug — floppy-swap freeze (open).**~~ **FIXED 2026-07-17** — see the section below.
 3. **Slot advert-screen UI session** — the idle `slot_advert.lua` (COME PLAY / GET MONEY) is a plain
    default-palette screen. Give it the full treatment via the golden-standard loop (`kb/monitor-ui-workflow.md`):

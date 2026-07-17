@@ -19,8 +19,9 @@ GAME      slot.lua (round loop + visuals)  +  slot_pay.lua (stake + payout eval)
           cage.lua (kiosk loop + UI)                                               ← tiny, per-game
 GATEWAY   sp_econ.lua  (single-player: one card, house paytable)                    ← built
           cage_econ.lua (card session + hub debit/credit, sibling of sp_econ)       ← built
-          mp_econ.lua  (multi-card pot / wagers)                                    ← future
-CORE      card.lua · wallet.lua (+outbox) · ledger.lua (hub)                        ← SP/MP-agnostic
+          mp_econ.lua  (N seats, ante -> pot -> payout)                             ← built
+CORE      card_session.lua (ONE card on ONE drive)                                  ← built
+          card.lua · wallet.lua (+outbox) · ledger.lua (hub)                        ← SP/MP-agnostic
 ```
 
 - **`lib/ledger.lua`** (pure, unit-tested) — hub-side `{id→balance}`: `mint/balance/apply/debit`.
@@ -33,6 +34,16 @@ CORE      card.lua · wallet.lua (+outbox) · ledger.lua (hub)                  
 - **`lib/cage_econ.lua`** — the cage's gateway (sibling of `sp_econ`, not built on it — the cage is
   debit/credit-shaped, not bet/settle-shaped): `tryDebit(amount)`, `deposit(amount)`,
   `refund(amount)`, `onEvent(ev)`, `status()`.
+- **`lib/card_session.lua`** — **one card on one drive.** The machinery `sp_econ` and `cage_econ`
+  each grew independently (read the card, ask the hub, fall back to the mirror, re-read on disk
+  events, write the mirror back), extracted when `mp_econ` made it three. Bound to `drive = nil` it
+  is the single-card behaviour slot and the cage always had; bind N to N named drives and you have N
+  seats. `onEvent` filters by drive (`ev[2]`) — without that, one insert at a 4-seat station fires
+  four `wallet.query` round-trips.
+- **`lib/mp_econ.lua`** — the pot gateway: `start()` (ante), `finish(scores)` (payout),
+  `onEvent(ev)`, `cardedCount()`, `canStake()`, `status()`. **A seat is a drive** — it exists with
+  or without a card, and an empty seat is an anonymous player who can win the *match* but never the
+  *pot*. Staked iff `>= minSeats` (2) carded seats. No protocol change: a pot is `debit` + `credit`.
 - **`slot/slot_pay.lua`** — the slot's tiny payout script: `STAKE` + `eval(result)`.
 - **`hub/hub.lua`** — owns `ledger.tbl` + the `bet/credit/query/mint/debit` handlers (sole writer).
 - **`issue.lua`** — admin. `issue <name> [balance]` mints a ledger id + writes the floppy;
@@ -130,6 +141,19 @@ Starting card balance default **$100** (`issue`). Symbol indices: 1=seven 2=cher
    Both of those shipped here, on the same day, presenting identically. Worth a `hub_version`/ping in
    the protocol so a station can say *"hub is up but too old"* — every future protocol change has this
    same failure mode. **Not built; the next protocol change should build it.**
+8. **A pot is all-or-nothing, and a live pot must never leave the play loop.** Two failure modes,
+   both of which lose real money and neither of which any per-task review would catch:
+   - **A partial ante** pays somebody money that was never all there — two seats paid, one didn't,
+     and the winner takes a pot with a hole in it. `mp_econ.start` refunds every ante already taken
+     the moment any debit fails. Lesson 6's ordering invariant with "the pot is complete" as the
+     stock check.
+   - **An unresolved pot evaporates.** `pong.lua` returned `"sleep"` the instant the zone emptied —
+     correct when a round is a lever pull that resolves in one tick (the slot), catastrophic when a
+     match lasts as long as the players do. Both players debited, `finish` never called, the $ gone.
+     **`play()` may not exit with a live pot.** Still open in the worst case: a chunk unload or a
+     crash mid-match runs no exit path at all (`[[unloaded-chunk-is-the-cheapest-sleep]]`) — that
+     needs a persisted pot journal like the outbox, and it must exist before an MP game takes real
+     players. Filed in `todo.md`.
 
 ## Open follow-up
 
