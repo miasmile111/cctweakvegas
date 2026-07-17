@@ -8,8 +8,10 @@
 package.path = "src/lib/?.lua;src/slot/?.lua;src/cage/?.lua;test/?.lua;" .. package.path
 
 -- Minimal CC globals the advert code touches. pixelfont/slot_style are pure, but cage_advert uses
--- `colors` and subpixel's render() calls blit on the target.
-_G.colors = { black = 32768, red = 16384, white = 1, lightGray = 256, yellow = 16, gray = 128 }
+-- `colors` and subpixel's render() calls blit on the target. blue/purple/magenta/cyan are the cage
+-- advert's gradient slots (it repaints them green->gold, same as the active screen).
+_G.colors = { black = 32768, red = 16384, white = 1, lightGray = 256, yellow = 16, gray = 128,
+              blue = 2048, purple = 1024, magenta = 4, cyan = 512 }
 
 local stub     = require("stub_target")
 local subpixel = require("subpixel")
@@ -31,6 +33,19 @@ local function dump(name, cols, rows, mod)
   -- show. We re-expand to per-subpixel colours so the PNG shows exactly what the monitor shows.
   local out = io.open(name .. ".txt", "w")
   out:write(("%d %d\n"):format(cv.w, cv.h))
+  -- Palette section: the slots THIS advert redefined via setPaletteColour (the stub records them).
+  -- Slots differ per screen (the slot advert's gradient uses different slot NUMBERS than the cage's),
+  -- so the PNG can't use one hardcoded map — it reads each screen's real palette from here.
+  -- Format: "P <count>", then "<slot> <r255> <g255> <b255>" per redefined slot.
+  local pslots = {}
+  for slot in pairs(target.palette or {}) do pslots[#pslots + 1] = slot end
+  table.sort(pslots)
+  out:write(("P %d\n"):format(#pslots))
+  for _, slot in ipairs(pslots) do
+    local c = target.palette[slot]
+    out:write(("%d %d %d %d\n"):format(slot,
+      math.floor(c[1] * 255 + 0.5), math.floor(c[2] * 255 + 0.5), math.floor(c[3] * 255 + 0.5)))
+  end
   local truth = {}
   for y = 1, cv.h do truth[y] = {} end
   local BITS = { 1, 2, 4, 8, 16 }

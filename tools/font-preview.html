@@ -312,17 +312,30 @@ function drawSlot() {
   drawGlyph(cv, SIGN_LG, "$", Math.floor((cv.w-signW)/2)+1, L.signY, WHITE, 1);
   return cv;
 }
-// CAGE — port of cage_advert.lua's layout + draw (subpixel layer only; rate table is an overlay).
+// CAGE — port of cage_advert.lua's layout + draw. Green->gold gradient (the active screen's), no
+// title/banner, METAL IN/CASH OUT lifted higher. Subpixel layer only; rate table is an overlay.
+const CAGE_GRAD = [2048, 1024, 4, 512];   // colors.blue/purple/magenta/cyan — same 4 slots as cage.lua
+const CAGE_DEEP = [0.00,0.28,0.10], CAGE_GOLD = [0.62,0.46,0.06];
+function cageGradientRGB(i) {              // i 1-based, static phase 0 — same ramp as cage.lua
+  const a = 0.5 + 0.5*Math.sin(i*0.9);
+  return [CAGE_DEEP[0]+(CAGE_GOLD[0]-CAGE_DEEP[0])*a, CAGE_DEEP[1]+(CAGE_GOLD[1]-CAGE_DEEP[1])*a,
+          CAGE_DEEP[2]+(CAGE_GOLD[2]-CAGE_DEEP[2])*a];
+}
+function cagePalette() {
+  const p = Object.assign({}, CC);
+  for (let i=1;i<=CAGE_GRAD.length;i++) { const [r,g,b]=cageGradientRGB(i);
+    p[CAGE_GRAD[i-1]] = [Math.round(r*255),Math.round(g*255),Math.round(b*255)]; }
+  return p;
+}
 function drawCage() {
   const cv = Canvas(36, 24);   // 72x72 subpixels
-  const RED=16384, WHITE=1, BLACK=32768;
-  cv.clear(BLACK);
-  cv.fillRect(1, Rl(1), cv.w, 6, RED);
-  cv.fillRect(1, Rl(7), cv.w, 6, RED);
-  cv.fillRect(1, Rl(23), cv.w, 6, RED);
-  drawCentered(cv, BIG, "THE CAGE", Rl(3),  WHITE, 1, 2);
-  drawCentered(cv, BIG, "METAL IN", Rl(9),  WHITE, 1, 2);
-  drawCentered(cv, BIG, "CASH OUT", Rl(14), WHITE, 1, 2);
+  const RED=16384, WHITE=1;
+  const bandH = Math.ceil(cv.h/CAGE_GRAD.length);   // 18 = 6 cells per band
+  for (let b=0;b<CAGE_GRAD.length;b++) cv.fillRect(1, 1+b*bandH, cv.w, bandH, CAGE_GRAD[b]);
+  cv.fillRect(1, Rl(1),  cv.w, 6, RED);   // top frame
+  cv.fillRect(1, Rl(23), cv.w, 6, RED);   // bottom frame
+  drawCentered(cv, BIG, "METAL IN", Rl(6),  WHITE, 1, 2);   // lifted ~12% higher
+  drawCentered(cv, BIG, "CASH OUT", Rl(11), WHITE, 1, 2);
   return cv;
 }
 const RATE_ROWS = [["COPPER",25],["IRON",100],["GOLD",250],["DIAMOND",1000]];  // cage_rates.DENOMS
@@ -354,7 +367,7 @@ function cageOverlay(block) {
   const cellW = 2*block, cellH = 3*block;           // one character cell in px
   const div = document.createElement("div");
   div.style.position="absolute"; div.style.left="0"; div.style.top="0";
-  div.style.font = (cellH*0.9)+"px/"+cellH+"px monospace"; div.style.color="rgb(153,153,153)";
+  div.style.font = (cellH*0.9)+"px/"+cellH+"px monospace"; div.style.color="rgb(240,240,240)";
   div.style.whiteSpace="pre"; div.style.pointerEvents="none";
   let html="";
   for (let i=0;i<RATE_ROWS.length;i++) {
@@ -368,5 +381,5 @@ function cageOverlay(block) {
 
 const screens = document.getElementById("screens");
 addScreen(screens, "SLOT — 30×72 (15×24 cells)", drawSlot(), slotPalette(), 7, null);
-addScreen(screens, "CAGE — 72×72 (36×24 cells)", drawCage(), CC, 6, cageOverlay);
+addScreen(screens, "CAGE — 72×72 (36×24 cells)", drawCage(), cagePalette(), 6, cageOverlay);
 </script>
