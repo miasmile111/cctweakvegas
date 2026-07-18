@@ -85,7 +85,10 @@ do
   local s = newGame()
   s.lp, s.paddleH = 10, 6
   s.by = 12                    -- squarely on the left paddle
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  -- bx = 3.0 so the ball MOVES INTO the window [2,3] this frame. Starting at 2.4 would be an
+  -- impossible state: the window is 1 cell wide and the ball steps 0.6, so an approaching ball
+  -- always lands inside it -- a ball at 2.4 heading left has already been dealt with.
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvx > 0, "the ball comes off the left paddle heading right")
   t.eq(s.rs, 0, "and nobody scored")
@@ -96,7 +99,7 @@ do
   local s = newGame()
   s.lp = 10
   s.by = 10                    -- top of a 6-tall paddle, above its centre (13)
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvy < 0, "a hit above the paddle's centre kicks the ball upward")
 end
@@ -105,7 +108,7 @@ do
   local s = newGame()
   s.lp = 10
   s.by = 15                    -- below the centre
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvy > 0, "a hit below the centre kicks it downward")
 end

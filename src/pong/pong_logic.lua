@@ -36,8 +36,17 @@ function M.step(s, lpv, rpv)
   s.lp = M.clamp(s.lp + (lpv or 0) * M.PADDLE_STEP, 1, s.H - s.paddleH + 1)
   s.rp = M.clamp(s.rp + (rpv or 0) * M.PADDLE_STEP, 1, s.H - s.paddleH + 1)
 
-  -- Paddle hits (checked BEFORE ball movement). The off-centre kick is the game's whole feel:
-  -- the further from the paddle's middle the ball lands, the harder it is deflected.
+  s.bx = s.bx + s.bvx
+  s.by = s.by + s.bvy
+  if s.by < 1    then s.by, s.bvy = 1, -s.bvy end
+  if s.by > s.H  then s.by, s.bvy = s.H, -s.bvy end
+
+  -- Paddle hits (checked AFTER ball movement -- this is what the in-world-verified original
+  -- prototype does). The off-centre kick is the game's whole feel: the further from the paddle's
+  -- middle the ball lands, the harder it is deflected.
+  -- Checking after movement is safe against tunneling: the window is 1 cell wide (leftX..leftX+1)
+  -- and the ball steps 0.6 per frame, so an approaching ball always lands inside the window on
+  -- some frame -- it can never skip over it.
   if s.bx <= s.leftX + 1 and s.bx >= s.leftX and s.by >= s.lp and s.by < s.lp + s.paddleH then
     s.bx, s.bvx = s.leftX + 1, math.abs(s.bvx)
     s.bvy = s.bvy + (s.by - (s.lp + s.paddleH / 2)) * 0.15
@@ -46,11 +55,6 @@ function M.step(s, lpv, rpv)
     s.bx, s.bvx = s.rightX - 1, -math.abs(s.bvx)
     s.bvy = s.bvy + (s.by - (s.rp + s.paddleH / 2)) * 0.15
   end
-
-  s.bx = s.bx + s.bvx
-  s.by = s.by + s.bvy
-  if s.by < 1    then s.by, s.bvy = 1, -s.bvy end
-  if s.by > s.H  then s.by, s.bvy = s.H, -s.bvy end
 
   if s.bx < 1   then s.rs = s.rs + 1; M.resetBall(s,  1, s.bvy) end
   if s.bx > s.W then s.ls = s.ls + 1; M.resetBall(s, -1, s.bvy) end
