@@ -628,7 +628,8 @@ rule-of-three extraction were **the same piece of work**, which is why this was 
   not sleeping (`[[unloaded-chunk-is-the-cheapest-sleep]]`), so no exit path runs, `finish` never
   happens, and the debited $ is gone. The window is small (a player present means the chunk is
   loaded) and the fix is a persisted pot journal like `wallet`'s outbox, replayed at boot.
-  **Must be closed before an MP game takes real players.**
+  **Owner's call 2026-07-18: accepted risk, not closed** — the window realistically requires a full
+  server crash mid-match. Reconsider if it is ever observed in the wild.
 - **`getMountPath()` on a NETWORK drive is unverified** — the whole seat model assumes two drives on
   one computer both mount. It is a 2-minute in-world check and the design rests on it.
 
@@ -651,6 +652,89 @@ the anted id** · a *different* card mid-match → spectator gets nothing · sea
 **seat 1 not out of pocket** · hub down → `GO` → `HUB OFFLINE`, not `INSUFFICIENT`, nobody debited ·
 **walk away mid-match → the pot resolves** · **slot + cage still work** (the extraction touched two
 shipped stations — this is the regression that matters most).
+
+## Pong rebuild + the match framework — CODE COMPLETE 2026-07-18 · **in-world PENDING** ⚠️
+
+Spec: `docs/superpowers/specs/2026-07-18-pong-match-lobby-design.md`;
+plan: `docs/superpowers/plans/2026-07-18-pong-match-lobby.md`.
+
+Pong was the project's first prototype and predated every piece of infrastructure. Its rally physics
+was the only part worth keeping. The deliverable is **not a better pong** — it is `lib/match`, the
+reusable `lobby → play → results` machine every future 2–4 player game sits on. Pong is its proof.
+
+- **`lib/match` owns the event pump; a game's `play(ctx)` never calls `os.pullEvent`.** The single
+  most important boundary here: event-pump re-entrancy is this repo's most expensive recurring bug
+  class (`[[event-pump-reentrancy]]`), so a game author must not be able to get it wrong.
+- **READY is per-match consent, never a sticky flag.** Every path back to the lobby clears it. A
+  surviving flag would ante the card of a player who had already walked away.
+- **A FLASH phase sits between play and results — the machine is four screens, not three.** After
+  the rally ends, a ~1s panel draws OVER the finished board (it doesn't clear it, so the rally stays
+  visible underneath) naming the winner by card id (`alice WON!`), falling back to the seat label for
+  an anonymous winner (`LEFT WON!`) — it must never render `anon WON!`. It lives in `match`, not in
+  the game, so every future game inherits it for free. It's pumped, not slept — a bare `sleep(1)`
+  would swallow presence and the quit key for a full second.
+- **The results screen REPLAYS money that already moved** — the ante debits at GO, the pot credits
+  at finish. Balances are captured *before* `mp_econ.start()`; animating from the post-ante number
+  would hide the drain entirely.
+- **The results screen shows a verdict headline on BOTH staked and free matches.** Once the counters
+  settle to white a staked screen would otherwise carry no statement of who actually won. A free
+  match shows the headline plus a `FREE MATCH` label where the counters would be.
+- **`mp_econ.reset()`** — `"done"` was terminal, so a station played exactly one match per boot.
+  That was the observed in-world reset bug.
+- **`lib/controls`** — plates moved onto a `redstone_relay`, whose methods are name-identical to the
+  built-in `redstone` API (verified: tweaked.cc, CC:Tweaked 1.114.0+). Wiring lives in `pong.cfg`;
+  the relay is discovered BY TYPE; every failure is loud at boot.
+- **`pong test` works with NO `pong.cfg`.** It shows the six raw sides — what you watch while
+  stepping on plates — alongside the logical mapping if one exists. That's the commissioning path:
+  `update pong` → `pong test` → step on each plate → write `pong.cfg` from what you saw → reboot.
+  Normal boot still hard-stops on a missing mapping; only the diagnostic is exempt.
+- **The local redstone wake was REMOVED.** It only existed because the station had no ender modem.
+  With the plates on a relay no computer side ever changes, so it would have failed *silently* —
+  and removing it means `idle_runner` was not touched at all.
+- **Screens are debug-grade native text on purpose.** The art pass for all four screens (plus
+  `pong_advert`, still an 18-line stub) is a separate effort against the spec's UI contract:
+  57×24 cells, 3×2 blocks @0.5.
+
+### Filed by the whole-branch review — read before building game #2
+
+- **`match` supports exactly TWO seats today, whatever `maxSeats` says — and `lobby.lua` is why.**
+  `match.lua` and `match_logic.lua` are genuinely N-agnostic (`nSeats = #seatLabels`, `newReady(n)`,
+  `bestSeat(n)`, `resultRows` over `#status.seats`). `lobby.lua` is not: `M.READY` holds exactly 2
+  rects and `hitTest` does `math.min(nSeats, #M.READY)`, so **seats 3–4 can never toggle READY, so
+  `allReady` is never true, so GO is permanently dead**. `M.INFO` likewise has 2 columns and
+  `infoWrite` silently returns for `i > 2`, so those seats render nothing. All the geometry mirrors
+  about the net at col 29 — a 2-seat premise, not a layout. Nothing is broken (pong is 2-player),
+  but **a seat-count-driven lobby layout is the named prerequisite for any 3–4 player game.**
+- **Highest-score-wins is baked in** (`match_logic.bestSeat` *and* `mp_econ.finish`). A lowest-wins
+  game — a race scored by time, golf — cannot express its own comparator. It needs a `compare`/
+  `winnerOf` hook threaded through both.
+- **`ctx` is deliberately thin** (`win`, `controls`, `seats`, `target`, `tick`). A game cannot read
+  econ status mid-play or receive extra per-game cfg. Fine for pong; likely the first thing game #2
+  asks for.
+- **`"HUB OFFLINE - nobody charged"` can be false in the partial case.** `mp_econ.start` checks
+  `reason == "timeout"` first, so if seat 1's debit succeeded and seat 2 then timed out, the screen
+  says nobody was charged while seat 1 *was* charged and refunded **via the outbox** — guaranteed but
+  not yet applied, so seat 1's lobby balance still reads the debited figure until the next `flush()`.
+  Self-heals. Honest enough to ship; worth knowing when someone reports it.
+- **`controls.sideOf(name)` returns nil for an unmapped name** instead of erroring the way `get()`
+  does — the one place the fail-loud rule isn't carried through. Diagnostics-only path; `pong test`
+  reads `CFG[name]` directly rather than going through it. Filed, not fixed.
+
+**In-world verification (PENDING):** `update pong`, reboot · wakes on presence, no plate needed ·
+all four paddles respond (`pong test`) · `pong test` on a station with no `pong.cfg` lists all six
+raw sides and reacts to each plate · 0 cards → both READY → GO → free rally to 5 → `LEFT/RIGHT
+PLAYER WON`, no counters, nobody debited · the win flash appears for ~1s over the finished board and
+names the winner by card id (or the seat label when the winner is anonymous) · 1 card → free, no
+debit · 2 cards → GO → both debited, `POT $20` → first to 5 → counters drain the loser and climb the
+winner → winner credited · a rematch tap on the results screen returns to the lobby with **READY
+cleared**, and a second GO does nothing until both seats re-ready · results auto-returns after ~8s ·
+eject a card mid-match → the pot still pays the anted id · a different card mid-match → spectator ·
+seat 2 insufficient → seat 1 not out of pocket · hub down → `HUB OFFLINE`, nobody debited · walk away
+mid-match → the pot resolves · **regression: slot + cage still work.**
+
+**Open question, to check in-world rather than assume:** does a `redstone_relay` input change raise
+the computer's `redstone` event? tweaked.cc is silent. Nothing here depends on it (presence is the
+wake, paddles are polled), but a future design that leans on it would fail silently.
 
 ## Backlog (behind the OPEN phase — owner-set 2026-07-16, roughly in priority order)
 

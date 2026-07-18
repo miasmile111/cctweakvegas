@@ -18,6 +18,11 @@
 - **Every new `src/` file must be added to `src/packages.lua`** under the `pong` package or it will not install in-world.
 - **Pure modules must not reference CC globals** (`colors`, `peripheral`, `redstone`, `os.pullEvent`) — they run under bare `luajit` in tests where those do not exist.
 - **Tests:** `package.path = "src/lib/?.lua;test/?.lua;" .. package.path` at the top, `local t = require("runner")`, `t.eq`/`t.ok`, `t.done()` at the end. Run one file with `luajit test/test_<name>.lua`.
+- **A test that cannot fail is worse than no test** — it claims coverage it does not have. For each
+  assertion, ask whether it would fail if the production line it covers were deleted or inverted.
+  This project has shipped vacuous tests twice (see the SDD ledgers), and Task 1's original test
+  block was a third: it passed against a stub that ignored the ramp entirely. When a module's whole
+  purpose is a *behaviour over time*, assert the behaviour, not just its endpoints.
 - **Syntax check every changed Lua file:** `luajit -bl <file> > /dev/null`.
 - **Canvas geometry (fixed, formula-verified):** 3×2 blocks @ `setTextScale(0.5)` = **57×24 cells**.
 - **Screens ship debug-grade native text this session.** No subpixel art, no `pixelfont`. The art pass is a separate effort against the spec's UI contract.
@@ -135,6 +140,23 @@ end
 do
   local c = counter.new()
   t.eq(c.value(), 0, "no cfg defaults to 0")
+end
+
+-- ---- THE RAMP ITSELF ----
+-- Without this block the whole module is unconstrained: a stub `easeToward(c, t) return t end` --
+-- an instant snap with no easing at all -- passes every other assertion in this file. That was
+-- proven empirically in review, so these assertions are the ones actually holding the module's
+-- reason for existing in place.
+do
+  t.ok(counter.easeToward(0, 1000) < 1000, "a large gap does NOT jump straight to the target")
+  t.eq(counter.easeToward(0, 1000), 42, "a 1000 gap steps by ceil(1000/24) = 42, not by 1000")
+  t.eq(counter.easeToward(1000, 0), 958, "and the same ramp applies falling")
+
+  local c = counter.new{ value = 0 }
+  c.setTarget(1000)
+  local n = 0
+  while not c.atRest() and n < 500 do c.step(); n = n + 1 end
+  t.ok(n >= 20, "a large gap takes a RAMP of steps (~24), not one -- easing IS the module's purpose")
 end
 
 t.done()
@@ -549,6 +571,10 @@ do
   local creditsBefore = creditsTo("alice") + creditsTo("bob")
   e.reset()
   t.eq(creditsTo("alice") + creditsTo("bob"), creditsBefore, "reset pays nobody -- it is not finish()")
+  -- This is the ONLY call where finish() has not already zeroed the pot, so it is the only place
+  -- `self.pot = 0` inside reset() is actually load-bearing. The assertion in the block above cannot
+  -- fail (proven by mutation in review); this one can.
+  t.eq(e.pot, 0, "reset zeroes a LIVE pot -- the only call where finish() has not already done it")
   t.eq(e.phase, "lobby", "and it still returns to lobby")
 end
 ```
@@ -735,6 +761,31 @@ do
   t.ok(txt:find("WON!"), "and it still says WON!")
 end
 
+-- ---- newReady must return a FRESH table every call ----
+-- This is the module's central promise -- ready is per-match consent, never sticky. A cached or
+-- shared table would make a flag survive a match, and the next GO would ante the card of a player
+-- who had already walked away. Proven necessary: a cached-table implementation passed every other
+-- assertion in this file.
+do
+  local a = ml.newReady(2)
+  local b = ml.newReady(2)
+  t.ok(a ~= b, "two calls return two DIFFERENT tables, never one shared one")
+
+  ml.toggle(a, 1)
+  t.eq(b[1], false, "mutating one ready table does not touch another")
+
+  local c = ml.newReady(2)
+  t.eq(c[1], false, "a table made AFTER another was toggled still starts clean")
+  t.eq(c[2], false, "in both seats")
+end
+
+do
+  local empty = { seats = { { player = "" }, { player = "bob" } } }
+  t.eq(ml.winnerText({ "LEFT", "RIGHT" }, empty, { [1] = 5, [2] = 1 }), "LEFT WON!",
+       "an EMPTY-string id falls back to the seat label -- '' is truthy in Lua, so it must be "
+    .. "rejected explicitly or the flash reads ' WON!' with no winner on it")
+end
+
 -- ---- result rows: from balanceAtGO to balanceNow ----
 do
   local labels = { "LEFT", "RIGHT" }
@@ -871,8 +922,19 @@ M.FLASH_MAX = 24   -- keeps the panel inside the canvas whatever a player called
 function M.winnerText(seatLabels, status, scores)
   local i = bestSeat(#seatLabels, scores)
   local s = (status.seats or {})[i] or {}
-  local who = s.player or seatLabels[i] or ("SEAT " .. i)
-  return (who .. " WON!"):sub(1, M.FLASH_MAX)
+
+  -- `""` is TRUTHY in Lua, so an empty id must be rejected explicitly or the flash reads " WON!"
+  -- with no winner on it at all.
+  local who = s.player
+  if who == nil or who == "" then who = seatLabels[i] or ("SEAT " .. i) end
+
+  -- Truncate the NAME, never the outcome. A player reads this from across a room, so "who won"
+  -- survives and the name is what gives way. (Truncating the whole string tail would eat " WON!".)
+  local suffix = " WON!"
+  if #(who .. suffix) > M.FLASH_MAX then
+    who = who:sub(1, M.FLASH_MAX - #suffix)
+  end
+  return who .. suffix
 end
 
 -- A free match moved no money, so there is nothing to animate -- it just names the winner.
@@ -1000,6 +1062,14 @@ local function stubWin()
     end
     return nil
   end
+  -- Look a write up BY POSITION. Needed for the GO gate: the two states render different WORDS, so
+  -- a text search cannot compare them (searching for "GO" finds nothing on the inert button).
+  function w.at(x, y)
+    for _, e in ipairs(w._writes) do
+      if e.x == x and e.y == y then return e end
+    end
+    return nil
+  end
   return w
 end
 
@@ -1024,8 +1094,12 @@ do
   t.eq(lobby.READY[1].x + lobby.READY[1].w - 1, 58 - lobby.READY[2].x,
        "the READY buttons are exact mirrors about the net")
   t.eq(lobby.GO.x + lobby.GO.w - 1, 58 - lobby.GO.x, "GO mirrors onto itself")
-  t.eq(lobby.INFO[1].x + lobby.INFO[1].w - 1, 58 - (lobby.INFO[2].x + lobby.INFO[2].w - 1) + 11 - 1,
-       "the info columns are 11 cells each and mirror about the net")
+  -- cols 2-12 mirrors to cols 46-56: the OUTER edge of one maps to the OUTER edge of the other.
+  t.eq(58 - lobby.INFO[1].x, lobby.INFO[2].x + lobby.INFO[2].w - 1,
+       "LEFT's outer edge (col 2) mirrors to RIGHT's outer edge (col 56)")
+  t.eq(58 - (lobby.INFO[1].x + lobby.INFO[1].w - 1), lobby.INFO[2].x,
+       "LEFT's inner edge (col 12) mirrors to RIGHT's inner edge (col 46)")
+  t.eq(lobby.INFO[1].w, lobby.INFO[2].w, "both info columns are the same width")
 end
 
 -- ---- hit testing ----
@@ -1045,9 +1119,9 @@ do
   t.eq(lobby.hitTest(28, 14, 2), nil, "the gutter between seat 1's button and the net is a miss")
   t.eq(lobby.hitTest(12, 14, 2), nil, "one cell left of seat 1's button is a miss")
   t.eq(lobby.hitTest(13, 11, 2), nil, "the row above the button is a miss")
-  t.eq(lobby.hitTest(13, 18, 2), "go", "row 18 under seat 1's button is GO, not READY")
-  t.eq(lobby.hitTest(13, 12, 1), nil, "seat 2's rect is dead at a 1-seat station")
-  t.eq(lobby.hitTest(31, 12, 1), nil, "and so is its area")
+  t.eq(lobby.hitTest(13, 18, 2), nil, "row 18 below seat 1's button is a miss -- GO starts at col 21")
+  t.eq(lobby.hitTest(13, 12, 1), "ready", "seat 1 still hits at a 1-seat station")
+  t.eq(lobby.hitTest(31, 12, 1), nil, "but seat 2's rect is dead there -- nSeats gates it")
 end
 
 do
@@ -1087,7 +1161,10 @@ do
   t.ok(w.find("120"), "and its balance")
   t.ok(w.find("anon"), "a cardless seat reads as anon, never as an empty gap")
   t.ok(w.find("READY"), "the ready buttons are drawn")
-  t.ok(w.find("GO"), "the GO button is drawn")
+  -- The default view has goEnabled = false, so the button reads WAITING. Do NOT search for "GO"
+  -- here -- that is the same mistake as the GO-gate block below, and it silently fails rather than
+  -- testing anything.
+  t.ok(w.find("WAITING"), "the GO button is drawn (inert, so it reads WAITING)")
 end
 
 do
@@ -1106,17 +1183,22 @@ do
   t.ok(w.find("HUB OFFLINE"), "the deny message is drawn when present")
 end
 
--- THE GO GATE. This button moves money: inert and live must be visibly different.
+-- THE GO GATE. This button spends real money, so inert and live must be unmistakably different --
+-- different fill AND different words. Compare the fill BY POSITION, not by searching for the text:
+-- the inert button deliberately says WAITING, so a text search for "GO" finds nothing and indexing
+-- the nil result crashes. (That is exactly what the first draft of this test did.)
 do
   local inert, live = stubWin(), stubWin()
   lobby.draw(inert, view{ goEnabled = false })
   lobby.draw(live,  view{ goEnabled = true })
 
-  local a = inert.find("GO")
-  local b = live.find("GO")
-  t.ok(a and b, "GO is drawn in both states")
-  t.ok(a.bg ~= b.bg or a.fg ~= b.fg,
-       "an inert GO and a live GO must not render identically -- this button spends real money")
+  local a = inert.at(lobby.GO.x, lobby.GO.y)
+  local b = live.at(lobby.GO.x, lobby.GO.y)
+  t.ok(a ~= nil and b ~= nil, "the GO button's fill is drawn in both states")
+  t.ok(a.bg ~= b.bg, "an inert GO and a live GO have DIFFERENT fills -- this button spends real money")
+  t.ok(inert.find("WAITING") ~= nil, "the inert button says WAITING")
+  t.eq(inert.find("GO"), nil, "and an inert lobby never shows the word GO at all")
+  t.ok(live.find("GO") ~= nil, "the live button says GO")
 end
 
 do
@@ -1127,6 +1209,21 @@ do
   lobby.draw(on, v)
   local a, b = off.find("READY"), on.find("READY")
   t.ok(a.bg ~= b.bg or a.fg ~= b.fg, "a READY seat renders differently from a not-ready one")
+end
+
+-- ---- an over-long card id is CAPPED ----
+-- ID_MAX is the info column's exact width (cols 2-12). The READY button starts at col 13, one cell
+-- past it, so an uncapped id would run straight into the button. Nothing asserted the drawn result
+-- before this: every other test uses a 5-character id.
+do
+  local v = view()
+  v.seats[1].id = "bartholomew-the-longwinded"
+  local w = stubWin()
+  lobby.draw(w, v)
+  local e = w.at(lobby.INFO[1].x, lobby.BAND_Y + 1)
+  t.ok(e ~= nil, "the id is drawn at the left info column's origin")
+  t.ok(e ~= nil and #e.text <= lobby.ID_MAX,
+       "an over-long id is capped to ID_MAX -- an uncapped one would spill into the READY button")
 end
 
 -- ---- flicker discipline: draw must buffer ----
@@ -1361,6 +1458,11 @@ git commit -m "feat(lobby): lobby screen with per-seat ready and a gated GO"
 
 `play(ctx)` receives `ctx = { win, controls, seats, target, tick }` and returns `{ [seatIndex] = score }`.
 
+**Carried forward from Task 3's review — verify during this task's review:** `mp_econ.reset()` is a
+lobby-return, not a resolver. It pays nobody, so calling it while `phase == "playing"` forfeits a
+live pot **silently**. Confirm that every path in `match.lua` that reaches `toLobby()` has already
+been through `resolve()`/`finish()`, and that no future path can reach it directly from PLAY.
+
 **The pump rule this task exists to enforce:** `match` owns `os.pullEvent`; `play` never calls it. Event-pump re-entrancy is this repository's most expensive recurring bug class (the floppy-swap freeze cost a full session), so a game author must not be able to get it wrong. `ctx.tick()` yields one frame and returns `false` when the match must abort.
 
 - [ ] **Step 1: Write the failing test**
@@ -1382,16 +1484,36 @@ local match = require("match")
 
 -- ---- fakes -----------------------------------------------------------------
 local function fakeWin()
-  local w = { _writes = {} }
+  local w = { _writes = {}, _log = {} }
   function w.getSize() return 57, 24 end
   function w.setVisible() end
   function w.setBackgroundColor() end
   function w.setTextColor() end
   function w.clear() w._writes = {} end
   function w.setCursorPos(x, y) w._x, w._y = x, y end
-  function w.write(s) w._writes[#w._writes + 1] = { x = w._x, y = w._y, text = s } end
+  -- TWO buffers, and the split is load-bearing:
+  --   _writes = the CURRENT frame, wiped by clear()
+  --   _log    = everything ever drawn, never wiped
+  function w.write(s)
+    local e = { x = w._x, y = w._y, text = s }
+    w._writes[#w._writes + 1] = e
+    w._log[#w._log + 1] = e
+  end
+
+  -- Search the CURRENT frame. This is the default, and it must stay the default: the win flash is
+  -- overwritten by the results screen inside the same synchronous call, so a persistent search
+  -- would let an assertion match a frame that is no longer on screen. Widening this once made the
+  -- capture-ordering test below match the LOBBY's pre-match balance and pass against a late
+  -- capture -- the exact bug it exists to catch.
   function w.find(p)
     for _, e in ipairs(w._writes) do
+      if tostring(e.text):find(p, 1, true) then return e end
+    end
+  end
+
+  -- Search everything ever drawn. Use ONLY for the win flash, which is deliberately transient.
+  function w.findEver(p)
+    for _, e in ipairs(w._log) do
       if tostring(e.text):find(p, 1, true) then return e end
     end
   end
@@ -1624,7 +1746,9 @@ do
   }
   local _, win = runner({ flashTicks = 1, play = function() return { [1] = 5, [2] = 3 } end },
                         events, econ)
-  t.ok(win.find("alice WON!"),
+  -- findEver, not find: the flash is deliberately transient -- the results screen clear()s over it
+  -- inside the same synchronous call, so it is never the CURRENT frame by the time we look.
+  t.ok(win.findEver("alice WON!"),
        "the flash names the WINNER BY CARD ID -- a player sees their own name at the moment of the win")
 end
 
@@ -1642,7 +1766,36 @@ do
   }
   local _, win = runner({ flashTicks = 1, play = function() return { [1] = 5, [2] = 1 } end },
                         events, econ)
-  t.ok(win.find("LEFT WON!"), "an anonymous winner falls back to the seat label, never 'anon WON!'")
+  t.ok(win.findEver("LEFT WON!"), "an anonymous winner falls back to the seat label, never 'anon WON!'")
+end
+
+-- ---- ctx.tick() and the mid-match abort ----
+-- A live pot must NEVER leave the loop unresolved: without resolve() on the way out, walking away
+-- mid-match debits every seat and credits nobody, and the $ evaporates. Nothing exercised ctx.tick()
+-- or this payout before -- BOTH resolve paths could be deleted with the suite still green.
+do
+  local econ = fakeEcon()
+  local ticks = 0
+  local events = {
+    { "monitor_touch", "m", 13, 12 },   -- seat 1 READY
+    { "monitor_touch", "m", 31, 12 },   -- seat 2 READY
+    { "monitor_touch", "m", 21, 18 },   -- GO
+  }
+  local res = runner({
+    play = function(ctx)
+      while ctx.tick() do
+        ticks = ticks + 1
+        if ticks > 50 then break end    -- guard: never spin if tick() stops reporting the abort
+      end
+      return { [1] = 3, [2] = 1 }
+    end,
+  }, events, econ, 3)                   -- presence goes away on the 3rd check, mid-rally
+
+  t.ok(ticks >= 1, "play() actually ran through ctx.tick()")
+  t.ok(ticks <= 50, "ctx.tick() reported the abort rather than looping forever")
+  t.eq(res, "sleep", "walking away mid-match puts the station to sleep")
+  t.eq(econ.opsOf("finish"), 1,
+       "and RESOLVES the pot -- without this every seat is debited and nobody is paid")
 end
 
 -- ---- the verdict headline appears on a STAKED result, not only a free one ----
@@ -1856,18 +2009,30 @@ function M.run(cfg)
           return
 
         elseif e == "monitor_touch" then
-          if onTouch then onTouch(ev[3], ev[4]) end
-          -- Re-arm unconditionally: a touch handler that reaches the hub runs a NESTED event pump
-          -- and can swallow this loop's pending tick timer. Only the timer branch re-arms, so
-          -- without this the loop can block forever with no timer outstanding
-          -- ([[event-pump-reentrancy]]). The cage does exactly the same.
+          -- Re-arm unconditionally: a handler that reaches the hub runs a NESTED event pump and can
+          -- swallow this loop's pending tick timer. Only the timer branch re-arms, so without this
+          -- the loop can block forever with no timer outstanding ([[event-pump-reentrancy]]).
           timer = osApi.startTimer(TICK)
-          render()
+          if onTouch then
+            -- A handler can change `phase` (GO -> results, rematch -> lobby) and our closure was
+            -- bound to the OLD phase. Return so the phase loop re-binds. WITHOUT THIS a second
+            -- queued tap is dispatched through the stale lobby handler, where READY is still true,
+            -- and it ANTES THE POT AGAIN -- a real second debit off one tap.
+            onTouch(ev[3], ev[4])
+            render()
+            return
+          end
+          -- No handler bound: play() owns both the screen and the clock. Returning here would let a
+          -- tap advance the game's physics by a frame (breaking ctx.tick()'s "exactly one frame"
+          -- contract), and render() would repaint the lobby over a live rally.
 
         elseif e == "disk" or e == "disk_eject" then
           econ.onEvent(ev)
           timer = osApi.startTimer(TICK)   -- refreshCard reaches the hub: same reason as above
-          render()
+          -- No return: econ.onEvent cannot change `phase`, so the handler cannot go stale. Render
+          -- only when a handler is bound, for the same reason as above -- during PLAY the lobby
+          -- would otherwise be painted over the rally.
+          if onTouch then render() end
 
         elseif e == "rednet_message" then
           pres.fromEvent(ev)
@@ -2125,7 +2290,10 @@ do
   local s = newGame()
   s.lp, s.paddleH = 10, 6
   s.by = 12                    -- squarely on the left paddle
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  -- bx = 3.0 so the ball MOVES INTO the window [2,3] this frame. Starting at 2.4 would be an
+  -- impossible state: the window is 1 cell wide and the ball steps 0.6, so an approaching ball
+  -- always lands inside it -- a ball at 2.4 heading left has already been dealt with.
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvx > 0, "the ball comes off the left paddle heading right")
   t.eq(s.rs, 0, "and nobody scored")
@@ -2136,7 +2304,7 @@ do
   local s = newGame()
   s.lp = 10
   s.by = 10                    -- top of a 6-tall paddle, above its centre (13)
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvy < 0, "a hit above the paddle's centre kicks the ball upward")
 end
@@ -2145,7 +2313,7 @@ do
   local s = newGame()
   s.lp = 10
   s.by = 15                    -- below the centre
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvy > 0, "a hit below the centre kicks it downward")
 end
@@ -2231,8 +2399,12 @@ function M.step(s, lpv, rpv)
   if s.by < 1    then s.by, s.bvy = 1, -s.bvy end
   if s.by > s.H  then s.by, s.bvy = s.H, -s.bvy end
 
-  -- Paddle hits. The off-centre kick is the game's whole feel: the further from the paddle's
-  -- middle the ball lands, the harder it is deflected.
+  -- Paddle hits, checked AFTER the ball moves -- the order the in-world-verified original uses.
+  -- It is safe because the window (bx in [leftX, leftX+1]) is 1 cell wide and the ball steps 0.6:
+  -- an approaching ball ALWAYS lands inside it at least once, so there is no tunneling gap. Do not
+  -- "fix" this by checking before the move; that changes how the game feels.
+  -- The off-centre kick is the game's whole feel: the further from the paddle's middle the ball
+  -- lands, the harder it is deflected.
   if s.bx <= s.leftX + 1 and s.bx >= s.leftX and s.by >= s.lp and s.by < s.lp + s.paddleH then
     s.bx, s.bvx = s.leftX + 1, math.abs(s.bvx)
     s.bvy = s.bvy + (s.by - (s.lp + s.paddleH / 2)) * 0.15
