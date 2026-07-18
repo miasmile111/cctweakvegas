@@ -1161,7 +1161,10 @@ do
   t.ok(w.find("120"), "and its balance")
   t.ok(w.find("anon"), "a cardless seat reads as anon, never as an empty gap")
   t.ok(w.find("READY"), "the ready buttons are drawn")
-  t.ok(w.find("GO"), "the GO button is drawn")
+  -- The default view has goEnabled = false, so the button reads WAITING. Do NOT search for "GO"
+  -- here -- that is the same mistake as the GO-gate block below, and it silently fails rather than
+  -- testing anything.
+  t.ok(w.find("WAITING"), "the GO button is drawn (inert, so it reads WAITING)")
 end
 
 do
