@@ -191,4 +191,19 @@ do
   t.eq(seq[#seq], true, "and shows it once at the end")
 end
 
+-- ---- an over-long card id is CAPPED ----
+-- ID_MAX is the info column's exact width (cols 2-12). The READY button starts at col 13, one cell
+-- past it, so an uncapped id would run straight into the button. Nothing asserted the drawn result
+-- before this: every other test used a 5-character id.
+do
+  local v = view()
+  v.seats[1].id = "bartholomew-the-longwinded"
+  local w = stubWin()
+  lobby.draw(w, v)
+  local e = w.at(lobby.INFO[1].x, lobby.BAND_Y + 1)
+  t.ok(e ~= nil, "the id is drawn at the left info column's origin")
+  t.ok(e ~= nil and #e.text <= lobby.ID_MAX,
+       "an over-long id is capped to ID_MAX -- an uncapped one would spill into the READY button")
+end
+
 t.done()
