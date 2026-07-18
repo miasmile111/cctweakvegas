@@ -309,6 +309,7 @@ do
   local creditsBefore = creditsTo("alice") + creditsTo("bob")
   e.reset()
   t.eq(creditsTo("alice") + creditsTo("bob"), creditsBefore, "reset pays nobody -- it is not finish()")
+  t.eq(e.pot, 0, "reset zeroes a LIVE pot -- the only call where finish() has not already done it")
   t.eq(e.phase, "lobby", "and it still returns to lobby")
 end
 
