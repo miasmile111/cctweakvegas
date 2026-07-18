@@ -1484,16 +1484,36 @@ local match = require("match")
 
 -- ---- fakes -----------------------------------------------------------------
 local function fakeWin()
-  local w = { _writes = {} }
+  local w = { _writes = {}, _log = {} }
   function w.getSize() return 57, 24 end
   function w.setVisible() end
   function w.setBackgroundColor() end
   function w.setTextColor() end
   function w.clear() w._writes = {} end
   function w.setCursorPos(x, y) w._x, w._y = x, y end
-  function w.write(s) w._writes[#w._writes + 1] = { x = w._x, y = w._y, text = s } end
+  -- TWO buffers, and the split is load-bearing:
+  --   _writes = the CURRENT frame, wiped by clear()
+  --   _log    = everything ever drawn, never wiped
+  function w.write(s)
+    local e = { x = w._x, y = w._y, text = s }
+    w._writes[#w._writes + 1] = e
+    w._log[#w._log + 1] = e
+  end
+
+  -- Search the CURRENT frame. This is the default, and it must stay the default: the win flash is
+  -- overwritten by the results screen inside the same synchronous call, so a persistent search
+  -- would let an assertion match a frame that is no longer on screen. Widening this once made the
+  -- capture-ordering test below match the LOBBY's pre-match balance and pass against a late
+  -- capture -- the exact bug it exists to catch.
   function w.find(p)
     for _, e in ipairs(w._writes) do
+      if tostring(e.text):find(p, 1, true) then return e end
+    end
+  end
+
+  -- Search everything ever drawn. Use ONLY for the win flash, which is deliberately transient.
+  function w.findEver(p)
+    for _, e in ipairs(w._log) do
       if tostring(e.text):find(p, 1, true) then return e end
     end
   end
@@ -1726,7 +1746,9 @@ do
   }
   local _, win = runner({ flashTicks = 1, play = function() return { [1] = 5, [2] = 3 } end },
                         events, econ)
-  t.ok(win.find("alice WON!"),
+  -- findEver, not find: the flash is deliberately transient -- the results screen clear()s over it
+  -- inside the same synchronous call, so it is never the CURRENT frame by the time we look.
+  t.ok(win.findEver("alice WON!"),
        "the flash names the WINNER BY CARD ID -- a player sees their own name at the moment of the win")
 end
 
@@ -1744,7 +1766,36 @@ do
   }
   local _, win = runner({ flashTicks = 1, play = function() return { [1] = 5, [2] = 1 } end },
                         events, econ)
-  t.ok(win.find("LEFT WON!"), "an anonymous winner falls back to the seat label, never 'anon WON!'")
+  t.ok(win.findEver("LEFT WON!"), "an anonymous winner falls back to the seat label, never 'anon WON!'")
+end
+
+-- ---- ctx.tick() and the mid-match abort ----
+-- A live pot must NEVER leave the loop unresolved: without resolve() on the way out, walking away
+-- mid-match debits every seat and credits nobody, and the $ evaporates. Nothing exercised ctx.tick()
+-- or this payout before -- BOTH resolve paths could be deleted with the suite still green.
+do
+  local econ = fakeEcon()
+  local ticks = 0
+  local events = {
+    { "monitor_touch", "m", 13, 12 },   -- seat 1 READY
+    { "monitor_touch", "m", 31, 12 },   -- seat 2 READY
+    { "monitor_touch", "m", 21, 18 },   -- GO
+  }
+  local res = runner({
+    play = function(ctx)
+      while ctx.tick() do
+        ticks = ticks + 1
+        if ticks > 50 then break end    -- guard: never spin if tick() stops reporting the abort
+      end
+      return { [1] = 3, [2] = 1 }
+    end,
+  }, events, econ, 3)                   -- presence goes away on the 3rd check, mid-rally
+
+  t.ok(ticks >= 1, "play() actually ran through ctx.tick()")
+  t.ok(ticks <= 50, "ctx.tick() reported the abort rather than looping forever")
+  t.eq(res, "sleep", "walking away mid-match puts the station to sleep")
+  t.eq(econ.opsOf("finish"), 1,
+       "and RESOLVES the pot -- without this every seat is debited and nobody is paid")
 end
 
 -- ---- the verdict headline appears on a STAKED result, not only a free one ----
@@ -1958,18 +2009,30 @@ function M.run(cfg)
           return
 
         elseif e == "monitor_touch" then
-          if onTouch then onTouch(ev[3], ev[4]) end
-          -- Re-arm unconditionally: a touch handler that reaches the hub runs a NESTED event pump
-          -- and can swallow this loop's pending tick timer. Only the timer branch re-arms, so
-          -- without this the loop can block forever with no timer outstanding
-          -- ([[event-pump-reentrancy]]). The cage does exactly the same.
+          -- Re-arm unconditionally: a handler that reaches the hub runs a NESTED event pump and can
+          -- swallow this loop's pending tick timer. Only the timer branch re-arms, so without this
+          -- the loop can block forever with no timer outstanding ([[event-pump-reentrancy]]).
           timer = osApi.startTimer(TICK)
-          render()
+          if onTouch then
+            -- A handler can change `phase` (GO -> results, rematch -> lobby) and our closure was
+            -- bound to the OLD phase. Return so the phase loop re-binds. WITHOUT THIS a second
+            -- queued tap is dispatched through the stale lobby handler, where READY is still true,
+            -- and it ANTES THE POT AGAIN -- a real second debit off one tap.
+            onTouch(ev[3], ev[4])
+            render()
+            return
+          end
+          -- No handler bound: play() owns both the screen and the clock. Returning here would let a
+          -- tap advance the game's physics by a frame (breaking ctx.tick()'s "exactly one frame"
+          -- contract), and render() would repaint the lobby over a live rally.
 
         elseif e == "disk" or e == "disk_eject" then
           econ.onEvent(ev)
           timer = osApi.startTimer(TICK)   -- refreshCard reaches the hub: same reason as above
-          render()
+          -- No return: econ.onEvent cannot change `phase`, so the handler cannot go stale. Render
+          -- only when a handler is bound, for the same reason as above -- during PLAY the lobby
+          -- would otherwise be painted over the rally.
+          if onTouch then render() end
 
         elseif e == "rednet_message" then
           pres.fromEvent(ev)
