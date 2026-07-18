@@ -115,6 +115,13 @@ do
   t.ok(txt:find("WON!"), "and it still says WON!")
 end
 
+do
+  local empty = { seats = { { player = "" }, { player = "bob" } } }
+  t.eq(ml.winnerText({ "LEFT", "RIGHT" }, empty, { [1] = 5, [2] = 1 }), "LEFT WON!",
+       "an EMPTY-string id falls back to the seat label -- '' is truthy in Lua, so it must be "
+    .. "rejected explicitly or the flash reads ' WON!' with no winner on it")
+end
+
 -- ---- result rows: from balanceAtGO to balanceNow ----
 do
   local labels = { "LEFT", "RIGHT" }
@@ -145,6 +152,24 @@ do
   t.eq(rows[2].id, nil, "with no id")
   t.eq(rows[2].from, nil, "and nothing to animate")
   t.eq(rows[2].to, nil, "at either end")
+end
+
+-- ---- newReady must return a FRESH table every call ----
+-- This is the module's central promise -- ready is per-match consent, never sticky. A cached or
+-- shared table would make a flag survive a match, and the next GO would ante the card of a player
+-- who had already walked away. Proven necessary: a cached-table implementation passed every other
+-- assertion in this file.
+do
+  local a = ml.newReady(2)
+  local b = ml.newReady(2)
+  t.ok(a ~= b, "two calls return two DIFFERENT tables, never one shared one")
+
+  ml.toggle(a, 1)
+  t.eq(b[1], false, "mutating one ready table does not touch another")
+
+  local c = ml.newReady(2)
+  t.eq(c[1], false, "a table made AFTER another was toggled still starts clean")
+  t.eq(c[2], false, "in both seats")
 end
 
 t.done()

@@ -89,7 +89,10 @@ M.FLASH_MAX = 24   -- keeps the panel inside the canvas whatever a player called
 function M.winnerText(seatLabels, status, scores)
   local i = bestSeat(#seatLabels, scores)
   local s = (status.seats or {})[i] or {}
-  local who = s.player or seatLabels[i] or ("SEAT " .. i)
+  -- `""` is TRUTHY in Lua, so an empty id must be rejected explicitly or the flash reads " WON!"
+  -- with no winner on it at all.
+  local who = s.player
+  if who == nil or who == "" then who = seatLabels[i] or ("SEAT " .. i) end
   local suffix = " WON!"
   if #(who .. suffix) > M.FLASH_MAX then
     who = who:sub(1, M.FLASH_MAX - #suffix)
