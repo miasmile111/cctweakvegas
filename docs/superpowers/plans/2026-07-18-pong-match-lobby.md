@@ -1024,8 +1024,12 @@ do
   t.eq(lobby.READY[1].x + lobby.READY[1].w - 1, 58 - lobby.READY[2].x,
        "the READY buttons are exact mirrors about the net")
   t.eq(lobby.GO.x + lobby.GO.w - 1, 58 - lobby.GO.x, "GO mirrors onto itself")
-  t.eq(lobby.INFO[1].x + lobby.INFO[1].w - 1, 58 - (lobby.INFO[2].x + lobby.INFO[2].w - 1) + 11 - 1,
-       "the info columns are 11 cells each and mirror about the net")
+  -- cols 2-12 mirrors to cols 46-56: the OUTER edge of one maps to the OUTER edge of the other.
+  t.eq(58 - lobby.INFO[1].x, lobby.INFO[2].x + lobby.INFO[2].w - 1,
+       "LEFT's outer edge (col 2) mirrors to RIGHT's outer edge (col 56)")
+  t.eq(58 - (lobby.INFO[1].x + lobby.INFO[1].w - 1), lobby.INFO[2].x,
+       "LEFT's inner edge (col 12) mirrors to RIGHT's inner edge (col 46)")
+  t.eq(lobby.INFO[1].w, lobby.INFO[2].w, "both info columns are the same width")
 end
 
 -- ---- hit testing ----
