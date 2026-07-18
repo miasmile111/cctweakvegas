@@ -1,0 +1,560 @@
+<title>Pong — live preview</title>
+<style>
+  :root{--bg:#0e1013;--panel:#16191e;--ink:#e6e8ea;--dim:#8b929c;--line:#272c33;--accent:#f2b233;--ice:#99b2f2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 ui-monospace,"Cascadia Code",Menlo,Consolas,monospace}
+  header{padding:14px 18px;border-bottom:1px solid var(--line)}
+  header h1{margin:0 0 3px;font-size:15px}
+  header .sub{color:var(--dim);font-size:12px}
+  main{display:flex;gap:22px;padding:18px;align-items:flex-start;flex-wrap:wrap}
+  .stage{display:flex;flex-direction:column;gap:20px;flex:1 1 620px;min-width:480px}
+  section.screen{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  section.screen h3{margin:0 0 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+  figure{margin:0 0 8px;display:flex;flex-direction:column;gap:4px}
+  figcaption{color:var(--dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+  canvas{background:#000;border:1px solid var(--line);image-rendering:pixelated;border-radius:3px;max-width:100%;cursor:pointer}
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;width:290px;flex:0 0 290px;display:flex;flex-direction:column;gap:12px}
+  .controls h2{margin:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  .row{display:flex;flex-direction:column;gap:5px}
+  .seg{display:flex;gap:5px}
+  .seg button{flex:1;background:#1d2128;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:6px 0;cursor:pointer;font:inherit;font-size:11px}
+  .seg button[aria-pressed=true]{background:var(--accent);color:#111;border-color:var(--accent)}
+  label{color:var(--dim);font-size:11px}
+  input[type=number],input[type=text],select{background:#1d2128;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px 7px;font:inherit;width:100%}
+  input[type=range]{width:100%}
+  .chk{display:flex;gap:8px;align-items:center;cursor:pointer;color:var(--dim);font-size:11px}
+  .note{color:var(--dim);font-size:11px;line-height:1.5;margin:0}
+  .note b{color:var(--ink)}
+  hr{border:0;border-top:1px solid var(--line);margin:2px 0}
+  table.pal{border-collapse:collapse;font-size:11px;width:100%}
+  table.pal td{padding:2px 5px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.pal td.sw{width:16px}
+  table.pal i{display:block;width:14px;height:14px;border-radius:3px;border:1px solid #0006}
+  table.pal tr.free td{color:#5c6570}
+  .budget{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;flex:1 1 300px;min-width:280px}
+  .budget h2{margin:0 0 8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+</style>
+
+<header>
+  <h1>Pong — live preview <span style="color:var(--dim);font-weight:400">(the first head-to-head machine)</span></h1>
+  <div class="sub">114×72 subpixels · <b>57×24 cells @ scale 0.5</b> (3×2 monitor — the widest canvas on the floor) · top strip = code paints · bottom strip = monitor truth (encodeCell, 2 colours/cell) · native cell-text overlaid on top of both, exactly as CC composites</div>
+</header>
+
+<main>
+  <div class="stage">
+    <section class="screen"><h3>Lobby</h3>
+      <figure><canvas id="lobbyP" width="570" height="360"></canvas><figcaption>paint — code draws</figcaption></figure>
+      <figure><canvas id="lobbyM" width="570" height="360"></canvas><figcaption>monitor — encodeCell truth (click READY / GO)</figcaption></figure>
+    </section>
+    <section class="screen"><h3>Play</h3>
+      <figure><canvas id="playP" width="570" height="360"></canvas><figcaption>paint — code draws</figcaption></figure>
+      <figure><canvas id="playM" width="570" height="360"></canvas><figcaption>monitor — encodeCell truth</figcaption></figure>
+    </section>
+    <section class="screen"><h3>Results</h3>
+      <figure><canvas id="resP" width="570" height="360"></canvas><figcaption>paint — code draws</figcaption></figure>
+      <figure><canvas id="resM" width="570" height="360"></canvas><figcaption>monitor — encodeCell truth (click GO to replay)</figcaption></figure>
+    </section>
+  </div>
+
+  <div class="controls">
+    <h2>Live state</h2>
+    <label class="chk"><input type="checkbox" id="rdyL"> LEFT is READY</label>
+    <label class="chk"><input type="checkbox" id="rdyR"> RIGHT is READY</label>
+    <p class="note">GO goes live only when <b>both</b> are ticked. Click the READY buttons on the lobby canvas too.</p>
+    <hr>
+    <div class="row"><label>LEFT card id</label><input type="text" id="idL" value="ALICE"></div>
+    <div class="row"><label>LEFT balance / status</label><input type="text" id="balL" value="$100"></div>
+    <div class="row"><label>RIGHT card id</label><input type="text" id="idR" value="BOBBY"></div>
+    <div class="row"><label>RIGHT balance / status</label><input type="text" id="balR" value="$90"></div>
+    <div class="row"><label>Quick status</label>
+      <div class="seg" id="statusSeg">
+        <button data-v="carded" aria-pressed="true">carded</button>
+        <button data-v="anon" aria-pressed="false">anon</button>
+        <button data-v="offline" aria-pressed="false">offline</button>
+        <button data-v="bad" aria-pressed="false">bad card</button>
+      </div>
+    </div>
+    <div class="row"><label>Deny message line (blank = hidden)</label>
+      <input type="text" id="deny" value="" placeholder="HUB OFFLINE - NOBODY CHARGED"></div>
+    <hr>
+    <h2>Play</h2>
+    <div class="row"><label>Score LEFT / RIGHT</label>
+      <div style="display:flex;gap:6px"><input type="number" id="scL" value="3" min="0" max="5"><input type="number" id="scR" value="4" min="0" max="5"></div></div>
+    <label class="chk"><input type="checkbox" id="rally" checked> run the rally</label>
+    <hr>
+    <h2>Results</h2>
+    <div class="seg" id="modeSeg">
+      <button data-v="staked" aria-pressed="true">staked</button>
+      <button data-v="free" aria-pressed="false">free match</button>
+    </div>
+    <div class="seg" id="winSeg">
+      <button data-v="L" aria-pressed="true">LEFT won</button>
+      <button data-v="R" aria-pressed="false">RIGHT won</button>
+    </div>
+    <div class="row"><label>balanceAtGO — LEFT / RIGHT</label>
+      <div style="display:flex;gap:6px"><input type="number" id="goL" value="100" step="10"><input type="number" id="goR" value="90" step="10"></div></div>
+    <div class="row"><label>Counter position (0 = at GO, 1 = settled)</label>
+      <input type="range" id="ctr" min="0" max="100" value="0"></div>
+    <label class="chk"><input type="checkbox" id="ctrAnim" checked> animate the counters (loop)</label>
+    <hr>
+    <label class="chk"><input type="checkbox" id="grid"> cell grid</label>
+    <label class="chk"><input type="checkbox" id="flash"> hold the pressed-flash on GO</label>
+  </div>
+
+  <div class="budget">
+    <h2>Palette budget — 16 slots, global to the monitor</h2>
+    <table class="pal" id="palTable"></table>
+    <p class="note" style="margin-top:10px"><b>10 spent, 6 free.</b> Pong redefines <b>nothing</b> —
+    every slot is its CC stock colour. That is the direction, not an accident: the slot is a
+    blue→purple animated gradient and the cage is a green→gold one, so <b>pong's signature is that it
+    has no gradient at all</b>. A flat black court is what keeps the ball legible — see the note below.</p>
+    <hr style="margin:10px 0">
+    <h2>Why the court must be flat black</h2>
+    <p class="note">A 2×2 ball straddles up to four cells. On a <b>gradient</b> court each of those cells
+    would hold ball-white + two neighbouring band colours = <b>3 colours</b>, and <code>encodeCell</code>
+    collapses the extras into the background — the ball splinters into slivers exactly the way the slot's
+    bulbs did (<code>kb/monitor-ui.md</code>). On a <b>flat</b> court there are only ever two colours in
+    play, so the ball, the paddles and the net survive <i>whole at every sub-cell position</i>. The
+    cheapest-looking choice is the only correct one.</p>
+    <hr style="margin:10px 0">
+    <h2>Touch rectangles — cell coords, source of truth</h2>
+    <p class="note">Hit-testing is built against these <b>now</b>, ahead of the art pass. The art pass
+    changes how things are <i>drawn</i>, never where they are <i>touched</i>.</p>
+    <table class="pal" id="rectTable"></table>
+    <p class="note" style="margin-top:8px">Every rect is an exact mirror about the net
+    (<code>col c &harr; col 58-c</code>). Nothing is asymmetric. The two GO rects are
+    <b>byte-identical by intent</b> — lobby and results share one constant so the rematch button is
+    literally the same button in the same place.</p>
+    <hr style="margin:10px 0">
+    <h2>One bevel ramp: steel</h2>
+    <p class="note">white 240 / lightGray 153 / gray 76 — the only true 3-step ramp in the stock 16.
+    Shared by both READY buttons and GO. <b>READY off</b> = raised steel. <b>READY on</b> = <i>sunken</i>
+    lime — a latch should look pushed in, and depth + colour are two independent signals.
+    <b>GO inert</b> = flat gray plate, no bevel, native word <code>WAITING</code>.
+    <b>GO live</b> = steel bevel, yellow face, pixelfont <code>GO</code>. Different shape, colour, word
+    <i>and</i> font — four signals on the one button that moves money.</p>
+  </div>
+</main>
+
+<script>
+"use strict";
+/* ===========================================================================
+   PONG — monitor UI preview.  3×2 blocks @ setTextScale(0.5) = 57×24 cells
+   = 114×72 subpixels.  Geometry is fixed by the spec; do not re-derive.
+
+   Coordinates in this file are 0-indexed (JS).  The Lua port is 1-indexed:
+   R(row) here is (row-1)*3; in Lua it is (row-1)*3+1.  That off-by-one is the
+   classic port bug — see kb/monitor-ui-workflow.md step 4.
+   =========================================================================== */
+
+// ---- palette (CC stock; pong redefines NOTHING) ----------------------------
+const PAL={1:[240,240,240],2:[242,178,51],4:[229,127,216],8:[153,178,242],16:[222,222,108],
+           32:[127,204,25],64:[242,178,204],128:[76,76,76],256:[153,153,153],512:[76,153,178],
+           1024:[178,102,229],2048:[51,102,204],4096:[127,102,76],8192:[87,166,78],
+           16384:[204,76,76],32768:[17,17,17]};
+const WHITE=1,ORANGE=2,MAGENTA=4,LIGHTBLUE=8,YELLOW=16,LIME=32,PINK=64,GRAY=128,LIGHTGRAY=256,
+      CYAN=512,PURPLE=1024,BLUE=2048,BROWN=4096,GREEN=8192,RED=16384,BLACK=32768;
+
+// LEFT = ice, RIGHT = fire.  The two loudest, most opposed hues in the stock palette at
+// near-equal luminance (lightBlue 178 / orange 183), so neither seat looks like the stronger
+// one.  Neither collides with the counter tints' job (gold climbing / pink falling / white rest)
+// because a counter is drawn on BLACK, never on its seat's chrome.
+const SEAT=[LIGHTBLUE, ORANGE];
+const SEAT_CSS=["#99b2f2","#f2b233"];
+
+// The one bevel ramp this station can afford.
+const STEEL={light:WHITE, face:LIGHTGRAY, dark:GRAY};
+
+const BUDGET=[
+ [1,"white","net · ball · walls · READY label · text at rest · bevel HIGHLIGHT"],
+ [2,"orange","RIGHT seat identity — label, paddle, score, chrome"],
+ [8,"lightBlue","LEFT seat identity — label, paddle, score, chrome"],
+ [16,"yellow","GO live face · counter tint CLIMBING (gold)"],
+ [32,"lime","READY latched (sunken face)"],
+ [64,"pink","counter tint FALLING (pink, never red — red 114 vs gold 118)"],
+ [128,"gray","bevel SHADOW · GO inert plate"],
+ [256,"lightGray","bevel FACE (READY raised) · secondary/small print"],
+ [16384,"red","deny message line only"],
+ [32768,"black","the court, and the ground under every number"],
+];
+const FREE=[[4,"magenta"],[512,"cyan"],[1024,"purple"],[2048,"blue"],[4096,"brown"],[8192,"green"]];
+
+// ---- fonts (mirror of src/lib/pixelfont.lua — READ ONLY, not extended here) -
+const F_BIG={
+ "0":["####","#..#","#.##","##.#","#..#","####"],"1":[".##.","..#.","..#.","..#.","..#.","..#."],
+ "2":["####","...#","####","#...","#...","####"],"3":["####","...#",".###","...#","...#","####"],
+ "4":["#..#","#..#","####","...#","...#","...#"],"5":["####","#...","####","...#","...#","####"],
+ "6":["####","#...","####","#..#","#..#","####"],"7":["####","...#","..#.",".#..",".#..",".#.."],
+ "8":["####","#..#","####","#..#","#..#","####"],"9":["####","#..#","####","...#","...#","####"],
+ "A":["####","#..#","####","#..#","#..#","#..#"],"B":["###.","#..#","###.","#..#","#..#","###."],
+ "C":["####","#...","#...","#...","#...","####"],"D":["###.","#..#","#..#","#..#","#..#","###."],
+ "E":["####","#...","####","#...","#...","####"],"F":["####","#...","####","#...","#...","#..."],
+ "G":["####","#...","#.##","#..#","#..#","####"],"H":["#..#","#..#","####","#..#","#..#","#..#"],
+ "I":["####",".##.",".##.",".##.",".##.","####"],"J":["####","..#.","..#.","..#.","#.#.",".##."],
+ "K":["#..#","#.#.","##..","##..","#.#.","#..#"],"L":["#...","#...","#...","#...","#...","####"],
+ "M":["#...#","##.##","#.#.#","#...#","#...#","#...#"],"N":["#..#","##.#","##.#","#.##","#.##","#..#"],
+ "O":["####","#..#","#..#","#..#","#..#","####"],"P":["####","#..#","####","#...","#...","#..."],
+ "Q":["####","#..#","#..#","#.##","####","...#"],"R":["####","#..#","####","##..","#.#.","#..#"],
+ "S":[".###","#...","####","...#","...#","###."],"T":["####",".##.",".##.",".##.",".##.",".##."],
+ "U":["#..#","#..#","#..#","#..#","#..#","####"],"V":["#..#","#..#","#..#","#..#",".##.",".##."],
+ "W":["#...#","#...#","#...#","#.#.#","##.##","#...#"],"X":["#..#","#..#",".##.",".##.","#..#","#..#"],
+ "Y":["#..#","#..#",".##.",".##.",".##.",".##."],"Z":["####","...#","..#.",".#..","#...","####"],
+ "!":["#","#","#","#",".","#"],":":[".","#",".",".","#","."],
+ "-":["....","....","####","....","....","...."],".":[".",".",".",".",".","#"],
+ " ":["...","...","...","...","...","..."],
+};
+const F_SIGN_SM={"$":["..#..",".###.","#.#.#","#.#..",".##..","..##.","..#.#","#.#.#",".###.","..#.."]};
+const SIGNSM_W=5, SIGNSM_H=10, BIG2_H=12;
+
+function gW(f,ch){const g=f[ch];return g?g[0].length:0;}
+function tW(f,str,gap,scale){gap=gap==null?1:gap;scale=scale||1;let w=0;for(const ch of str)w+=gW(f,ch)*scale+gap;return w-gap;}
+function drawGlyph(b,f,ch,x,y,color,scale){scale=scale||1;const g=f[ch];if(!g)return;
+  for(let r=0;r<g.length;r++)for(let c=0;c<g[r].length;c++)if(g[r][c]==="#")
+    for(let dy=0;dy<scale;dy++)for(let dx=0;dx<scale;dx++)setPx(b,x+c*scale+dx,y+r*scale+dy,color);}
+function drawText(b,f,str,x,y,color,gap,scale){gap=gap==null?1:gap;scale=scale||1;let cx=x;
+  for(const ch of str){drawGlyph(b,f,ch,cx,y,color,scale);cx+=gW(f,ch)*scale+gap;}}
+// centre inside an arbitrary subpixel span (the two seat panels each get their own span)
+function drawTextIn(b,f,str,x0,w,y,color,gap,scale){gap=gap==null?1:gap;scale=scale||1;
+  drawText(b,f,str,x0+Math.floor((w-tW(f,str,gap,scale))/2),y,color,gap,scale);}
+
+// ---- canvas ----------------------------------------------------------------
+const COLS=57,ROWS=24,CW=114,CH=72,S=5;
+function R(row){return (row-1)*3;}                 // cell row -> top subpixel row (0-indexed)
+function C(col){return (col-1)*2;}                 // cell col -> left subpixel col (0-indexed)
+function newBuf(){const b=[];for(let y=0;y<CH;y++)b.push(new Array(CW).fill(BLACK));return b;}
+function setPx(b,x,y,c){x=Math.floor(x);y=Math.floor(y);if(x<0||y<0||x>=CW||y>=CH)return;if(c&&c!==0)b[y][x]=c;}
+function fillRect(b,x,y,w,h,c){for(let dy=0;dy<h;dy++)for(let dx=0;dx<w;dx++){const X=Math.floor(x+dx),Y=Math.floor(y+dy);if(X>=0&&Y>=0&&X<CW&&Y<CH)b[Y][X]=c;}}
+
+// a bevelled button: 1-subpixel light/dark edges around a face. `down` swaps them.
+// Only the two opposite CORNER cells see three colours and squash — the accepted 2-cell price.
+function drawBevel(b,x,y,w,h,face,light,dark,down){
+  const tl=down?dark:light, br=down?light:dark;
+  fillRect(b,x,y,w,h,face);
+  fillRect(b,x,y,w,1,tl); fillRect(b,x,y,1,h,tl);
+  fillRect(b,x,y+h-1,w,1,br); fillRect(b,x+w-1,y,1,h,br);
+}
+
+// ---- shared geometry -------------------------------------------------------
+// The centre net is the spine of the whole identity: cell col 29 = subpixels 56-57.
+// It is exactly ONE cell column wide, so it never straddles two columns and never splinters.
+const NET_X=C(29);                                    // 56
+const PANEL_L={x0:0,   w:C(28)},                      // cells 1-27  -> subpx 0..53
+      PANEL_R={x0:C(31),w:CW-C(31)};                  // cells 31-57 -> subpx 60..113
+const PANEL=[PANEL_L,PANEL_R];
+
+// The two READY buttons flank the net, face to face across it: cells 15-27 and 31-43.
+// When both latch lime the CENTRE of the screen turns green and GO wakes directly beneath —
+// the two consents literally meet in the middle.
+const READY_RECT=[
+  {x:C(13), w:C(28)-C(13), y:R(12), h:R(18)-R(12)},   // cells 13-27 -> subpx 24..53, y 33..50
+  {x:C(31), w:C(46)-C(31), y:R(12), h:R(18)-R(12)},   // cells 31-45 -> subpx 60..89
+];
+// ...which leaves the outer INFO columns: cells 2-12 left, cells 46-56 right. Those two are an
+// exact mirror about the net (col c <-> col 58-c), so lobby.lua may code them as one rect mirrored.
+// Both are 11 cells wide => card ids MUST be truncated to 11 characters. Not an estimate: 11 is
+// the usable width. Right-hand text is right-aligned, so it STARTS at 57-len and ends at col 56.
+const ID_MAX=11, INFO_L={x:2,w:11}, INFO_R={x:46,w:11};
+// GO — identical rect on LOBBY and RESULTS so it is the same button in the same place.
+const GO_RECT={x:C(21), w:C(38)-C(21), y:R(18), h:R(23)-R(18)};   // subpx 40..73, y 51..65
+
+function drawNet(b,yTop,yBot){                        // dashed, 3 on / 3 off
+  for(let y=yTop;y<=yBot;y++) if(Math.floor((y-yTop)/3)%2===0) fillRect(b,NET_X,y,2,1,WHITE);
+}
+function drawRule(b,row){ fillRect(b,0,R(row)+1,CW,2,LIGHTGRAY); }
+
+function drawReady(b,i,on){
+  const r=READY_RECT[i];
+  drawBevel(b,r.x,r.y,r.w,r.h,on?LIME:STEEL.face,STEEL.light,STEEL.dark,on);
+  // label rides the face as pixelfont: pixel-precise centring inside a 26×18 button that
+  // native text (cell-locked) could only ever centre to the nearest whole cell.
+  const y=r.y+Math.floor((r.h-6)/2);
+  drawTextIn(b,F_BIG,"READY",r.x,r.w,y,on?BLACK:BLACK,1,1);
+}
+
+function drawGo(b,live,pressed){
+  const g=GO_RECT;
+  if(!live){
+    // Inert: a FLAT gray plate. No bevel at all — it is not shaped like a button, so it does
+    // not invite a press. The word changes too (native WAITING, drawn in frame()).
+    fillRect(b,g.x,g.y,g.w,g.h,GRAY);
+    return;
+  }
+  drawBevel(b,g.x,g.y,g.w,g.h,YELLOW,STEEL.light,STEEL.dark,pressed);
+  drawTextIn(b,F_BIG,"GO",g.x,g.w,g.y+Math.floor((g.h-BIG2_H)/2),BLACK,1,2);
+}
+
+// the money glyph group: SIGN_SM $ at 1× beside BIG digits at 2×, centred in a panel span
+function drawMoney(b,x0,w,y,digits,color){
+  const dw=tW(F_BIG,digits,1,2), total=SIGNSM_W+2+dw;
+  const x=x0+Math.floor((w-total)/2);
+  drawGlyph(b,F_SIGN_SM,"$",x,y+Math.floor((BIG2_H-SIGNSM_H)/2),color,1);
+  drawText(b,F_BIG,digits,x+SIGNSM_W+2,y,color,1,2);
+}
+
+// ---- LOBBY -----------------------------------------------------------------
+// rows  1-6   PONG @3× (51×18) centred, flanked by native FIRST TO 5 / ANTE $10
+// row   7     rule
+// rows  8-11  big seat label @2× per panel
+// rows 12-17  card id + balance (native, in the outer info column) | READY button (inner)
+// rows 18-22  GO
+// rows 23-24  deny / message line (native)
+function buildLobby(st){
+  const b=newBuf();
+  drawText(b,F_BIG,"PONG",Math.floor((CW-tW(F_BIG,"PONG",1,3))/2),0,WHITE,1,3);
+  drawRule(b,7);
+  drawNet(b,R(8),R(18)-1);
+  for(let i=0;i<2;i++){
+    const p=PANEL[i];
+    drawTextIn(b,F_BIG,i===0?"LEFT":"RIGHT",p.x0,p.w,R(8),SEAT[i],1,2);
+    drawReady(b,i,st.ready[i]);
+  }
+  drawGo(b,st.ready[0]&&st.ready[1],st.goFlash);
+  return b;
+}
+
+// ---- PLAY ------------------------------------------------------------------
+// Walls y0-1 / y70-71, court between, net full height, scores @3× flanking the net
+// in the seat colours.  NO buttons, no native text at all — the whole screen is one
+// pure subpixel layer, so nothing can punch a native hole through the court.
+function buildPlay(st){
+  const b=newBuf();
+  fillRect(b,0,0,CW,2,WHITE); fillRect(b,0,CH-2,CW,2,WHITE);
+  drawNet(b,2,CH-3);
+  drawText(b,F_BIG,String(st.score[0]),40,6,SEAT[0],1,3);
+  drawText(b,F_BIG,String(st.score[1]),62,6,SEAT[1],1,3);
+  // paddles — 2 subpx wide = EXACTLY one cell column (cells 2 and 56), so a paddle never
+  // straddles two columns however far it slides vertically.
+  fillRect(b,C(2),st.pad[0],2,12,SEAT[0]);
+  fillRect(b,C(56),st.pad[1],2,12,SEAT[1]);
+  fillRect(b,st.ball[0],st.ball[1],2,2,WHITE);      // 2×2 white, safe on a flat court
+  return b;
+}
+
+// ---- RESULTS ---------------------------------------------------------------
+// row   2     headline (native, winner's colour) — LEFT PLAYER WON / RIGHT PLAYER WON.
+//             Shown on STAKED matches as well as free (owner-approved 2026-07-18, final):
+//             once the counters ease to rest they are plain white, so a staked results screen
+//             would otherwise carry no verdict at all.
+// row   4     rule
+// rows  5-8   big seat label @2×
+// row  10     card id (native)
+// rows 11-16  the animated counter ($ 1× + digits 2×) — staked only
+// rows 18-22  GO (rematch) — identical rect to the lobby's
+// rows 23-24  POT / auto-return countdown (native)
+function buildResults(st){
+  const b=newBuf();
+  drawRule(b,4);
+  drawNet(b,R(5),R(17)-1);
+  for(let i=0;i<2;i++){
+    const p=PANEL[i];
+    drawTextIn(b,F_BIG,i===0?"LEFT":"RIGHT",p.x0,p.w,R(5),SEAT[i],1,2);
+    if(st.staked) drawMoney(b,p.x0,p.w,R(11)+3,String(Math.round(st.disp[i])),tintFor(st.disp[i],st.target[i]));
+  }
+  drawGo(b,true,st.goFlash);
+  return b;
+}
+
+// the verified cage rule, lifted: gold climbing, PINK falling, white at rest.
+function tintFor(disp,target){ if(disp<target)return YELLOW; if(disp>target)return PINK; return WHITE; }
+
+// ---- encodeCell (port of src/lib/subpixel.lua) -----------------------------
+function encodeCell(c){const m=new Map();for(const v of c)m.set(v,(m.get(v)||0)+1);
+  let bg=c[0],best=-1;for(const[col,n]of m){if(n>best){best=n;bg=col;}}
+  let fg=bg;for(const v of c)if(v!==bg){fg=v;break;}return{bg,fg};}
+function paint(canvas,buf,collapse,grid){
+  const ctx=canvas.getContext("2d");
+  for(let cy=0;cy<ROWS;cy++)for(let cx=0;cx<COLS;cx++){
+    const py=cy*3,px=cx*2;
+    const cell=[buf[py][px],buf[py][px+1],buf[py+1][px],buf[py+1][px+1],buf[py+2][px],buf[py+2][px+1]];
+    let bg=null,fg=null; if(collapse){({bg,fg}=encodeCell(cell));}
+    for(let dy=0;dy<3;dy++)for(let dx=0;dx<2;dx++){
+      const v=cell[dy*2+dx], col=collapse?((v===bg)?bg:fg):v;
+      ctx.fillStyle=`rgb(${PAL[col]||[255,0,255]})`;
+      ctx.fillRect((px+dx)*S,(py+dy)*S,S,S);
+    }
+  }
+  if(grid){ctx.strokeStyle="rgba(242,178,51,.25)";ctx.lineWidth=1;
+    for(let cx=0;cx<=COLS;cx++){ctx.beginPath();ctx.moveTo(cx*2*S,0);ctx.lineTo(cx*2*S,CH*S);ctx.stroke();}
+    for(let cy=0;cy<=ROWS;cy++){ctx.beginPath();ctx.moveTo(0,cy*3*S);ctx.lineTo(CW*S,cy*3*S);ctx.stroke();}}
+}
+// native cell-text overlay — like topWin.write: NOT subpixel, NOT subject to encodeCell,
+// and it always lands on top of the ENTIRE subpixel layer.
+function nat(canvas,text,cellRow,col,color){
+  const ctx=canvas.getContext("2d"),cw=2*S,ch=3*S;
+  ctx.fillStyle=color||"#f0f0f0";
+  ctx.font=`${Math.floor(ch*0.95)}px ui-monospace,monospace`;ctx.textBaseline="top";
+  if(col==null)col=Math.floor((COLS-text.length)/2)+1;
+  ctx.fillText(text,(col-1)*cw,cellRow*ch-1);
+}
+function natIn(canvas,text,cellRow,colStart,widthCells,color){
+  nat(canvas,text,cellRow,colStart+Math.floor((widthCells-text.length)/2),color);
+}
+
+// ---- state -----------------------------------------------------------------
+const st={
+  ready:[false,false], goFlash:false, tick:0,
+  id:["ALICE","BOBBY"], bal:["$100","$90"], deny:"",
+  score:[3,4], pad:[30,30], ball:[56,34], bv:[1.4,0.9], rally:true,
+  staked:true, winner:0, atGO:[100,90], target:[110,80], disp:[100,90],
+  ctrT:0, ctrAnim:true, grid:false, holdFlash:false,
+};
+const FLASH_TICKS=8;   // monitor_touch has NO release event — every press is a timed flash
+let goFlashUntil=-1;
+
+// The results counter is a REPLAY of money that has already moved: balanceAtGO -> balanceNow.
+// Winner 90 -> 110 climbs visibly back ACROSS its own starting value; loser 100 -> 90 falls.
+function recomputeTargets(){
+  const pot=st.atGO[0]!=null?20:20;
+  st.target[0]= st.winner===0 ? st.atGO[0]-10+pot : st.atGO[0]-10;
+  st.target[1]= st.winner===1 ? st.atGO[1]-10+pot : st.atGO[1]-10;
+}
+function counterAt(t){ for(let i=0;i<2;i++) st.disp[i]=st.atGO[i]+(st.target[i]-st.atGO[i])*t; }
+
+function hitLobby(tx,ty){
+  for(let i=0;i<2;i++){const r=READY_RECT[i];
+    const c0=r.x/2+1,c1=(r.x+r.w)/2, r0=r.y/3+1, r1=(r.y+r.h)/3;
+    if(tx>=c0&&tx<=c1&&ty>=r0&&ty<=r1)return{kind:"ready",i};}
+  const g=GO_RECT;
+  if(tx>=g.x/2+1&&tx<=(g.x+g.w)/2&&ty>=g.y/3+1&&ty<=(g.y+g.h)/3)return{kind:"go"};
+  return null;
+}
+
+function frame(){
+  st.tick++;
+  st.goFlash = st.holdFlash || st.tick<goFlashUntil;
+
+  // rally sim
+  if(st.rally){
+    st.ball[0]+=st.bv[0]; st.ball[1]+=st.bv[1];
+    if(st.ball[1]<2||st.ball[1]>CH-4)st.bv[1]*=-1;
+    if(st.ball[0]<4||st.ball[0]>CW-6)st.bv[0]*=-1;
+    for(let i=0;i<2;i++){ // paddles chase the ball, lazily
+      const want=st.ball[1]-5; st.pad[i]+=Math.max(-1.1,Math.min(1.1,want-st.pad[i]));
+      st.pad[i]=Math.max(2,Math.min(CH-14,st.pad[i]));
+    }
+  }
+  // counter
+  if(st.ctrAnim){ st.ctrT=(st.ctrT+0.008)%1.35; document.getElementById("ctr").value=Math.round(Math.min(1,st.ctrT)*100); }
+  counterAt(Math.min(1,st.ctrT));
+
+  const live=st.ready[0]&&st.ready[1];
+  const bufs={lobby:buildLobby(st), play:buildPlay(st), res:buildResults(st)};
+
+  // ---- LOBBY --------------------------------------------------------------
+  for(const id of ["lobbyP","lobbyM"]){
+    const c=document.getElementById(id);
+    paint(c,bufs.lobby,id.endsWith("M"),st.grid);
+    // small print flanking the marquee — the 57-cell width is what makes this possible
+    nat(c,"FIRST TO 5",3,2,"#999999");
+    nat(c,"ANTE $10",3,48,"#dedb6c");
+    // seat info: card id + balance/status.  NATIVE — these are long, variable-length strings
+    // and native is the densest thing on the monitor.  Both live in the OUTER info column
+    // (cells 2-13 / 45-56) so no native write ever crosses the net at cells 28-30.
+    nat(c,st.id[0].slice(0,ID_MAX),12,2,"#f0f0f0");
+    nat(c,st.bal[0].slice(0,ID_MAX),14,2,statusCss(st.bal[0]));
+    const r1=st.id[1].slice(0,ID_MAX), b1=st.bal[1].slice(0,ID_MAX);
+    nat(c,r1,12,57-r1.length,"#f0f0f0");            // right-aligned: an 11-char id starts at col 46
+    nat(c,b1,14,57-b1.length,statusCss(st.bal[1]));
+    // GO inert label — NATIVE on purpose: system text, not a button face.
+    if(!live) natIn(c,"WAITING",19,GO_RECT.x/2+1,GO_RECT.w/2,"#999999");
+    // the deny line
+    if(st.deny) nat(c,st.deny.slice(0,55),22,null,"#cc4c4c");
+  }
+  // ---- PLAY ---------------------------------------------------------------
+  for(const id of ["playP","playM"]){
+    paint(document.getElementById(id),bufs.play,id.endsWith("M"),st.grid);
+    /* deliberately NO native text on this screen */
+  }
+  // ---- RESULTS ------------------------------------------------------------
+  for(const id of ["resP","resM"]){
+    const c=document.getElementById(id);
+    paint(c,bufs.res,id.endsWith("M"),st.grid);
+    nat(c,(st.winner===0?"LEFT":"RIGHT")+" PLAYER WON",1,null,SEAT_CSS[st.winner]);
+    if(st.staked){
+      nat(c,st.id[0].slice(0,12),9,2,"#f0f0f0");
+      const r1=st.id[1].slice(0,12); nat(c,r1,9,57-r1.length,"#f0f0f0");
+      nat(c,"POT $20",22,2,"#999999");
+    } else {
+      // owner-approved 2026-07-18, final: a free match has no counters, so the panels would
+      // otherwise be empty below the id. FREE MATCH names the reason instead of leaving a hole.
+      natIn(c,"FREE MATCH",12,1,27,"#999999");
+      natIn(c,"FREE MATCH",12,31,27,"#999999");
+      nat(c,"NO STAKE",22,2,"#999999");
+    }
+    nat(c,"BACK IN "+(8-Math.floor((st.tick/20)%8)),22,48,"#999999");
+  }
+  requestAnimationFrame(frame);
+}
+function statusCss(s){ return /^(OFFLINE|BAD CARD|ANON)$/i.test(s.trim()) ? "#999999" : "#f0f0f0"; }
+
+// ---- wiring ----------------------------------------------------------------
+function syncReady(){document.getElementById("rdyL").checked=st.ready[0];document.getElementById("rdyR").checked=st.ready[1];}
+for(const id of ["lobbyP","lobbyM"]) document.getElementById(id).addEventListener("click",e=>{
+  const r=e.currentTarget.getBoundingClientRect(), sx=e.currentTarget.width/r.width;
+  const tx=Math.floor((e.clientX-r.left)*sx/(2*S))+1, ty=Math.floor((e.clientY-r.top)*sx/(3*S))+1;
+  const h=hitLobby(tx,ty); if(!h)return;
+  if(h.kind==="ready"){st.ready[h.i]=!st.ready[h.i];syncReady();}
+  else if(h.kind==="go"){ if(st.ready[0]&&st.ready[1]) goFlashUntil=st.tick+FLASH_TICKS; }
+});
+for(const id of ["resP","resM"]) document.getElementById(id).addEventListener("click",()=>{goFlashUntil=st.tick+FLASH_TICKS;st.ctrT=0;});
+document.getElementById("rdyL").addEventListener("change",e=>st.ready[0]=e.target.checked);
+document.getElementById("rdyR").addEventListener("change",e=>st.ready[1]=e.target.checked);
+document.getElementById("idL").addEventListener("input",e=>st.id[0]=e.target.value.toUpperCase());
+document.getElementById("idR").addEventListener("input",e=>st.id[1]=e.target.value.toUpperCase());
+document.getElementById("balL").addEventListener("input",e=>st.bal[0]=e.target.value);
+document.getElementById("balR").addEventListener("input",e=>st.bal[1]=e.target.value);
+document.getElementById("deny").addEventListener("input",e=>st.deny=e.target.value.toUpperCase());
+document.getElementById("scL").addEventListener("input",e=>st.score[0]=Math.max(0,Math.min(5,+e.target.value||0)));
+document.getElementById("scR").addEventListener("input",e=>st.score[1]=Math.max(0,Math.min(5,+e.target.value||0)));
+document.getElementById("rally").addEventListener("change",e=>st.rally=e.target.checked);
+document.getElementById("goL").addEventListener("input",e=>{st.atGO[0]=+e.target.value||0;recomputeTargets();});
+document.getElementById("goR").addEventListener("input",e=>{st.atGO[1]=+e.target.value||0;recomputeTargets();});
+document.getElementById("ctr").addEventListener("input",e=>{st.ctrAnim=false;document.getElementById("ctrAnim").checked=false;st.ctrT=+e.target.value/100;});
+document.getElementById("ctrAnim").addEventListener("change",e=>st.ctrAnim=e.target.checked);
+document.getElementById("grid").addEventListener("change",e=>st.grid=e.target.checked);
+document.getElementById("flash").addEventListener("change",e=>st.holdFlash=e.target.checked);
+document.getElementById("statusSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));
+  const v=b.dataset.v;
+  if(v==="carded"){st.id=["ALICE","BOBBY"];st.bal=["$100","$90"];}
+  if(v==="anon"){st.id=["ANON","ANON"];st.bal=["FREE","FREE"];}
+  if(v==="offline"){st.bal=["OFFLINE","OFFLINE"];}
+  if(v==="bad"){st.id=["ALICE","??"];st.bal=["$100","BAD CARD"];}
+  document.getElementById("idL").value=st.id[0];document.getElementById("idR").value=st.id[1];
+  document.getElementById("balL").value=st.bal[0];document.getElementById("balR").value=st.bal[1];});
+document.getElementById("modeSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));st.staked=b.dataset.v==="staked";});
+document.getElementById("winSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  [...e.currentTarget.children].forEach(x=>x.setAttribute("aria-pressed",x===b));
+  st.winner=b.dataset.v==="L"?0:1;recomputeTargets();st.ctrT=0;});
+
+// touch-rect table — the numbers lobby.lua codes against, derived from the SAME constants
+// this page draws with, so the page can never disagree with the spec it publishes.
+(function(){
+  const t=document.getElementById("rectTable");
+  const cells=r=>({x:r.x/2+1, w:r.w/2, y:r.y/3+1, h:r.h/3});
+  const rows=[
+    ["READY seat 1 (LEFT)",  cells(READY_RECT[0])],
+    ["READY seat 2 (RIGHT)", cells(READY_RECT[1])],
+    ["GO — lobby",           cells(GO_RECT)],
+    ["GO — results",         cells(GO_RECT)],
+  ];
+  t.insertAdjacentHTML("beforeend","<tr><td><b>rect</b></td><td><b>x</b></td><td><b>w</b></td><td><b>y</b></td><td><b>h</b></td></tr>");
+  for(const [name,r] of rows)
+    t.insertAdjacentHTML("beforeend",`<tr><td>${name}</td><td>${r.x}</td><td>${r.w}</td><td>${r.y}</td><td>${r.h}</td></tr>`);
+  t.insertAdjacentHTML("beforeend",`<tr><td>info col LEFT</td><td>${INFO_L.x}</td><td>${INFO_L.w}</td><td colspan="2">ID_MAX = ${ID_MAX}</td></tr>`);
+  t.insertAdjacentHTML("beforeend",`<tr><td>info col RIGHT</td><td>${INFO_R.x}</td><td>${INFO_R.w}</td><td colspan="2">right-aligned</td></tr>`);
+  t.insertAdjacentHTML("beforeend",`<tr><td>net — no native write</td><td colspan="4">cols 28-30, rows 5-17</td></tr>`);
+})();
+
+// palette table
+(function(){
+  const t=document.getElementById("palTable");
+  for(const [slot,name,use] of BUDGET)
+    t.insertAdjacentHTML("beforeend",`<tr><td class="sw"><i style="background:rgb(${PAL[slot]})"></i></td><td><b>${name}</b></td><td>${use}</td></tr>`);
+  for(const [slot,name] of FREE)
+    t.insertAdjacentHTML("beforeend",`<tr class="free"><td class="sw"><i style="background:rgb(${PAL[slot]});opacity:.35"></i></td><td>${name}</td><td>— free —</td></tr>`);
+})();
+
+recomputeTargets(); syncReady(); requestAnimationFrame(frame);
+</script>

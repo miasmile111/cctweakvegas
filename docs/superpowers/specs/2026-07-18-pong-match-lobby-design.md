@@ -80,12 +80,24 @@ bottom-of-file call barely changes.
 ### The state machine
 
 ```
-LOBBY ──GO (live only when every seat is READY)──> PLAY ──game returns scores──> RESULTS
-  ▲                                                  │                             │
-  │                                     zone empties │                             │ GO (skip)
-  └──────────────────────────────────────────────────┴─────────────────────────────┘
-                                                        or RESULT_TICKS timeout
+LOBBY ──GO (live only when every seat is READY)──> PLAY ──scores──> FLASH ──~1s──> RESULTS
+  ▲                                                  │                               │
+  │                                     zone empties │                               │ GO (skip)
+  └──────────────────────────────────────────────────┴───────────────────────────────┘
+                                                          or RESULT_TICKS timeout
 ```
+
+**FLASH** (added 2026-07-18, owner's request) is a ~1s panel drawn **over the finished board without
+clearing it** — the rally the players were just watching stays visible underneath, so the moment
+reads as "that last point won it" rather than as a screen change. It names the winner by their
+**card id** (`alice WON!`); an anonymous seat has no id, so it falls back to the seat label
+(`LEFT WON!`) and must never render `anon WON!`.
+
+It belongs to `match`, not to the game: every future game wants that beat between the rally ending
+and the money moving, and `match` already knows the card ids. A game supplies nothing for it.
+
+**The flash is pumped, never slept.** A bare `sleep(1)` would swallow presence and the quit key for
+a full second (`[[event-pump-reentrancy]]`).
 
 - **Zone empties in any state** → resolve any live pot, return `"sleep"`. `idle_runner` draws the advert.
 - **READY flags clear on every entry to LOBBY.** Ready is **per-match consent, never a sticky flag** —
@@ -207,6 +219,44 @@ everything else collapses to bg). Any design that ignores this renders as mud.
 **Native cell-text always layers over the entire subpixel canvas** — a subpixel popup can never
 cover native text. Gate the text instead. (The cage's empty-deposit toast bug.)
 
+### Touch geometry — FINAL, from the approved design
+
+The visual design landed 2026-07-18 (`tools/pong-preview.html`, artifact
+`875f7353-8ae5-4544-85ae-cc71da4728af`). Rendering stays debug-grade native text this session, but
+the **touch rectangles are final**: hit-testing is built once and verified in-world once, and the
+art pass changes only how things are *drawn*, never where they are *touched*.
+
+Everything mirrors exactly about the net: `col c ↔ col 58-c`. Nothing is asymmetric.
+
+| Rect | x | w | y | h | cells |
+|---|---|---|---|---|---|
+| READY seat 1 (LEFT) | 13 | 15 | 12 | 6 | cols 13–27, rows 12–17 |
+| READY seat 2 (RIGHT) | 31 | 15 | 12 | 6 | cols 31–45, rows 12–17 |
+| GO (lobby **and** results) | 21 | 17 | 18 | 5 | cols 21–37, rows 18–22 |
+| Seat band — lobby | — | — | 8 | 10 | rows 8–17 |
+| Seat band — results | — | — | 5 | 12 | rows 5–16 |
+| LEFT info column | 2 | 11 | — | — | cols 2–12 |
+| RIGHT info column | 46 | 11 | — | — | cols 46–56, right-aligned |
+
+- **`ID_MAX = 11`** — exact, the literal usable width of an info column. `OFFLINE` (7) and
+  `BAD CARD` (8) fit.
+- **Deny messages cap at 55 cells and are pure ASCII** — an em dash is not reliably in CC's charset
+  and renders as a box.
+- **The net's protected span: cols 28–30, rows 5–17.** The net is drawn at cell column **29 only**;
+  native `write` sets a whole cell's background, so a native string crossing it physically erases a
+  cell of net per row. Cols 28 and 30 are the clearance gutters — enforcing the wider band costs
+  nothing and makes the rule assertable. The PLAY screen's net spans the full height but draws
+  **zero** native text, so it needs no exclusion.
+
+**Design decisions worth preserving through the art pass:** LEFT = ice (lightBlue), RIGHT = fire
+(orange), at near-equal luminance so neither seat looks like the favourite; the two seat colours also
+tag the paddles and scores, so a player learns "I am the blue one" in the lobby and reads it
+instantly mid-rally. **The play screen has no gradient, and that is structural, not restraint** — a
+2×2 ball straddles up to four cells, and on a gradient each holds ball-white plus two band colours,
+so `encodeCell` drops the third and the ball splinters exactly the way the slot's bulbs did. Palette
+spend is **10 of 16, 6 free** (magenta, cyan, purple, blue, brown, green) — deliberate headroom for
+the `pong_advert` art pass, where a static screen lifts the `encodeCell` constraint entirely.
+
 ### Elements, per screen
 
 **LOBBY**
@@ -222,10 +272,20 @@ cover native text. Gate the text instead. (The cage's empty-deposit toast bug.)
 - The rally: 2 paddles, ball, centre net, and the score. **First to 5.**
 - **No buttons.** The `GO`/`END` debug buttons are removed; this screen is the game only.
 
+**FLASH**
+- A single panel centred over the finished board: `<card id> WON!`, or `<SEAT LABEL> WON!` when the
+  winner is anonymous. Capped at 24 characters so a long id cannot overflow the canvas.
+- No buttons, ~1s, drawn without clearing the screen beneath it.
+
 **RESULTS**
 - Per seat: card id + the animated counter (`balanceAtGO → balanceNow`, gold up / pink down).
-- Free match: `LEFT PLAYER WON` / `RIGHT PLAYER WON`, no counters.
-- A **GO button at the bottom** that skips straight back to LOBBY for a fast rematch.
+- The **verdict headline** (`LEFT PLAYER WON`) on **both** staked and free screens — once the
+  counters settle to white, a staked screen otherwise carries no statement of who actually won.
+- Free match: the headline plus a `FREE MATCH` label where the counters would be, so the seat panels
+  do not read as broken or empty. No counters — nothing moved, so nothing animates.
+- A **GO button at the bottom** that skips straight back to LOBBY for a fast rematch. It is the
+  **same rectangle** as the lobby's GO, deliberately: the rematch button must be the same button in
+  the same place so muscle memory carries between screens.
 - Auto-returns to LOBBY after `RESULT_TICKS` (~8s) if untouched.
 
 ## Error handling
