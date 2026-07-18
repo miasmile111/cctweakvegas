@@ -10,6 +10,9 @@
 -- COMMISSIONING A FRESH STATION (no pong.cfg yet): run `pong test`. It requires no mapping at
 -- all -- it shows the raw state of all six sides of the resolved source, live. Step on each
 -- plate, note which side lights up, then write pong.cfg from what you saw.
+--   NOTE: write `source = relay` into pong.cfg FIRST, then run `pong test`. With no cfg at all the
+--   source defaults to the computer's own sides, which on a relay-wired station never change --
+--   the tool would show six dead sides and tell you nothing.
 --
 -- This file is deliberately small. The lobby, the ante, the pot, the results screen and the money
 -- animation all live in lib/match (the reusable framework); the rally physics lives in pong_logic.

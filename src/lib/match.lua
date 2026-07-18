@@ -188,21 +188,24 @@ function M.run(cfg)
           return
 
         elseif e == "monitor_touch" then
-          -- Re-arm unconditionally: a handler that reaches the hub runs a NESTED event pump and can
-          -- swallow this loop's pending tick timer, and only the timer branch re-arms
-          -- ([[event-pump-reentrancy]]). The cage does the same.
-          timer = osApi.startTimer(TICK)
           if onTouch then
-            -- A handler can change `phase` (GO -> results, rematch -> lobby), and our closure was
-            -- bound to the OLD phase. Return so the phase loop re-binds: without this, a second
-            -- queued tap is dispatched through the stale handler and antes the pot AGAIN.
+            -- A handler can change `phase` (GO -> results, rematch -> lobby) and our closure was
+            -- bound to the OLD phase. Return so the phase loop re-binds. WITHOUT THIS a second
+            -- queued tap is dispatched through the stale lobby handler, where READY is still true,
+            -- and it ANTES THE POT AGAIN -- a real second debit off one tap.
             onTouch(ev[3], ev[4])
+            -- Re-arm AFTER the handler, not before: the handler reaches the hub and runs a NESTED
+            -- event pump, which can swallow a pending timer. Arming first would hand it a timer to
+            -- eat. Only the timer branch re-arms, so losing it blocks this loop forever
+            -- ([[event-pump-reentrancy]]).
+            timer = osApi.startTimer(TICK)
             render()
             return
           end
           -- No handler bound: play() owns both the screen and the clock. Returning here would let a
-          -- tap advance the game's physics by a frame, and render() would repaint the lobby over a
-          -- live rally.
+          -- tap advance the game's physics by a frame (breaking ctx.tick()'s "exactly one frame"
+          -- contract), and render() would repaint the lobby over a live rally. Still re-arm.
+          timer = osApi.startTimer(TICK)
 
         elseif e == "disk" or e == "disk_eject" then
           econ.onEvent(ev)
@@ -229,10 +232,20 @@ function M.run(cfg)
 
       local res, reason, seat = econ.start()
       if res == "deny" then
+        -- A deny never reaches cfg.play, so the touch branch's OWN re-arm (after this whole handler
+        -- returns) is enough -- do not also re-arm here, or that re-arm becomes unfalsifiable.
         message = ml.denyMessage(reason, seat)
         render()
         return
       end
+
+      -- econ.start() reaches the hub (wallet.debit) the same way the touch/disk branches' own nested
+      -- calls do, and can swallow this loop's pending timer ([[event-pump-reentrancy]]). Re-arm here,
+      -- not just in the touch branch after this handler returns: ctx.tick() below needs a valid
+      -- outstanding timer for the ENTIRE match, and the touch branch's own re-arm cannot run until
+      -- the whole match (every ctx.tick()) has already finished. Found via Fix 3's honest fake --
+      -- without this a staked GO deadlocks the very first ctx.tick().
+      timer = osApi.startTimer(TICK)
 
       local potBefore = econ.pot
 
@@ -244,7 +257,15 @@ function M.run(cfg)
           return exit == nil
         end,
       }
-      local scores = cfg.play(ctx) or {}
+      -- A crash in a GAME's rally code must not evaporate a live pot. Without this, an error
+      -- propagates out with phase == "playing", no resolve() runs, and every seat is debited with
+      -- nobody paid. Resolve first, then re-raise so the supervisor still sees the real error.
+      local ok, played = pcall(cfg.play, ctx)
+      if not ok then
+        resolve(nil)
+        error(played, 0)
+      end
+      local scores = played or {}
 
       resolve(scores)
       local st = econ.status()

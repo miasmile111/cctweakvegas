@@ -172,4 +172,25 @@ do
   t.eq(c[2], false, "in both seats")
 end
 
+-- ---- identity on the money screens follows the id that PAID, not the live card ----
+do
+  local labels = { "LEFT", "RIGHT" }
+  -- alice anted then ejected her card mid-match: the seat reads anonymous now, but she won it.
+  local ejected = { seats = { { player = nil, antedId = "alice", balance = nil },
+                              { player = "bob", antedId = "bob", balance = 90 } } }
+  t.eq(ml.winnerText(labels, ejected, { [1] = 5, [2] = 3 }), "alice WON!",
+       "a winner who ejected mid-match is still named -- mp_econ pays antedId, so the screen must agree")
+
+  local rows = ml.resultRows(labels, { [1] = 100, [2] = 100 }, ejected, { [1] = 5, [2] = 3 })
+  t.eq(rows[1].id, "alice", "and the results row names the payer, not the empty drive")
+end
+
+do
+  -- carol inserted a card mid-match. She is a spectator; she must not appear as the winner.
+  local stranger = { seats = { { player = "carol", antedId = "alice", balance = 500 },
+                               { player = "bob",   antedId = "bob",   balance = 90 } } }
+  t.eq(ml.winnerText({ "LEFT", "RIGHT" }, stranger, { [1] = 5, [2] = 3 }), "alice WON!",
+       "a stranger who inserted a card mid-match is NEVER named as the winner")
+end
+
 t.done()

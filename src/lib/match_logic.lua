@@ -91,7 +91,10 @@ function M.winnerText(seatLabels, status, scores)
   local s = (status.seats or {})[i] or {}
   -- `""` is TRUTHY in Lua, so an empty id must be rejected explicitly or the flash reads " WON!"
   -- with no winner on it at all.
-  local who = s.player
+  -- Prefer the id that actually PAID. A player who ejected their card mid-match still won it, and a
+  -- stranger who inserted one mid-match did not -- showing the live card would credit the wrong
+  -- person on screen even though mp_econ pays the right one.
+  local who = s.antedId or s.player
   if who == nil or who == "" then who = seatLabels[i] or ("SEAT " .. i) end
   local suffix = " WON!"
   if #(who .. suffix) > M.FLASH_MAX then
@@ -114,7 +117,7 @@ function M.resultRows(seatLabels, before, status, scores)
     rows[i] = {
       seat  = i,
       label = seatLabels[i] or ("SEAT " .. i),
-      id    = s.player,
+      id    = s.antedId or s.player,
       from  = before[i],
       to    = s.balance,
       score = scores[i] or 0,
