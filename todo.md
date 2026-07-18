@@ -653,7 +653,7 @@ the anted id** · a *different* card mid-match → spectator gets nothing · sea
 **walk away mid-match → the pot resolves** · **slot + cage still work** (the extraction touched two
 shipped stations — this is the regression that matters most).
 
-## Pong rebuild + the match framework — CODE COMPLETE 2026-07-18 · **in-world PENDING** ⚠️
+## Pong rebuild + the match framework — **IN-WORLD VERIFIED 2026-07-18** ✓
 
 Spec: `docs/superpowers/specs/2026-07-18-pong-match-lobby-design.md`;
 plan: `docs/superpowers/plans/2026-07-18-pong-match-lobby.md`.
@@ -720,21 +720,28 @@ reusable `lobby → play → results` machine every future 2–4 player game sit
   does — the one place the fail-loud rule isn't carried through. Diagnostics-only path; `pong test`
   reads `CFG[name]` directly rather than going through it. Filed, not fixed.
 
-**In-world verification (PENDING):** `update pong`, reboot · wakes on presence, no plate needed ·
-all four paddles respond (`pong test`) · `pong test` on a station with no `pong.cfg` lists all six
-raw sides and reacts to each plate · 0 cards → both READY → GO → free rally to 5 → `LEFT/RIGHT
-PLAYER WON`, no counters, nobody debited · the win flash appears for ~1s over the finished board and
-names the winner by card id (or the seat label when the winner is anonymous) · 1 card → free, no
-debit · 2 cards → GO → both debited, `POT $20` → first to 5 → counters drain the loser and climb the
-winner → winner credited · a rematch tap on the results screen returns to the lobby with **READY
-cleared**, and a second GO does nothing until both seats re-ready · results auto-returns after ~8s ·
-eject a card mid-match → the pot still pays the anted id · a different card mid-match → spectator ·
-seat 2 insufficient → seat 1 not out of pocket · hub down → `HUB OFFLINE`, nobody debited · walk away
-mid-match → the pot resolves · **regression: slot + cage still work.**
+**IN-WORLD VERIFIED 2026-07-18 — owner confirmed "it all works".** The station was commissioned end
+to end: `update pong` → `source = relay` into `pong.cfg` → `pong test` → map the four plates → reboot
+→ play. **This is the first time anything multiplayer in this project has run on a real station** —
+`mp_econ` and `card_session` had been code-complete-but-untested since 2026-07-17.
 
-**Open question, to check in-world rather than assume:** does a `redstone_relay` input change raise
-the computer's `redstone` event? tweaked.cc is silent. Nothing here depends on it (presence is the
-wake, paddles are polled), but a future design that leans on it would fail silently.
+**The one thing that cost time, and it is now a KB entry** (`[[redstone-relay-is-a-peripheral]]`):
+with no `pong.cfg` the input source defaults to `computer`, so `pong test` showed the computer's six
+dead sides while the plates were on the relay — correct and useless at once. **Write `source = relay`
+first, then run the tool.** The tool prints the source it resolved (`INPUT TEST via
+redstone_relay_0`) and that one line is the whole diagnosis.
+
+Remaining checklist items not individually walked (the machine works; these are the money edge cases
+worth a pass when convenient): eject a card mid-match → the pot still pays the anted id · a different
+card mid-match → spectator gets nothing · seat 2 insufficient → seat 1 not out of pocket · hub down →
+`HUB OFFLINE`, nobody debited · walk away mid-match → the pot resolves · results auto-return after
+~8s · **regression: slot + cage still work** (`mp_econ` gained a method they share a dependency tree
+with, though nothing they call changed).
+
+**Still open, and still worth not assuming:** does a `redstone_relay` input change raise the
+computer's `redstone` event? tweaked.cc is silent and this build deliberately does not depend on it
+(presence is the wake, paddles are polled every frame), so it was never exercised. A future design
+that leans on it would fail **silently** — check it before building one.
 
 ## Backlog (behind the OPEN phase — owner-set 2026-07-16, roughly in priority order)
 

@@ -123,8 +123,8 @@ contraption**, or **hybrid**.
 | **Membership cards / economy** | core ✓ (in-world pending) | `lib/ledger·card·wallet·sp_econ` + `issue`; bet-and-pay slot. Layered SP/MP-agnostic. Spec in `docs/`. |
 | **Cage / diegetic sink** | v1 ✓    | `$` ↔ metal kiosk (`src/cage/`), in-world verified. Hardware self-discovers; `wallet.debit`+`credit_deny` core additions; idle advert on the `pixelfont` alphabet, green→gold gradient (in-world verified). **The `$` exit — the economy is now a loop.** |
 | **Scoreboards**        | planned | Rednet display subscribers around the floor (own spec).           |
-| **Multiplayer economy**| engine ✓ (in-world pending) | `lib/card_session` (one card on one drive) + `lib/mp_econ` (N seats, ante→pot→payout). A seat is a drive; anon seats play but never win the pot. |
-| **Match framework**    | v1 ✓ (in-world pending) | `lib/match` — the reusable `lobby → play → results` machine for any 2–4 player game. Owns the event pump so a game supplies only `play(ctx)`; per-seat touch READY gates a GO that antes. `lib/lobby`, `lib/counter`, `lib/controls` (relay input). Pong is its first consumer. |
+| **Multiplayer economy**| ✓ in-world | `lib/card_session` (one card on one drive) + `lib/mp_econ` (N seats, ante→pot→payout). A seat is a drive; anon seats play but never win the pot. Proven on a real 2-seat station 2026-07-18. |
+| **Match framework**    | v1 ✓ in-world | `lib/match` — the reusable `lobby → play → flash → results` machine. Owns the event pump, so a game supplies only `play(ctx)`; per-seat touch READY gates a GO that antes. `lib/lobby`, `lib/counter`, `lib/controls` (relay input). Pong is its first consumer. **2 seats today** — `lib/lobby`'s layout is the prerequisite for 3–4. |
 | **More games**         | ongoing | 1–4 player; monitor / Create-contraption / hybrid.                |
 
 Each component gets its own detail as it's built (its `src/` files, its `todo.md` section).

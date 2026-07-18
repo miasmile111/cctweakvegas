@@ -128,3 +128,13 @@ another facet of something already written. Keep this index's catalog in sync (o
   a distance even interdimensionally), CC ships `gps host` so it is **zero code**, but: the modem must be
   on a computer **SIDE** (`rs.getSides()`, never the cable), a host must be force-loaded (so don't make
   every station one), and `gps.locate(2)` burns 2s eating events when no constellation exists.
+- [[redstone-relay-is-a-peripheral]] — `redstone-relay-is-a-peripheral.md` — moving inputs onto a
+  **redstone relay silently invalidates every `redstone.getInput` call**: `redstone.*` is the
+  *computer's* six faces, the relay has its own, and the station goes stone deaf with **no error**.
+  The relay's methods are **name-identical** to the built-in API, so a "source" is just the global
+  `redstone` table **or** `peripheral.wrap(name)` — duck-type interchangeable, no adapter needed
+  (that is all `lib/controls` is). Needs **CC:Tweaked ≥ 1.114.0**. The commissioning trap: with no
+  `.cfg` the source defaults to `computer`, so the diagnostic tool shows six dead sides and tells you
+  nothing — write `source = relay` FIRST, and make the tool **print the source it resolved**. Also:
+  if the station's wake was a computer-side lever, moving inputs to a relay kills the wake too,
+  silently.
