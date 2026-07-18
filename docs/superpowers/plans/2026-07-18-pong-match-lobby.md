@@ -571,6 +571,10 @@ do
   local creditsBefore = creditsTo("alice") + creditsTo("bob")
   e.reset()
   t.eq(creditsTo("alice") + creditsTo("bob"), creditsBefore, "reset pays nobody -- it is not finish()")
+  -- This is the ONLY call where finish() has not already zeroed the pot, so it is the only place
+  -- `self.pot = 0` inside reset() is actually load-bearing. The assertion in the block above cannot
+  -- fail (proven by mutation in review); this one can.
+  t.eq(e.pot, 0, "reset zeroes a LIVE pot -- the only call where finish() has not already done it")
   t.eq(e.phase, "lobby", "and it still returns to lobby")
 end
 ```
@@ -1386,6 +1390,11 @@ git commit -m "feat(lobby): lobby screen with per-seat ready and a gated GO"
 `cfg` fields: `title`, `seatLabels`, `minSeats`, `maxSeats`, `ante`, `drives`, `controls`, `target`, `play`, and `deps` (test injection: `{ mp_econ = , window = , os = }`).
 
 `play(ctx)` receives `ctx = { win, controls, seats, target, tick }` and returns `{ [seatIndex] = score }`.
+
+**Carried forward from Task 3's review — verify during this task's review:** `mp_econ.reset()` is a
+lobby-return, not a resolver. It pays nobody, so calling it while `phase == "playing"` forfeits a
+live pot **silently**. Confirm that every path in `match.lua` that reaches `toLobby()` has already
+been through `resolve()`/`finish()`, and that no future path can reach it directly from PLAY.
 
 **The pump rule this task exists to enforce:** `match` owns `os.pullEvent`; `play` never calls it. Event-pump re-entrancy is this repository's most expensive recurring bug class (the floppy-swap freeze cost a full session), so a game author must not be able to get it wrong. `ctx.tick()` yields one frame and returns `false` when the match must abort.
 
