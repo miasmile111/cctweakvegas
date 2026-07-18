@@ -13,12 +13,15 @@ local match = require("match")
 
 -- ---- fakes -----------------------------------------------------------------
 -- `_writes` is the CURRENT frame (reset on clear, mirroring a real window); `_log` is EVERY string
--- ever written, never reset. find() searches `_log` on purpose: the win flash is drawn, pumped for
--- flashTicks frames, then unconditionally overwritten by the results screen's own clear() in the
--- SAME synchronous call (no event boundary in between) -- that overwrite is the whole point of a
--- transient flash. A find() scoped to only the current frame could therefore never observe the
--- flash text once the match finished, which would make the win-flash assertions below unfalsifiable
--- fails, not a real check of what was drawn.
+-- ever written, never reset. find() searches ONLY `_writes` -- the current frame -- so it can prove
+-- ORDERING (e.g. that a balance was captured before a later frame changed it). findEver() searches
+-- `_log` and exists ONLY for the win flash: the flash is drawn, pumped for flashTicks frames, then
+-- unconditionally overwritten by the results screen's own clear() in the SAME synchronous call (no
+-- event boundary in between) -- that overwrite is the whole point of a transient flash. A find()
+-- scoped to the current frame could therefore never observe the flash text once the match finished.
+-- Widening find() itself to search `_log` was tried and rejected: it made the capture-ordering test
+-- below match stale LOBBY frames (both seats already show balance 100 before any match starts),
+-- silently defeating the one assertion that guards the pre-ante capture rule.
 local function fakeWin()
   local w = { _writes = {}, _log = {} }
   function w.getSize() return 57, 24 end
@@ -33,6 +36,11 @@ local function fakeWin()
     w._log[#w._log + 1] = e
   end
   function w.find(p)
+    for _, e in ipairs(w._writes) do
+      if tostring(e.text):find(p, 1, true) then return e end
+    end
+  end
+  function w.findEver(p)
     for _, e in ipairs(w._log) do
       if tostring(e.text):find(p, 1, true) then return e end
     end
@@ -266,7 +274,7 @@ do
   }
   local _, win = runner({ flashTicks = 1, play = function() return { [1] = 5, [2] = 3 } end },
                         events, econ)
-  t.ok(win.find("alice WON!"),
+  t.ok(win.findEver("alice WON!"),
        "the flash names the WINNER BY CARD ID -- a player sees their own name at the moment of the win")
 end
 
@@ -284,7 +292,7 @@ do
   }
   local _, win = runner({ flashTicks = 1, play = function() return { [1] = 5, [2] = 1 } end },
                         events, econ)
-  t.ok(win.find("LEFT WON!"), "an anonymous winner falls back to the seat label, never 'anon WON!'")
+  t.ok(win.findEver("LEFT WON!"), "an anonymous winner falls back to the seat label, never 'anon WON!'")
 end
 
 -- ---- the verdict headline appears on a STAKED result, not only a free one ----
@@ -299,6 +307,35 @@ do
   local _, win = runner({ play = function() return { [1] = 5, [2] = 3 } end }, events, econ)
   t.ok(win.find("LEFT PLAYER WON"),
        "a staked results screen still states who won -- settled counters alone carry no verdict")
+end
+
+-- ---- ctx.tick() and the mid-match abort ----
+-- A live pot must NEVER leave the loop unresolved: without resolve() on the way out, walking away
+-- mid-match debits every seat and credits nobody, and the $ evaporates. Nothing exercised ctx.tick()
+-- or this payout before -- both resolve paths could be deleted with the suite still green.
+do
+  local econ = fakeEcon()
+  local ticks = 0
+  local events = {
+    { "monitor_touch", "m", 13, 12 },   -- seat 1 READY
+    { "monitor_touch", "m", 31, 12 },   -- seat 2 READY
+    { "monitor_touch", "m", 21, 18 },   -- GO
+  }
+  local res = runner({
+    play = function(ctx)
+      while ctx.tick() do
+        ticks = ticks + 1
+        if ticks > 50 then break end    -- guard: never spin if tick() stops reporting the abort
+      end
+      return { [1] = 3, [2] = 1 }
+    end,
+  }, events, econ, 3)                   -- presence goes away on the 3rd check, mid-rally
+
+  t.ok(ticks >= 1, "play() actually ran through ctx.tick()")
+  t.ok(ticks <= 50, "ctx.tick() reported the abort rather than looping forever")
+  t.eq(res, "sleep", "walking away mid-match puts the station to sleep")
+  t.eq(econ.opsOf("finish"), 1,
+       "and RESOLVES the pot -- without this every seat is debited and nobody is paid")
 end
 
 t.done()

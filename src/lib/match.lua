@@ -188,19 +188,26 @@ function M.run(cfg)
           return
 
         elseif e == "monitor_touch" then
-          if onTouch then onTouch(ev[3], ev[4]) end
-          -- Re-arm unconditionally: a touch handler that reaches the hub runs a NESTED event pump
-          -- and can swallow this loop's pending tick timer. Only the timer branch re-arms, so
-          -- without this the loop can block forever with no timer outstanding
-          -- ([[event-pump-reentrancy]]). The cage does exactly the same.
+          -- Re-arm unconditionally: a handler that reaches the hub runs a NESTED event pump and can
+          -- swallow this loop's pending tick timer, and only the timer branch re-arms
+          -- ([[event-pump-reentrancy]]). The cage does the same.
           timer = osApi.startTimer(TICK)
-          render()
-          return
+          if onTouch then
+            -- A handler can change `phase` (GO -> results, rematch -> lobby), and our closure was
+            -- bound to the OLD phase. Return so the phase loop re-binds: without this, a second
+            -- queued tap is dispatched through the stale handler and antes the pot AGAIN.
+            onTouch(ev[3], ev[4])
+            render()
+            return
+          end
+          -- No handler bound: play() owns both the screen and the clock. Returning here would let a
+          -- tap advance the game's physics by a frame, and render() would repaint the lobby over a
+          -- live rally.
 
         elseif e == "disk" or e == "disk_eject" then
           econ.onEvent(ev)
           timer = osApi.startTimer(TICK)   -- refreshCard reaches the hub: same reason as above
-          render()
+          if onTouch then render() end
 
         elseif e == "rednet_message" then
           pres.fromEvent(ev)
