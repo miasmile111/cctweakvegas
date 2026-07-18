@@ -761,6 +761,31 @@ do
   t.ok(txt:find("WON!"), "and it still says WON!")
 end
 
+-- ---- newReady must return a FRESH table every call ----
+-- This is the module's central promise -- ready is per-match consent, never sticky. A cached or
+-- shared table would make a flag survive a match, and the next GO would ante the card of a player
+-- who had already walked away. Proven necessary: a cached-table implementation passed every other
+-- assertion in this file.
+do
+  local a = ml.newReady(2)
+  local b = ml.newReady(2)
+  t.ok(a ~= b, "two calls return two DIFFERENT tables, never one shared one")
+
+  ml.toggle(a, 1)
+  t.eq(b[1], false, "mutating one ready table does not touch another")
+
+  local c = ml.newReady(2)
+  t.eq(c[1], false, "a table made AFTER another was toggled still starts clean")
+  t.eq(c[2], false, "in both seats")
+end
+
+do
+  local empty = { seats = { { player = "" }, { player = "bob" } } }
+  t.eq(ml.winnerText({ "LEFT", "RIGHT" }, empty, { [1] = 5, [2] = 1 }), "LEFT WON!",
+       "an EMPTY-string id falls back to the seat label -- '' is truthy in Lua, so it must be "
+    .. "rejected explicitly or the flash reads ' WON!' with no winner on it")
+end
+
 -- ---- result rows: from balanceAtGO to balanceNow ----
 do
   local labels = { "LEFT", "RIGHT" }
@@ -897,8 +922,19 @@ M.FLASH_MAX = 24   -- keeps the panel inside the canvas whatever a player called
 function M.winnerText(seatLabels, status, scores)
   local i = bestSeat(#seatLabels, scores)
   local s = (status.seats or {})[i] or {}
-  local who = s.player or seatLabels[i] or ("SEAT " .. i)
-  return (who .. " WON!"):sub(1, M.FLASH_MAX)
+
+  -- `""` is TRUTHY in Lua, so an empty id must be rejected explicitly or the flash reads " WON!"
+  -- with no winner on it at all.
+  local who = s.player
+  if who == nil or who == "" then who = seatLabels[i] or ("SEAT " .. i) end
+
+  -- Truncate the NAME, never the outcome. A player reads this from across a room, so "who won"
+  -- survives and the name is what gives way. (Truncating the whole string tail would eat " WON!".)
+  local suffix = " WON!"
+  if #(who .. suffix) > M.FLASH_MAX then
+    who = who:sub(1, M.FLASH_MAX - #suffix)
+  end
+  return who .. suffix
 end
 
 -- A free match moved no money, so there is nothing to animate -- it just names the winner.
