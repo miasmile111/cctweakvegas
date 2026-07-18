@@ -71,4 +71,21 @@ do
   t.eq(c.value(), 0, "no cfg defaults to 0")
 end
 
+-- ---- THE RAMP ITSELF ----
+-- Without this block the whole module is unconstrained: a stub `easeToward(c, t) return t end` --
+-- an instant snap with no easing at all -- passes every other assertion in this file. That was
+-- proven empirically in review, so these assertions are the ones actually holding the module's
+-- reason for existing in place.
+do
+  t.ok(counter.easeToward(0, 1000) < 1000, "a large gap does NOT jump straight to the target")
+  t.eq(counter.easeToward(0, 1000), 42, "a 1000 gap steps by ceil(1000/24) = 42, not by 1000")
+  t.eq(counter.easeToward(1000, 0), 958, "and the same ramp applies falling")
+
+  local c = counter.new{ value = 0 }
+  c.setTarget(1000)
+  local n = 0
+  while not c.atRest() and n < 500 do c.step(); n = n + 1 end
+  t.ok(n >= 20, "a large gap takes a RAMP of steps (~24), not one -- easing IS the module's purpose")
+end
+
 t.done()
