@@ -7,6 +7,10 @@
 -- REDSTONE RELAY (not the computer's own sides), so the wiring lives in pong.cfg and is read
 -- through lib/controls.
 --
+-- COMMISSIONING A FRESH STATION (no pong.cfg yet): run `pong test`. It requires no mapping at
+-- all -- it shows the raw state of all six sides of the resolved source, live. Step on each
+-- plate, note which side lights up, then write pong.cfg from what you saw.
+--
 -- This file is deliberately small. The lobby, the ante, the pot, the results screen and the money
 -- animation all live in lib/match (the reusable framework); the rally physics lives in pong_logic.
 -- What is left here is the station's wiring and how a rally is drawn.
@@ -62,15 +66,17 @@ if not mon then
 end
 mon.setTextScale(TEXT_SCALE)
 
+local TEST_MODE = ({ ... })[1] == "test"
+
 -- Fail loud at boot: a miswired station stops here naming what it could not find, rather than
--- running with a paddle that silently reads "not pressed" forever.
-local ctl = controls.new{ cfg = CFG, inputs = INPUTS }
+-- running with a paddle that silently reads "not pressed" forever. Test mode is the one exception:
+-- it exists to commission a station that has NO mapping yet, so it requires zero inputs.
+local ctl = controls.new{ cfg = CFG, inputs = TEST_MODE and {} or INPUTS }
 
 -- ===== TEST MODE: identify which physical plate feeds which input ============
-local function testMode()
+local function testMode(ctl)
   local W, H = mon.getSize()
   local win = window.create(mon, 1, 1, W, H, true)
-  print("Input source: " .. ctl.sourceName())
   local timer = os.startTimer(0.1)
   while true do
     local ev = { os.pullEvent() }
@@ -80,12 +86,39 @@ local function testMode()
       win.setTextColor(colors.white)
       win.clear()
       win.setCursorPos(1, 1)
-      win.write("INPUT TEST via " .. ctl.sourceName() .. " (Q quits)")
-      for i, name in ipairs(INPUTS) do
-        win.setCursorPos(1, i + 2)
-        win.write(("%-9s %-7s %s"):format(name, ctl.sideOf(name),
-                                          ctl.get(name) and "[ON] " or "[   ]"))
+      win.write("INPUT TEST via " .. ctl.sourceName() .. "  (Q quits)")
+      win.setCursorPos(1, 2)
+      win.write("Step on a plate: watch which SIDE lights up.")
+
+      -- The raw sides. This is the half that works with NO cfg at all -- it is how you discover
+      -- the wiring in the first place.
+      local row = 4
+      for _, side in ipairs(ctl.sides()) do
+        win.setCursorPos(1, row)
+        win.write(("%-8s %s"):format(side, ctl.rawGet(side) and "[ON] " or "[   ]"))
+        row = row + 1
       end
+
+      -- The logical mapping, if pong.cfg already names one. Absent on a fresh station, which is
+      -- fine -- that is the state this tool exists to get you out of.
+      row = row + 1
+      win.setCursorPos(1, row); win.write("pong.cfg mapping:"); row = row + 1
+      local mapped = false
+      for _, name in ipairs(INPUTS) do
+        local side = CFG[name]
+        if side then
+          mapped = true
+          win.setCursorPos(1, row)
+          win.write(("  %-9s -> %-8s %s"):format(name, side,
+                    ctl.rawGet(side) and "[ON] " or "[   ]"))
+          row = row + 1
+        end
+      end
+      if not mapped then
+        win.setCursorPos(1, row)
+        win.write("  (none yet -- write pong.cfg from the sides above)")
+      end
+
       win.setVisible(true)
       timer = os.startTimer(0.1)
     elseif ev[1] == "key" and ev[2] == keys.q then
@@ -94,8 +127,8 @@ local function testMode()
   end
 end
 
-if ({ ... })[1] == "test" then
-  testMode()
+if TEST_MODE then
+  testMode(ctl)
   mon.setBackgroundColor(colors.black); mon.clear(); mon.setCursorPos(1, 1); mon.setTextScale(1)
   print("Test mode done.")
   return

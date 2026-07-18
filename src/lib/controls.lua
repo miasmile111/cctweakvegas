@@ -84,6 +84,18 @@ function M.new(cfg)
   function self.sideOf(name) return map[name] end
   function self.sourceName() return srcName end
 
+  -- Read a raw side of the resolved source, bypassing the logical name map entirely. This is what
+  -- `pong test` uses to commission a station: you cannot map a plate to a name until you have
+  -- watched which side it lights up, so the discovery tool must work with NO mapping at all.
+  function self.rawGet(side)
+    return src.getInput(side) and true or false
+  end
+
+  -- The six sides a redstone source exposes, in a stable display order.
+  function self.sides()
+    return { "top", "bottom", "left", "right", "front", "back" }
+  end
+
   return self
 end
 

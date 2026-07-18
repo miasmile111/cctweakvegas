@@ -138,4 +138,29 @@ do
   t.eq(ok, false, "get() on an unconfigured name errors -- a typo must not read as 'not pressed'")
 end
 
+-- ---- rawGet / sides: the commissioning path, which must work with NO mapping ----
+-- `pong test` cannot require a complete cfg: you cannot map a plate to a logical name until you
+-- have watched which side it lights up. So controls must construct with zero required inputs and
+-- still read raw sides.
+do
+  local rs = fakeRedstone{ left = true, back = true }
+  local ctl = controls.new{
+    cfg = { source = "computer" }, inputs = {},
+    deps = { redstone = rs, peripheral = fakePeripheral({}, {}, {}) },
+  }
+  t.eq(ctl.rawGet("left"), true, "a powered side reads true with no logical mapping configured")
+  t.eq(ctl.rawGet("right"), false, "an unpowered side reads false")
+  t.eq(#ctl.sides(), 6, "sides() lists all six")
+  t.eq(ctl.sides()[1], "top", "in a stable order")
+end
+
+do
+  -- The point of the empty-inputs construction: it must NOT error the way a normal boot does.
+  local ok = pcall(function()
+    controls.new{ cfg = { source = "computer" }, inputs = {},
+                  deps = { redstone = fakeRedstone{}, peripheral = fakePeripheral({}, {}, {}) } }
+  end)
+  t.eq(ok, true, "an empty inputs list validates nothing -- this is what lets `pong test` run bare")
+end
+
 t.done()
