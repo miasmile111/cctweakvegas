@@ -18,6 +18,11 @@
 - **Every new `src/` file must be added to `src/packages.lua`** under the `pong` package or it will not install in-world.
 - **Pure modules must not reference CC globals** (`colors`, `peripheral`, `redstone`, `os.pullEvent`) — they run under bare `luajit` in tests where those do not exist.
 - **Tests:** `package.path = "src/lib/?.lua;test/?.lua;" .. package.path` at the top, `local t = require("runner")`, `t.eq`/`t.ok`, `t.done()` at the end. Run one file with `luajit test/test_<name>.lua`.
+- **A test that cannot fail is worse than no test** — it claims coverage it does not have. For each
+  assertion, ask whether it would fail if the production line it covers were deleted or inverted.
+  This project has shipped vacuous tests twice (see the SDD ledgers), and Task 1's original test
+  block was a third: it passed against a stub that ignored the ramp entirely. When a module's whole
+  purpose is a *behaviour over time*, assert the behaviour, not just its endpoints.
 - **Syntax check every changed Lua file:** `luajit -bl <file> > /dev/null`.
 - **Canvas geometry (fixed, formula-verified):** 3×2 blocks @ `setTextScale(0.5)` = **57×24 cells**.
 - **Screens ship debug-grade native text this session.** No subpixel art, no `pixelfont`. The art pass is a separate effort against the spec's UI contract.
@@ -135,6 +140,23 @@ end
 do
   local c = counter.new()
   t.eq(c.value(), 0, "no cfg defaults to 0")
+end
+
+-- ---- THE RAMP ITSELF ----
+-- Without this block the whole module is unconstrained: a stub `easeToward(c, t) return t end` --
+-- an instant snap with no easing at all -- passes every other assertion in this file. That was
+-- proven empirically in review, so these assertions are the ones actually holding the module's
+-- reason for existing in place.
+do
+  t.ok(counter.easeToward(0, 1000) < 1000, "a large gap does NOT jump straight to the target")
+  t.eq(counter.easeToward(0, 1000), 42, "a 1000 gap steps by ceil(1000/24) = 42, not by 1000")
+  t.eq(counter.easeToward(1000, 0), 958, "and the same ramp applies falling")
+
+  local c = counter.new{ value = 0 }
+  c.setTarget(1000)
+  local n = 0
+  while not c.atRest() and n < 500 do c.step(); n = n + 1 end
+  t.ok(n >= 20, "a large gap takes a RAMP of steps (~24), not one -- easing IS the module's purpose")
 end
 
 t.done()
