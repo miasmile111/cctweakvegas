@@ -695,6 +695,31 @@ reusable `lobby → play → results` machine every future 2–4 player game sit
   `pong_advert`, still an 18-line stub) is a separate effort against the spec's UI contract:
   57×24 cells, 3×2 blocks @0.5.
 
+### Filed by the whole-branch review — read before building game #2
+
+- **`match` supports exactly TWO seats today, whatever `maxSeats` says — and `lobby.lua` is why.**
+  `match.lua` and `match_logic.lua` are genuinely N-agnostic (`nSeats = #seatLabels`, `newReady(n)`,
+  `bestSeat(n)`, `resultRows` over `#status.seats`). `lobby.lua` is not: `M.READY` holds exactly 2
+  rects and `hitTest` does `math.min(nSeats, #M.READY)`, so **seats 3–4 can never toggle READY, so
+  `allReady` is never true, so GO is permanently dead**. `M.INFO` likewise has 2 columns and
+  `infoWrite` silently returns for `i > 2`, so those seats render nothing. All the geometry mirrors
+  about the net at col 29 — a 2-seat premise, not a layout. Nothing is broken (pong is 2-player),
+  but **a seat-count-driven lobby layout is the named prerequisite for any 3–4 player game.**
+- **Highest-score-wins is baked in** (`match_logic.bestSeat` *and* `mp_econ.finish`). A lowest-wins
+  game — a race scored by time, golf — cannot express its own comparator. It needs a `compare`/
+  `winnerOf` hook threaded through both.
+- **`ctx` is deliberately thin** (`win`, `controls`, `seats`, `target`, `tick`). A game cannot read
+  econ status mid-play or receive extra per-game cfg. Fine for pong; likely the first thing game #2
+  asks for.
+- **`"HUB OFFLINE - nobody charged"` can be false in the partial case.** `mp_econ.start` checks
+  `reason == "timeout"` first, so if seat 1's debit succeeded and seat 2 then timed out, the screen
+  says nobody was charged while seat 1 *was* charged and refunded **via the outbox** — guaranteed but
+  not yet applied, so seat 1's lobby balance still reads the debited figure until the next `flush()`.
+  Self-heals. Honest enough to ship; worth knowing when someone reports it.
+- **`controls.sideOf(name)` returns nil for an unmapped name** instead of erroring the way `get()`
+  does — the one place the fail-loud rule isn't carried through. Diagnostics-only path; `pong test`
+  reads `CFG[name]` directly rather than going through it. Filed, not fixed.
+
 **In-world verification (PENDING):** `update pong`, reboot · wakes on presence, no plate needed ·
 all four paddles respond (`pong test`) · `pong test` on a station with no `pong.cfg` lists all six
 raw sides and reacts to each plate · 0 cards → both READY → GO → free rally to 5 → `LEFT/RIGHT
