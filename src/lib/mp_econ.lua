@@ -178,6 +178,18 @@ function M.new(cfg)
     return res
   end
 
+  -- Return to the lobby so the SAME instance can run another match. Without this, `finish` parks
+  -- the instance in "done" forever and the station plays exactly one match per boot.
+  --
+  -- This is a lobby-return, NOT a resolver: it deliberately pays nobody. Any live pot must be
+  -- settled with finish() FIRST -- calling reset() on a playing instance forfeits the pot silently,
+  -- which is why match.lua always resolves before it resets.
+  function self.reset()
+    for _, s in ipairs(self.seats) do s.antedId, s.anted = nil, 0 end
+    self.pot = 0
+    self.phase = "lobby"
+  end
+
   function self.status()
     local seats = {}
     for i, s in ipairs(self.seats) do

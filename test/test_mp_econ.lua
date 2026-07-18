@@ -279,4 +279,37 @@ do
   t.eq(e.pot, 20, "and the pot is untouched")
 end
 
+-- ---- reset(): "done" must not be terminal -----------------------------------
+-- finish() parks the instance in "done". Without reset() a station can play exactly ONE match and
+-- then refuses every GO forever ("already playing" / a dead phase) -- the in-world reset bug.
+do
+  reset(); seat{ "alice", "bob" }
+  local e = mp.new{ ante = 10 }
+  t.eq(e.start(), "staked", "first match antes")
+  e.finish{ [1] = 5, [2] = 3 }
+  t.eq(e.phase, "done", "finish parks in done")
+
+  e.reset()
+  t.eq(e.phase, "lobby", "reset returns the phase to lobby")
+  t.eq(e.pot, 0, "reset zeroes the pot")
+  t.eq(e.seats[1].antedId, nil, "reset clears seat 1's anted id")
+  t.eq(e.seats[2].antedId, nil, "reset clears seat 2's anted id")
+  t.eq(e.seats[1].anted, 0, "reset zeroes seat 1's anted amount")
+
+  t.eq(e.start(), "staked", "and a SECOND match can start on the same instance")
+  t.eq(e.pot, 20, "the second pot is a full pot, not a leftover")
+end
+
+-- reset() mid-match must not silently eat a live pot: it is a lobby-return, not a resolver.
+-- match.lua always finish()es before reset()ing; this asserts reset is not doing money work.
+do
+  reset(); seat{ "alice", "bob" }
+  local e = mp.new{ ante = 10 }
+  e.start()
+  local creditsBefore = creditsTo("alice") + creditsTo("bob")
+  e.reset()
+  t.eq(creditsTo("alice") + creditsTo("bob"), creditsBefore, "reset pays nobody -- it is not finish()")
+  t.eq(e.phase, "lobby", "and it still returns to lobby")
+end
+
 t.done()
