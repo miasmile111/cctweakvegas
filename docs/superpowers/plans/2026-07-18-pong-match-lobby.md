@@ -2290,7 +2290,10 @@ do
   local s = newGame()
   s.lp, s.paddleH = 10, 6
   s.by = 12                    -- squarely on the left paddle
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  -- bx = 3.0 so the ball MOVES INTO the window [2,3] this frame. Starting at 2.4 would be an
+  -- impossible state: the window is 1 cell wide and the ball steps 0.6, so an approaching ball
+  -- always lands inside it -- a ball at 2.4 heading left has already been dealt with.
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvx > 0, "the ball comes off the left paddle heading right")
   t.eq(s.rs, 0, "and nobody scored")
@@ -2301,7 +2304,7 @@ do
   local s = newGame()
   s.lp = 10
   s.by = 10                    -- top of a 6-tall paddle, above its centre (13)
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvy < 0, "a hit above the paddle's centre kicks the ball upward")
 end
@@ -2310,7 +2313,7 @@ do
   local s = newGame()
   s.lp = 10
   s.by = 15                    -- below the centre
-  s.bx, s.bvx, s.bvy = 2.4, -0.6, 0
+  s.bx, s.bvx, s.bvy = 3.0, -0.6, 0
   pl.step(s, 0, 0)
   t.ok(s.bvy > 0, "a hit below the centre kicks it downward")
 end
@@ -2396,8 +2399,12 @@ function M.step(s, lpv, rpv)
   if s.by < 1    then s.by, s.bvy = 1, -s.bvy end
   if s.by > s.H  then s.by, s.bvy = s.H, -s.bvy end
 
-  -- Paddle hits. The off-centre kick is the game's whole feel: the further from the paddle's
-  -- middle the ball lands, the harder it is deflected.
+  -- Paddle hits, checked AFTER the ball moves -- the order the in-world-verified original uses.
+  -- It is safe because the window (bx in [leftX, leftX+1]) is 1 cell wide and the ball steps 0.6:
+  -- an approaching ball ALWAYS lands inside it at least once, so there is no tunneling gap. Do not
+  -- "fix" this by checking before the move; that changes how the game feels.
+  -- The off-centre kick is the game's whole feel: the further from the paddle's middle the ball
+  -- lands, the harder it is deflected.
   if s.bx <= s.leftX + 1 and s.bx >= s.leftX and s.by >= s.lp and s.by < s.lp + s.paddleH then
     s.bx, s.bvx = s.leftX + 1, math.abs(s.bvx)
     s.bvy = s.bvy + (s.by - (s.lp + s.paddleH / 2)) * 0.15
