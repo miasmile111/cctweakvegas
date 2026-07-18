@@ -1062,6 +1062,14 @@ local function stubWin()
     end
     return nil
   end
+  -- Look a write up BY POSITION. Needed for the GO gate: the two states render different WORDS, so
+  -- a text search cannot compare them (searching for "GO" finds nothing on the inert button).
+  function w.at(x, y)
+    for _, e in ipairs(w._writes) do
+      if e.x == x and e.y == y then return e end
+    end
+    return nil
+  end
   return w
 end
 
@@ -1111,9 +1119,9 @@ do
   t.eq(lobby.hitTest(28, 14, 2), nil, "the gutter between seat 1's button and the net is a miss")
   t.eq(lobby.hitTest(12, 14, 2), nil, "one cell left of seat 1's button is a miss")
   t.eq(lobby.hitTest(13, 11, 2), nil, "the row above the button is a miss")
-  t.eq(lobby.hitTest(13, 18, 2), "go", "row 18 under seat 1's button is GO, not READY")
-  t.eq(lobby.hitTest(13, 12, 1), nil, "seat 2's rect is dead at a 1-seat station")
-  t.eq(lobby.hitTest(31, 12, 1), nil, "and so is its area")
+  t.eq(lobby.hitTest(13, 18, 2), nil, "row 18 below seat 1's button is a miss -- GO starts at col 21")
+  t.eq(lobby.hitTest(13, 12, 1), "ready", "seat 1 still hits at a 1-seat station")
+  t.eq(lobby.hitTest(31, 12, 1), nil, "but seat 2's rect is dead there -- nSeats gates it")
 end
 
 do
@@ -1172,17 +1180,22 @@ do
   t.ok(w.find("HUB OFFLINE"), "the deny message is drawn when present")
 end
 
--- THE GO GATE. This button moves money: inert and live must be visibly different.
+-- THE GO GATE. This button spends real money, so inert and live must be unmistakably different --
+-- different fill AND different words. Compare the fill BY POSITION, not by searching for the text:
+-- the inert button deliberately says WAITING, so a text search for "GO" finds nothing and indexing
+-- the nil result crashes. (That is exactly what the first draft of this test did.)
 do
   local inert, live = stubWin(), stubWin()
   lobby.draw(inert, view{ goEnabled = false })
   lobby.draw(live,  view{ goEnabled = true })
 
-  local a = inert.find("GO")
-  local b = live.find("GO")
-  t.ok(a and b, "GO is drawn in both states")
-  t.ok(a.bg ~= b.bg or a.fg ~= b.fg,
-       "an inert GO and a live GO must not render identically -- this button spends real money")
+  local a = inert.at(lobby.GO.x, lobby.GO.y)
+  local b = live.at(lobby.GO.x, lobby.GO.y)
+  t.ok(a ~= nil and b ~= nil, "the GO button's fill is drawn in both states")
+  t.ok(a.bg ~= b.bg, "an inert GO and a live GO have DIFFERENT fills -- this button spends real money")
+  t.ok(inert.find("WAITING") ~= nil, "the inert button says WAITING")
+  t.eq(inert.find("GO"), nil, "and an inert lobby never shows the word GO at all")
+  t.ok(live.find("GO") ~= nil, "the live button says GO")
 end
 
 do
